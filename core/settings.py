@@ -33,7 +33,6 @@ INSTALLED_APPS = [
     # Apps Locales
     'users',
     'clans',
-    'chat',
     'jobs',
 ]
 

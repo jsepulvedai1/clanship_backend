@@ -1,11 +1,9 @@
 import graphene
 import users.schema
-import chat.schema
 import jobs.schema
 
 class Query(
     users.schema.Query,
-    chat.schema.Query,
     jobs.schema.Query,
     graphene.ObjectType
 ):
@@ -16,7 +14,6 @@ class Query(
 
 class Mutation(
     users.schema.Mutation,
-    chat.schema.Mutation,
     jobs.schema.Mutation,
     graphene.ObjectType
 ):
@@ -26,7 +23,6 @@ class Mutation(
     pass
 
 class Subscription(
-    chat.schema.Subscription,
     graphene.ObjectType
 ):
     """
