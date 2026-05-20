@@ -39,7 +39,7 @@ class Query(graphene.ObjectType):
         UserType,
         latitude=graphene.Float(required=True),
         longitude=graphene.Float(required=True),
-        radius_km=graphene.Float(default_value=10.0),
+        radius_km=graphene.Float(default_value=10000000.0),
         specialty_id=graphene.Int()
     )
 
