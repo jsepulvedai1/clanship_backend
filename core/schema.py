@@ -33,5 +33,4 @@ class Subscription(
 schema = graphene.Schema(
     query=Query, 
     mutation=Mutation,
-    subscription=Subscription
 )
