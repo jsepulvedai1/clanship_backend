@@ -1,0 +1,24 @@
+Metadata-Version: 2.1
+Name: django-channels-graphql-ws
+Version: 1.0.0rc7
+Summary: Django Channels based WebSocket GraphQL server with Graphene-like subscriptions
+Home-page: https://github.com/datadvance/DjangoChannelsGraphqlWs
+License: MIT
+Author: Alexander A. Prokhorov
+Author-email: alexander.prokhorov@datadvance.net
+Requires-Python: >=3.8.0,<4.0.0
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Requires-Dist: Django (>=4,<5)
+Requires-Dist: aiohttp (>=3,<4)
+Requires-Dist: asgiref (>=3,<4)
+Requires-Dist: channels (>=4,<5)
+Requires-Dist: graphene (>=3,<4)
+Requires-Dist: graphql-core (==3.2.3)
+Requires-Dist: msgpack (>=1,<2)
+Project-URL: Repository, https://github.com/datadvance/DjangoChannelsGraphqlWs

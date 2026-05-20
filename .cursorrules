@@ -1,0 +1,33 @@
+# Reglas de Desarrollo - Clanship Backend
+
+## Arquitectura y Estructura
+- **Clean Architecture**: Mantener una separación clara entre la lógica de negocio, los modelos de datos y la capa de API (GraphQL).
+- **Estructura Modular**: Cada funcionalidad nueva debe residir en su propia aplicación de Django.
+- **GraphQL**:
+  - Cada app debe tener su propio archivo `schema.py`.
+  - El archivo `core/schema.py` debe ser el único punto de entrada que combina todos los esquemas.
+  - Usar `graphene-django` para los tipos y mutaciones.
+  - Las mutaciones de autenticación (JWT) deben estar centralizadas en la app `users`.
+
+## Estilo de Código
+- **Idioma**: El código (nombres de variables, clases, etc.) debe estar en **inglés**, pero los **comentarios explicativos** deben estar en **español**.
+- **Naming**: 
+  - Clases en `PascalCase`.
+  - Funciones y variables en `snake_case`.
+  - Nombres de archivos en `snake_case`.
+- **Documentación**: Incluir docstrings en clases y funciones complejas explicando su propósito en español.
+
+## Estándares Técnicos
+- **Modelos**: 
+  - Usar `models.TextChoices` para campos de opciones.
+  - Priorizar el uso de tipos geográficos (`django.contrib.gis.db.models`) para coordenadas y seguimiento.
+- **Autenticación**: 
+  - Toda mutación sensible debe requerir autenticación JWT.
+  - Usar los decoradores de `django-graphql-jwt` para proteger el acceso.
+- **Real-Time**: 
+  - Las notificaciones de estado de viaje y geolocalización en vivo deben implementarse mediante Subscriptions de GraphQL usando Django Channels y Redis.
+
+## Seguridad y Calidad
+- **Validación**: Siempre validar los datos de entrada en las mutaciones antes de procesarlos.
+- **CORS**: Mantener la configuración de CORS para permitir peticiones solo desde orígenes autorizados (app móvil).
+- **No Placeholders**: Evitar el uso de comentarios "TODO" o código incompleto sin una explicación clara.
