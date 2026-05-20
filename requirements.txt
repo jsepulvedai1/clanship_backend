@@ -8,6 +8,7 @@ channels-redis>=4.0.0
 daphne>=4.0.0
 django-filter>=23.0
 #channels-graphql-ws>=0.6.0
+channels-graphql-ws>=0.6.0
 Pillow>=10.0.0
 gunicorn>=21.2.0
 dj-database-url>=2.1.0
