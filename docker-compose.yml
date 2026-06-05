@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clanship_backend
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    depends_on:
+      - redis
+    networks:
+      - clanship_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: clanship_redis
+    restart: always
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    networks:
+      - clanship_net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: clanship_caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - static_volume:/app/staticfiles:ro
+      - media_volume:/app/media:ro
+    depends_on:
+      - backend
+    networks:
+      - clanship_net
+
+volumes:
+  redis_data:
+  caddy_data:
+  caddy_config:
+  static_volume:
+  media_volume:
+
+networks:
+  clanship_net:
+    driver: bridge

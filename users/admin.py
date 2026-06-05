@@ -12,7 +12,7 @@ class CustomUserAdmin(UserAdmin):
         ('Información de Clanship', {'fields': ('phone_number', 'user_type', 'avatar', 'is_available')}),
         ('Ubicación', {'fields': ('address', 'latitude', 'longitude')}),
     )
-    list_display = ('username', 'email', 'phone_number', 'user_type', 'is_available', 'is_staff')
+    list_display = ('username', 'email', 'phone_number', 'user_type', 'is_available', 'is_staff' , 'avatar')
     list_filter = ('user_type', 'is_available', 'is_staff', 'is_superuser', 'is_active')
 
 @admin.register(Specialty)

@@ -4,7 +4,6 @@ from .models import ChatRoom, Message
 from django.contrib.auth import get_user_model
 from graphql_jwt.decorators import login_required
 from django.db.models import Q
-import channels_graphql_ws
 
 User = get_user_model()
 
@@ -17,30 +16,6 @@ class MessageType(DjangoObjectType):
     class Meta:
         model = Message
         fields = "__all__"
-
-class OnNewMessage(channels_graphql_ws.Subscription):
-    """
-    Suscripción para recibir nuevos mensajes en tiempo real.
-    """
-    message = graphene.Field(MessageType)
-
-    class Arguments:
-        room_id = graphene.Int(required=True)
-
-    @staticmethod
-    def subscribe(root, info, room_id):
-        """
-        Se llama cuando un cliente se suscribe.
-        """
-        # Aquí se puede validar si el usuario tiene permiso para la sala
-        return [f"room_{room_id}"]
-
-    @staticmethod
-    def publish(payload, info, room_id):
-        """
-        Se llama cuando se emite un mensaje.
-        """
-        return OnNewMessage(message=payload)
 
 
 class SendMessage(graphene.Mutation):
@@ -67,11 +42,22 @@ class SendMessage(graphene.Mutation):
             text=text
         )
 
-        # Emitir el mensaje a la suscripción
-        OnNewMessage.broadcast(
-            group=f"room_{room_id}",
-            payload=message
-        )
+        # Broadcast the message to Channels WebSocket clients in the same room group
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+        
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                f"chat_{room_id}",
+                {
+                    'type': 'chat_message',
+                    'message': message.text,
+                    'sender_id': user.id,
+                    'sender_username': user.username,
+                    'created_at': message.created_at.isoformat()
+                }
+            )
 
         return SendMessage(message=message)
 
@@ -97,6 +83,29 @@ class GetOrCreateChatRoom(graphene.Mutation):
         )
         return GetOrCreateChatRoom(room=room)
 
+class GetOrCreateChatRoomWithCustomer(graphene.Mutation):
+    class Arguments:
+        customer_id = graphene.Int(required=True)
+
+    room = graphene.Field(ChatRoomType)
+
+    @login_required
+    def mutate(self, info, customer_id):
+        user = info.context.user
+        if user.user_type != 'PROFESSIONAL':
+            raise Exception("Solo los profesionales pueden iniciar un chat con un cliente usando esta mutación.")
+            
+        try:
+            customer = User.objects.get(pk=customer_id)
+        except User.DoesNotExist:
+            raise Exception("Cliente no encontrado.")
+
+        room, created = ChatRoom.objects.get_or_create(
+            customer=customer,
+            professional=user
+        )
+        return GetOrCreateChatRoomWithCustomer(room=room)
+
 class Query(graphene.ObjectType):
     my_chats = graphene.List(ChatRoomType)
     chat_messages = graphene.List(MessageType, room_id=graphene.Int(required=True))
@@ -117,9 +126,9 @@ class Query(graphene.ObjectType):
         except ChatRoom.DoesNotExist:
             return Message.objects.none()
 
-class Subscription(graphene.ObjectType):
-    on_new_message = OnNewMessage.Field()
+
 
 class Mutation(graphene.ObjectType):
     send_message = SendMessage.Field()
     get_or_create_chat_room = GetOrCreateChatRoom.Field()
+    get_or_create_chat_room_with_customer = GetOrCreateChatRoomWithCustomer.Field()

@@ -1,0 +1,33 @@
+api.clanship.cl {
+    # Habilitar compresión
+    encode gzip zstd
+
+    # Servir archivos estáticos directamente
+    handle_path /static/* {
+        root * /app/staticfiles
+        file_server
+    }
+
+    # Servir archivos media de carga de usuarios directamente
+    handle_path /media/* {
+        root * /app/media
+        file_server
+    }
+
+    # Proxy inverso para todo lo demás (HTTP y WebSockets/WSS)
+    handle {
+        reverse_proxy backend:8000
+    }
+
+    # Cabeceras de seguridad recomendadas
+    header {
+        # Prevenir clickjacking
+        X-Frame-Options "SAMEORIGIN"
+        # Prevenir MIME sniffing
+        X-Content-Type-Options "nosniff"
+        # Habilitar protección contra Cross-Site Scripting (XSS)
+        X-XSS-Protection "1; mode=block"
+        # Mantener política de referencia estricta
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}

@@ -49,6 +49,13 @@ class User(AbstractUser):
         default=False, 
         verbose_name="Disponible para trabajos"
     )
+    favorite_professionals = models.ManyToManyField(
+        'self',
+        blank=True,
+        symmetrical=False,
+        related_name="favorited_by_users",
+        verbose_name="Profesionales Favoritos"
+    )
 
     def __str__(self):
         return f"{self.username} ({self.get_user_type_display()})"

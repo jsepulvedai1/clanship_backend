@@ -6,6 +6,7 @@ class Job(models.Model):
     Representa un trabajo o servicio acordado entre cliente y profesional.
     """
     class Status(models.TextChoices):
+        REQUESTED = 'REQUESTED', 'Solicitado'
         AGREED = 'AGREED', 'Acordado'
         IN_VISIT = 'IN_VISIT', 'En Visita'
         FINISHED = 'FINISHED', 'Finalizado'
@@ -23,23 +24,24 @@ class Job(models.Model):
     )
     
     # Agenda
-    scheduled_date = models.DateField(verbose_name="Fecha programada")
-    scheduled_time = models.TimeField(verbose_name="Hora programada")
+    scheduled_date = models.DateField(verbose_name="Fecha programada", null=True, blank=True)
+    scheduled_time = models.TimeField(verbose_name="Hora programada", null=True, blank=True)
     
     status = models.CharField(
         max_length=20,
         choices=Status.choices,
-        default=Status.AGREED,
+        default=Status.REQUESTED,
         verbose_name="Estado"
     )
     
-    description = models.TextField(verbose_name="Descripción del trabajo")
+    description = models.TextField(verbose_name="Descripción del trabajo", blank=True)
     agreed_price = models.DecimalField(
         max_digits=12, 
         decimal_places=2, 
-        verbose_name="Precio acordado"
+        verbose_name="Precio acordado",
+        null=True, blank=True
     )
-    address = models.CharField(max_length=255, verbose_name="Dirección de la visita")
+    address = models.CharField(max_length=255, verbose_name="Dirección de la visita", null=True, blank=True)
     
     # Podríamos añadir PointField aquí cuando GDAL esté disponible
     # location = models.PointField(null=True, blank=True)

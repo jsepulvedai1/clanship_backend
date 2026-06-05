@@ -40,10 +40,20 @@ class CreateJob(graphene.Mutation):
         except User.DoesNotExist:
             raise Exception("El profesional no existe o no tiene un perfil válido.")
 
+        # Check if an active job already exists between this customer and professional
+        active_job = Job.objects.filter(
+            customer=user,
+            professional=professional,
+            status__in=[Job.Status.REQUESTED, Job.Status.AGREED, Job.Status.IN_VISIT]
+        ).first()
+
+        if active_job:
+            return CreateJob(job=active_job)
+
         job = Job.objects.create(
             customer=user,
             professional=professional,
-            status=Job.Status.AGREED,
+            status=Job.Status.REQUESTED,
             **kwargs
         )
 
@@ -84,7 +94,7 @@ class UpdateJobStatus(graphene.Mutation):
 
 class Query(graphene.ObjectType):
     job = graphene.Field(JobType, id=graphene.Int(required=True))
-    my_jobs = graphene.List(JobType)
+    my_jobs = graphene.List(JobType, status=graphene.String())
 
     @login_required
     def resolve_job(self, info, id):
@@ -98,10 +108,13 @@ class Query(graphene.ObjectType):
             return None
 
     @login_required
-    def resolve_my_jobs(self, info):
+    def resolve_my_jobs(self, info, status=None):
         user = info.context.user
         from django.db.models import Q
-        return Job.objects.filter(Q(customer=user) | Q(professional=user))
+        queryset = Job.objects.filter(Q(customer=user) | Q(professional=user))
+        if status:
+            queryset = queryset.filter(status=status)
+        return queryset
 
 class Mutation(graphene.ObjectType):
     create_job = CreateJob.Field()

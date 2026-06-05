@@ -1,10 +1,12 @@
 import graphene
 import users.schema
 import jobs.schema
+import chat.schema
 
 class Query(
     users.schema.Query,
     jobs.schema.Query,
+    chat.schema.Query,
     graphene.ObjectType
 ):
     """
@@ -15,18 +17,11 @@ class Query(
 class Mutation(
     users.schema.Mutation,
     jobs.schema.Mutation,
+    chat.schema.Mutation,
     graphene.ObjectType
 ):
     """
     Mutation raíz que combina todas las aplicaciones.
-    """
-    pass
-
-class Subscription(
-    graphene.ObjectType
-):
-    """
-    Subscription raíz para eventos en tiempo real.
     """
     pass
 

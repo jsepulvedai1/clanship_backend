@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: clanship_postgres
+    restart: always
+    environment:
+      - POSTGRES_DB=${DB_NAME:-clanship_db}
+      - POSTGRES_USER=${DB_USER:-clanship_user}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    ports:
+      # Exponer el puerto de PostgreSQL. Debe ser protegido usando el Firewall de DigitalOcean
+      - "5432:5432"
+    volumes:
+      # Persistencia de datos de la base de datos
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - db_net
+
+volumes:
+  pg_data:
+
+networks:
+  db_net:
+    driver: bridge
