@@ -56,3 +56,25 @@ class Job(models.Model):
 
     def __str__(self):
         return f"Trabajo {self.id}: {self.customer.username} - {self.professional.username}"
+
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+
+@receiver(post_save, sender=Job)
+def notify_job_saved(sender, instance, created, **kwargs):
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                f"user_{instance.professional.id}",
+                {
+                    "type": "job_notification",
+                    "event": "job_created" if created else "job_updated",
+                    "job_id": instance.id,
+                    "message": "Nuevo trabajo recibido" if created else "El estado del trabajo ha cambiado"
+                }
+            )
+    except Exception as e:
+        print(f"Error al enviar notificacion por WS: {e}")
