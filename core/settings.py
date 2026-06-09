@@ -168,7 +168,12 @@ if os.environ.get('REDIS_URL'):
         'default': {
             'BACKEND': 'channels_redis.core.RedisChannelLayer',
             'CONFIG': {
-                "hosts": [os.environ.get('REDIS_URL')],
+                "hosts": [{
+                    "address": os.environ.get('REDIS_URL'),
+                    "socket_timeout": 30,
+                    "socket_connect_timeout": 30,
+                    "retry_on_timeout": True,
+                }],
             },
         },
     }
