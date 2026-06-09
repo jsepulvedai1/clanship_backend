@@ -186,6 +186,8 @@ if sys.platform == 'darwin':
     GDAL_LIBRARY_PATH = '/opt/homebrew/opt/gdal/lib/libgdal.dylib'
     GEOS_LIBRARY_PATH = '/opt/homebrew/opt/geos/lib/libgeos_c.dylib'
 
+from django.urls import reverse_lazy
+
 # Configuración de django-unfold (Panel Administrativo Premium)
 UNFOLD = {
     "SITE_TITLE": "Administración de Clanship",
@@ -221,17 +223,17 @@ UNFOLD = {
                     {
                         "title": "Usuarios de Clanship",
                         "icon": "people",
-                        "link": "admin:users_user_changelist",
+                        "link": reverse_lazy("admin:users_user_changelist"),
                     },
                     {
                         "title": "Perfiles Profesionales",
                         "icon": "badge",
-                        "link": "admin:users_professionalprofile_changelist",
+                        "link": reverse_lazy("admin:users_professionalprofile_changelist"),
                     },
                     {
                         "title": "Especialidades/Oficios",
                         "icon": "construction",
-                        "link": "admin:users_specialty_changelist",
+                        "link": reverse_lazy("admin:users_specialty_changelist"),
                     },
                 ],
             },
@@ -242,7 +244,7 @@ UNFOLD = {
                     {
                         "title": "Trabajos y Visitas",
                         "icon": "handyman",
-                        "link": "admin:jobs_job_changelist",
+                        "link": reverse_lazy("admin:jobs_job_changelist"),
                     },
                 ],
             },
@@ -253,12 +255,12 @@ UNFOLD = {
                     {
                         "title": "Salas de Chat",
                         "icon": "forum",
-                        "link": "admin:chat_chatroom_changelist",
+                        "link": reverse_lazy("admin:chat_chatroom_changelist"),
                     },
                     {
                         "title": "Historial de Mensajes",
                         "icon": "chat_bubble",
-                        "link": "admin:chat_message_changelist",
+                        "link": reverse_lazy("admin:chat_message_changelist"),
                     },
                 ],
             },
