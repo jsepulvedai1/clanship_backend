@@ -49,6 +49,11 @@ class User(AbstractUser):
         default=False, 
         verbose_name="Disponible para trabajos"
     )
+    fcm_token = models.CharField(
+        max_length=255,
+        null=True, blank=True,
+        verbose_name="Token Firebase Cloud Messaging"
+    )
     favorite_professionals = models.ManyToManyField(
         'self',
         blank=True,

@@ -61,9 +61,11 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
+from core.firebase import send_push_notification
 
 @receiver(post_save, sender=Job)
 def notify_job_saved(sender, instance, created, **kwargs):
+    # 1. Notificación en tiempo real por WebSockets (para la UI activa)
     try:
         channel_layer = get_channel_layer()
         if channel_layer:
@@ -78,3 +80,30 @@ def notify_job_saved(sender, instance, created, **kwargs):
             )
     except Exception as e:
         print(f"Error al enviar notificacion por WS: {e}")
+
+    # 2. Notificaciones push por Firebase Messaging (FCM)
+    try:
+        if created:
+            # Notificar al profesional de una nueva solicitud
+            prof = instance.professional
+            if prof and prof.fcm_token:
+                client_name = instance.customer.get_full_name() or instance.customer.username
+                send_push_notification(
+                    fcm_token=prof.fcm_token,
+                    title="Nueva solicitud de trabajo",
+                    body=f"Tienes una nueva solicitud de {client_name}.",
+                    data={"event": "job_created", "job_id": instance.id}
+                )
+        elif instance.status == Job.Status.CANCELLED:
+            # Notificar al cliente que su solicitud fue rechazada/cancelada
+            cust = instance.customer
+            if cust and cust.fcm_token:
+                prof_name = instance.professional.get_full_name() or instance.professional.username
+                send_push_notification(
+                    fcm_token=cust.fcm_token,
+                    title="Solicitud Rechazada",
+                    body=f"Tu solicitud con {prof_name} ha sido cancelada o rechazada.",
+                    data={"event": "job_cancelled", "job_id": instance.id}
+                )
+    except Exception as e:
+        print(f"Error al enviar notificacion por Firebase: {e}")

@@ -20,7 +20,7 @@ class UserType(DjangoObjectType):
             "avatar", "latitude", "longitude", "address", 
             "is_available", "professional_profile", "first_name", "last_name",
             "active_jobs", "completed_jobs", "scheduled_jobs", "rejected_jobs", "reviews_count",
-            "is_favorite"
+            "is_favorite", "fcm_token"
         )
 
     def resolve_is_favorite(self, info):
@@ -270,6 +270,22 @@ class ToggleFavorite(graphene.Mutation):
         
         return ToggleFavorite(success=True, is_favorite=is_fav)
 
+class UpdateFcmToken(graphene.Mutation):
+    class Arguments:
+        fcm_token = graphene.String(required=True)
+
+    user = graphene.Field(UserType)
+    success = graphene.Boolean()
+
+    def mutate(self, info, fcm_token):
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception('No autenticado')
+
+        user.fcm_token = fcm_token
+        user.save()
+        return UpdateFcmToken(user=user, success=True)
+
 class Mutation(graphene.ObjectType):
     token_auth = graphql_jwt.ObtainJSONWebToken.Field()
     verify_token = graphql_jwt.Verify.Field()
@@ -278,3 +294,4 @@ class Mutation(graphene.ObjectType):
     register_user = RegisterUser.Field()
     toggle_favorite = ToggleFavorite.Field()
     update_availability = UpdateAvailability.Field()
+    update_fcm_token = UpdateFcmToken.Field()
