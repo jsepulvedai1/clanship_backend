@@ -18,7 +18,7 @@ def initialize_firebase():
     if not cred_path:
         # Fallback to looking for default service account file in project root
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        cred_path = os.path.join(project_root, 'firebase-credentials_prod.json')
+        cred_path = os.path.join(project_root, 'firebase-credentials.json')
 
     if cred_path and os.path.exists(cred_path):
         try:
