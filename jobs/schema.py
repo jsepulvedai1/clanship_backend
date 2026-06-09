@@ -92,6 +92,34 @@ class UpdateJobStatus(graphene.Mutation):
         return UpdateJobStatus(job=job)
 
 
+class MarkJobAsRead(graphene.Mutation):
+    """
+    Mutación para marcar un trabajo como leído por el profesional.
+    """
+    class Arguments:
+        job_id = graphene.Int(required=True)
+
+    success = graphene.Boolean()
+    job = graphene.Field(JobType)
+
+    @login_required
+    def mutate(self, info, job_id):
+        user = info.context.user
+        try:
+            job = Job.objects.get(pk=job_id)
+        except Job.DoesNotExist:
+            raise Exception("El trabajo no existe.")
+
+        # Solo el profesional asignado puede marcarlo como leído
+        if job.professional != user:
+            raise Exception("No tienes permiso para modificar este trabajo.")
+
+        job.is_read = True
+        job.save()
+
+        return MarkJobAsRead(success=True, job=job)
+
+
 class Query(graphene.ObjectType):
     job = graphene.Field(JobType, id=graphene.Int(required=True))
     my_jobs = graphene.List(JobType, status=graphene.String())
@@ -119,3 +147,4 @@ class Query(graphene.ObjectType):
 class Mutation(graphene.ObjectType):
     create_job = CreateJob.Field()
     update_job_status = UpdateJobStatus.Field()
+    mark_job_as_read = MarkJobAsRead.Field()

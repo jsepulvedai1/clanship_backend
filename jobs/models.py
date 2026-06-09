@@ -42,6 +42,7 @@ class Job(models.Model):
         null=True, blank=True
     )
     address = models.CharField(max_length=255, verbose_name="Dirección de la visita", null=True, blank=True)
+    is_read = models.BooleanField(default=False, verbose_name="Leído por el profesional")
     
     # Podríamos añadir PointField aquí cuando GDAL esté disponible
     # location = models.PointField(null=True, blank=True)
