@@ -85,13 +85,14 @@ class Query(graphene.ObjectType):
     professionals = graphene.List(ProfessionalProfileType, specialty_id=graphene.Int())
     my_favorites = graphene.List(UserType)
     
-    # Nueva query para buscar maestros cercanos
+    # Nueva query para buscar maestros cercanos (soporta filtro de texto)
     nearby_professionals = graphene.List(
         UserType,
         latitude=graphene.Float(required=True),
         longitude=graphene.Float(required=True),
         radius_km=graphene.Float(default_value=10000000.0),
-        specialty_id=graphene.Int()
+        specialty_id=graphene.Int(),
+        query=graphene.String()
     )
 
     def resolve_me(self, info):
@@ -115,7 +116,7 @@ class Query(graphene.ObjectType):
             queryset = queryset.filter(specialty_id=specialty_id)
         return queryset
 
-    def resolve_nearby_professionals(self, info, latitude, longitude, radius_km, specialty_id=None):
+    def resolve_nearby_professionals(self, info, latitude, longitude, radius_km, specialty_id=None, query=None):
         from math import cos, radians
         
         # Filtramos usuarios que sean profesionales, estén disponibles y tengan ubicación
@@ -128,6 +129,16 @@ class Query(graphene.ObjectType):
 
         if specialty_id:
             queryset = queryset.filter(professional_profile__specialty_id=specialty_id)
+
+        if query:
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(first_name__icontains=query) |
+                Q(last_name__icontains=query) |
+                Q(username__icontains=query) |
+                Q(professional_profile__specialty__name__icontains=query) |
+                Q(professional_profile__bio__icontains=query)
+            )
 
         # Cálculo aproximado de Bounding Box (1 grado latitud ~ 111km)
         lat_range = radius_km / 111.0

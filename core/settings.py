@@ -16,6 +16,7 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 
 # Application definition
 INSTALLED_APPS = [
+    'unfold',
     'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -57,7 +58,7 @@ ROOT_URLCONF = 'core.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -177,3 +178,88 @@ else:
             'BACKEND': 'channels.layers.InMemoryChannelLayer',
         },
     }
+
+# GIS Library Paths
+GDAL_LIBRARY_PATH = '/opt/homebrew/opt/gdal/lib/libgdal.dylib'
+GEOS_LIBRARY_PATH = '/opt/homebrew/opt/geos/lib/libgeos_c.dylib'
+
+# Configuración de django-unfold (Panel Administrativo Premium)
+UNFOLD = {
+    "SITE_TITLE": "Administración de Clanship",
+    "SITE_HEADER": "Clanship",
+    "SITE_SYMBOL": "handyman",  # Icono para la marca (Material Symbols)
+    "DASHBOARD_CALLBACK": "core.views.dashboard_callback",
+    "SHOW_HISTORY": True,
+    "SHOW_VIEW_ON_SITE": False,
+    "THEME": "dark",  # Oscuro por defecto, pero se puede alternar en la UI
+    "COLORS": {
+        "primary": {
+            "50": "236 253 245",
+            "100": "209 250 229",
+            "200": "167 243 208",
+            "300": "110 231 183",
+            "400": "52 211 153",
+            "500": "16 185 129",  # Color primario Esmeralda/Verde moderno
+            "600": "5 150 105",
+            "700": "4 120 87",
+            "800": "6 95 70",
+            "900": "4 78 56",
+            "950": "2 44 34",
+        },
+    },
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": True,
+        "navigation": [
+            {
+                "title": "Usuarios y Profesionales",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Usuarios de Clanship",
+                        "icon": "people",
+                        "link": "admin:users_user_changelist",
+                    },
+                    {
+                        "title": "Perfiles Profesionales",
+                        "icon": "badge",
+                        "link": "admin:users_professionalprofile_changelist",
+                    },
+                    {
+                        "title": "Especialidades/Oficios",
+                        "icon": "construction",
+                        "link": "admin:users_specialty_changelist",
+                    },
+                ],
+            },
+            {
+                "title": "Negocio y Servicios",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Trabajos y Visitas",
+                        "icon": "handyman",
+                        "link": "admin:jobs_job_changelist",
+                    },
+                ],
+            },
+            {
+                "title": "Soporte y Chat",
+                "separator": True,
+                "items": [
+                    {
+                        "title": "Salas de Chat",
+                        "icon": "forum",
+                        "link": "admin:chat_chatroom_changelist",
+                    },
+                    {
+                        "title": "Historial de Mensajes",
+                        "icon": "chat_bubble",
+                        "link": "admin:chat_message_changelist",
+                    },
+                ],
+            },
+        ],
+    },
+}
+
