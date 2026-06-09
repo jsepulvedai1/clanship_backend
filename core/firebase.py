@@ -13,7 +13,21 @@ def initialize_firebase():
     if _firebase_initialized:
         return True
 
-    # Try to load from env var or look for a json file
+    # 1. Try to load credentials from raw JSON string in environment variable
+    raw_json = os.environ.get('FIREBASE_CREDENTIALS_JSON')
+    if raw_json:
+        try:
+            import json
+            cred_dict = json.loads(raw_json)
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred)
+            _firebase_initialized = True
+            logger.info("Firebase Admin initialized successfully from environment JSON.")
+            return True
+        except Exception as e:
+            logger.error(f"Error initializing Firebase from FIREBASE_CREDENTIALS_JSON env var: {e}")
+
+    # 2. Try to load from GOOGLE_APPLICATION_CREDENTIALS file path
     cred_path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
     if not cred_path:
         # Fallback to looking for default service account file in project root
@@ -25,12 +39,12 @@ def initialize_firebase():
             cred = credentials.Certificate(cred_path)
             firebase_admin.initialize_app(cred)
             _firebase_initialized = True
-            logger.info("Firebase Admin initialized successfully.")
+            logger.info("Firebase Admin initialized successfully from credentials file.")
             return True
         except Exception as e:
             logger.error(f"Error initializing Firebase with credentials file: {e}")
     else:
-        # Try default app initialization (e.g. on GCP environments)
+        # 3. Try default app initialization (e.g. on GCP environments)
         try:
             firebase_admin.initialize_app()
             _firebase_initialized = True
@@ -38,7 +52,7 @@ def initialize_firebase():
             return True
         except Exception as e:
             logger.warning(
-                f"Firebase Admin credentials not found at {cred_path}. Push notifications will run in SIMULATED mode. Error: {e}"
+                f"Firebase Admin credentials not found in env var or at {cred_path}. Push notifications will run in SIMULATED mode. Error: {e}"
             )
 
     return False
