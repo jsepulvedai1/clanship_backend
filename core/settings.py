@@ -180,8 +180,11 @@ else:
     }
 
 # GIS Library Paths
-GDAL_LIBRARY_PATH = '/opt/homebrew/opt/gdal/lib/libgdal.dylib'
-GEOS_LIBRARY_PATH = '/opt/homebrew/opt/geos/lib/libgeos_c.dylib'
+# Se definen solo para macOS local. En Linux/Docker, Django autodetecta las librerías instaladas en el sistema.
+import sys
+if sys.platform == 'darwin':
+    GDAL_LIBRARY_PATH = '/opt/homebrew/opt/gdal/lib/libgdal.dylib'
+    GEOS_LIBRARY_PATH = '/opt/homebrew/opt/geos/lib/libgeos_c.dylib'
 
 # Configuración de django-unfold (Panel Administrativo Premium)
 UNFOLD = {
