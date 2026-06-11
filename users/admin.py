@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from unfold.admin import ModelAdmin, TabularInline
-from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto
+from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto, ProfessionalDocument
 
 class ProfessionalProfileInline(TabularInline):
     model = ProfessionalProfile
@@ -10,6 +10,10 @@ class ProfessionalProfileInline(TabularInline):
 
 class ProfessionalPhotoInline(TabularInline):
     model = ProfessionalPhoto
+    extra = 0
+
+class ProfessionalDocumentInline(TabularInline):
+    model = ProfessionalDocument
     extra = 0
 
 @admin.register(User)
@@ -44,7 +48,7 @@ class ProfessionalPhotoAdmin(ModelAdmin):
 
 @admin.register(ProfessionalProfile)
 class ProfessionalProfileAdmin(ModelAdmin):
-    inlines = [ProfessionalPhotoInline]
+    inlines = [ProfessionalPhotoInline, ProfessionalDocumentInline]
     list_display = ('user', 'specialty', 'hourly_rate', 'rating', 'service_radius', 'is_verified')
     list_filter = ('specialty', 'is_verified')
     filter_horizontal = ('tags',)
@@ -60,5 +64,24 @@ class ProfessionalProfileAdmin(ModelAdmin):
     def make_unverified(self, request, queryset):
         queryset.update(is_verified=False)
         self.message_user(request, "Se ha retirado la verificación a los perfiles seleccionados.")
+
+
+@admin.register(ProfessionalDocument)
+class ProfessionalDocumentAdmin(ModelAdmin):
+    list_display = ('name', 'profile', 'status', 'is_visible', 'uploaded_at')
+    list_filter = ('status', 'is_visible', 'uploaded_at')
+    search_fields = ('name', 'profile__user__username', 'profile__user__email')
+    actions = ['approve_documents', 'reject_documents']
+
+    @admin.action(description="Aprobar documentos seleccionados")
+    def approve_documents(self, request, queryset):
+        queryset.update(status='APPROVED')
+        self.message_user(request, "Los documentos seleccionados han sido APROBADOS.")
+
+    @admin.action(description="Rechazar documentos seleccionados")
+    def reject_documents(self, request, queryset):
+        queryset.update(status='REJECTED')
+        self.message_user(request, "Los documentos seleccionados han sido RECHAZADOS.")
+
 
 

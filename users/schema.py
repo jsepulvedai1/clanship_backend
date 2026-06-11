@@ -1,6 +1,6 @@
 import graphene
 from graphene_django import DjangoObjectType
-from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto
+from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto, ProfessionalDocument
 import graphql_jwt
 from decimal import Decimal
 
@@ -91,10 +91,30 @@ class ProfessionalPhotoType(DjangoObjectType):
             return info.context.build_absolute_uri(self.image.url)
         return None
 
+class ProfessionalDocumentType(DjangoObjectType):
+    file_url = graphene.String()
+
+    class Meta:
+        model = ProfessionalDocument
+        fields = ("id", "name", "is_visible", "status", "rejection_reason", "uploaded_at")
+
+    def resolve_file_url(self, info):
+        if self.file:
+            return info.context.build_absolute_uri(self.file.url)
+        return None
+
 class ProfessionalProfileType(DjangoObjectType):
+    documents = graphene.List(ProfessionalDocumentType)
+
     class Meta:
         model = ProfessionalProfile
         fields = "__all__"
+
+    def resolve_documents(self, info):
+        user = info.context.user
+        if not user.is_anonymous and user == self.user:
+            return self.documents.all()
+        return self.documents.filter(is_visible=True)
 
 class Query(graphene.ObjectType):
     me = graphene.Field(UserType)
@@ -413,6 +433,95 @@ class DeletePortfolioPhoto(graphene.Mutation):
         
         return DeletePortfolioPhoto(success=True, user=user)
 
+class AddProfessionalDocument(graphene.Mutation):
+    class Arguments:
+        name = graphene.String(required=True)
+        file_base64 = graphene.String(required=True)
+
+    success = graphene.Boolean()
+    document = graphene.Field(ProfessionalDocumentType)
+    user = graphene.Field(UserType)
+
+    def mutate(self, info, name, file_base64):
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception('No autenticado')
+            
+        if user.user_type != User.UserType.PROFESSIONAL:
+            raise Exception('El usuario no es un profesional')
+            
+        profile, created = ProfessionalProfile.objects.get_or_create(user=user)
+        
+        if ';base64,' in file_base64:
+            header, file_str = file_base64.split(';base64,')
+            ext = header.split('/')[-1]
+            if 'pdf' in ext:
+                ext = 'pdf'
+            elif 'png' in ext:
+                ext = 'png'
+            elif 'jpeg' in ext or 'jpg' in ext:
+                ext = 'jpg'
+            else:
+                ext = 'jpg'
+        else:
+            file_str = file_base64
+            ext = 'jpg'
+            
+        import time
+        file_name = f"doc_{user.id}_{int(time.time())}.{ext}"
+        
+        doc = ProfessionalDocument(profile=profile, name=name)
+        doc.file.save(file_name, ContentFile(base64.b64decode(file_str)), save=True)
+        
+        return AddProfessionalDocument(success=True, document=doc, user=user)
+
+class ToggleDocumentVisibility(graphene.Mutation):
+    class Arguments:
+        document_id = graphene.ID(required=True)
+        is_visible = graphene.Boolean(required=True)
+
+    success = graphene.Boolean()
+    document = graphene.Field(ProfessionalDocumentType)
+    user = graphene.Field(UserType)
+
+    def mutate(self, info, document_id, is_visible):
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception('No autenticado')
+            
+        try:
+            doc = ProfessionalDocument.objects.get(id=document_id, profile__user=user)
+        except ProfessionalDocument.DoesNotExist:
+            raise Exception('Documento no encontrado o no pertenece a tu perfil')
+            
+        doc.is_visible = is_visible
+        doc.save()
+        
+        return ToggleDocumentVisibility(success=True, document=doc, user=user)
+
+class DeleteProfessionalDocument(graphene.Mutation):
+    class Arguments:
+        document_id = graphene.ID(required=True)
+
+    success = graphene.Boolean()
+    user = graphene.Field(UserType)
+
+    def mutate(self, info, document_id):
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception('No autenticado')
+            
+        try:
+            doc = ProfessionalDocument.objects.get(id=document_id, profile__user=user)
+        except ProfessionalDocument.DoesNotExist:
+            raise Exception('Documento no encontrado o no pertenece a tu perfil')
+            
+        if doc.file:
+            doc.file.delete(save=False)
+        doc.delete()
+        
+        return DeleteProfessionalDocument(success=True, user=user)
+
 class Mutation(graphene.ObjectType):
     token_auth = graphql_jwt.ObtainJSONWebToken.Field()
     verify_token = graphql_jwt.Verify.Field()
@@ -425,3 +534,6 @@ class Mutation(graphene.ObjectType):
     update_professional_profile = UpdateProfessionalProfile.Field()
     add_portfolio_photo = AddPortfolioPhoto.Field()
     delete_portfolio_photo = DeletePortfolioPhoto.Field()
+    add_professional_document = AddProfessionalDocument.Field()
+    toggle_document_visibility = ToggleDocumentVisibility.Field()
+    delete_professional_document = DeleteProfessionalDocument.Field()

@@ -163,3 +163,55 @@ class ProfessionalPhoto(models.Model):
     def __str__(self):
         return f"Foto {self.id} de {self.profile.user.username}"
 
+
+class ProfessionalDocument(models.Model):
+    """
+    Certificados, títulos y documentos profesionales de un maestro.
+    """
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', 'Pendiente'
+        APPROVED = 'APPROVED', 'Aprobado'
+        REJECTED = 'REJECTED', 'Rechazado'
+
+    profile = models.ForeignKey(
+        ProfessionalProfile,
+        on_delete=models.CASCADE,
+        related_name="documents",
+        verbose_name="Perfil Profesional"
+    )
+    name = models.CharField(
+        max_length=100,
+        verbose_name="Nombre del Documento"
+    )
+    file = models.FileField(
+        upload_to='documents/',
+        verbose_name="Archivo del Documento"
+    )
+    is_visible = models.BooleanField(
+        default=True,
+        verbose_name="Visible en Perfil Público"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        verbose_name="Estado de Validación"
+    )
+    rejection_reason = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Motivo de Rechazo"
+    )
+    uploaded_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de Carga"
+    )
+
+    class Meta:
+        verbose_name = "Documento Profesional"
+        verbose_name_plural = "Documentos Profesionales"
+
+    def __str__(self):
+        return f"{self.name} ({self.get_status_display()}) - {self.profile.user.username}"
+
+
