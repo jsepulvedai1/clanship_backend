@@ -81,6 +81,20 @@ class Specialty(models.Model):
         return self.name
 
 
+class Tag(models.Model):
+    """
+    Etiquetas para asociar con profesionales (ej: cableado, grifería, pintura_exterior).
+    """
+    name = models.CharField(max_length=50, unique=True, verbose_name="Nombre")
+
+    class Meta:
+        verbose_name = "Etiqueta"
+        verbose_name_plural = "Etiquetas"
+
+    def __str__(self):
+        return self.name
+
+
 class ProfessionalProfile(models.Model):
     """
     Perfil detallado para usuarios de tipo PROFESIONAL.
@@ -105,6 +119,15 @@ class ProfessionalProfile(models.Model):
     )
     rating = models.FloatField(default=0.0, verbose_name="Calificación")
     is_verified = models.BooleanField(default=False, verbose_name="Verificado")
+    
+    # Redes sociales
+    facebook_url = models.URLField(max_length=255, null=True, blank=True, verbose_name="Facebook URL")
+    instagram_url = models.URLField(max_length=255, null=True, blank=True, verbose_name="Instagram URL")
+    tiktok_url = models.URLField(max_length=255, null=True, blank=True, verbose_name="TikTok URL")
+    
+    # Radio de servicio y etiquetas asociadas
+    service_radius = models.IntegerField(default=10, verbose_name="Radio de servicio (km)")
+    tags = models.ManyToManyField(Tag, blank=True, related_name="professionals", verbose_name="Etiquetas")
 
     class Meta:
         verbose_name = "Perfil Profesional"
@@ -112,3 +135,31 @@ class ProfessionalProfile(models.Model):
 
     def __str__(self):
         return f"Perfil de {self.user.username} - {self.specialty}"
+
+
+class ProfessionalPhoto(models.Model):
+    """
+    Fotografías de trabajos anteriores o portafolio de un profesional.
+    """
+    profile = models.ForeignKey(
+        ProfessionalProfile,
+        on_delete=models.CASCADE,
+        related_name="photos",
+        verbose_name="Perfil Profesional"
+    )
+    image = models.ImageField(
+        upload_to='portfolio/',
+        verbose_name="Imagen de Portafolio"
+    )
+    uploaded_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de carga"
+    )
+
+    class Meta:
+        verbose_name = "Foto de Portafolio"
+        verbose_name_plural = "Fotos de Portafolio"
+
+    def __str__(self):
+        return f"Foto {self.id} de {self.profile.user.username}"
+

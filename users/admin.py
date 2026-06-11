@@ -1,12 +1,16 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from unfold.admin import ModelAdmin, TabularInline
-from .models import User, Specialty, ProfessionalProfile
+from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto
 
 class ProfessionalProfileInline(TabularInline):
     model = ProfessionalProfile
     extra = 0
     raw_id_fields = ('specialty',)
+
+class ProfessionalPhotoInline(TabularInline):
+    model = ProfessionalPhoto
+    extra = 0
 
 @admin.register(User)
 class CustomUserAdmin(ModelAdmin, BaseUserAdmin):
@@ -28,10 +32,22 @@ class SpecialtyAdmin(ModelAdmin):
     list_display = ('name', 'icon')
     search_fields = ('name',)
 
+@admin.register(Tag)
+class TagAdmin(ModelAdmin):
+    list_display = ('name',)
+    search_fields = ('name',)
+
+@admin.register(ProfessionalPhoto)
+class ProfessionalPhotoAdmin(ModelAdmin):
+    list_display = ('id', 'profile', 'image', 'uploaded_at')
+    list_filter = ('uploaded_at',)
+
 @admin.register(ProfessionalProfile)
 class ProfessionalProfileAdmin(ModelAdmin):
-    list_display = ('user', 'specialty', 'hourly_rate', 'rating', 'is_verified')
+    inlines = [ProfessionalPhotoInline]
+    list_display = ('user', 'specialty', 'hourly_rate', 'rating', 'service_radius', 'is_verified')
     list_filter = ('specialty', 'is_verified')
+    filter_horizontal = ('tags',)
     search_fields = ('user__username', 'user__email', 'user__first_name', 'user__last_name')
     actions = ['make_verified', 'make_unverified']
 
@@ -44,4 +60,5 @@ class ProfessionalProfileAdmin(ModelAdmin):
     def make_unverified(self, request, queryset):
         queryset.update(is_verified=False)
         self.message_user(request, "Se ha retirado la verificación a los perfiles seleccionados.")
+
 

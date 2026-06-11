@@ -1,6 +1,6 @@
 import graphene
 from graphene_django import DjangoObjectType
-from .models import User, Specialty, ProfessionalProfile
+from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto
 import graphql_jwt
 from decimal import Decimal
 
@@ -74,6 +74,23 @@ class SpecialtyType(DjangoObjectType):
         model = Specialty
         fields = ("id", "name", "icon")
 
+class TagType(DjangoObjectType):
+    class Meta:
+        model = Tag
+        fields = ("id", "name")
+
+class ProfessionalPhotoType(DjangoObjectType):
+    image_url = graphene.String()
+
+    class Meta:
+        model = ProfessionalPhoto
+        fields = ("id", "image", "image_url", "uploaded_at")
+
+    def resolve_image_url(self, info):
+        if self.image:
+            return info.context.build_absolute_uri(self.image.url)
+        return None
+
 class ProfessionalProfileType(DjangoObjectType):
     class Meta:
         model = ProfessionalProfile
@@ -82,6 +99,7 @@ class ProfessionalProfileType(DjangoObjectType):
 class Query(graphene.ObjectType):
     me = graphene.Field(UserType)
     specialties = graphene.List(SpecialtyType)
+    tags = graphene.List(TagType)
     professionals = graphene.List(ProfessionalProfileType, specialty_id=graphene.Int())
     my_favorites = graphene.List(UserType)
     
@@ -103,6 +121,9 @@ class Query(graphene.ObjectType):
 
     def resolve_specialties(self, info):
         return Specialty.objects.all()
+
+    def resolve_tags(self, info):
+        return Tag.objects.all()
 
     def resolve_my_favorites(self, info):
         user = info.context.user
@@ -286,6 +307,112 @@ class UpdateFcmToken(graphene.Mutation):
         user.save()
         return UpdateFcmToken(user=user, success=True)
 
+class UpdateProfessionalProfile(graphene.Mutation):
+    class Arguments:
+        bio = graphene.String()
+        hourly_rate = graphene.Float()
+        service_radius = graphene.Int()
+        facebook_url = graphene.String()
+        instagram_url = graphene.String()
+        tiktok_url = graphene.String()
+        tag_ids = graphene.List(graphene.ID)
+
+    success = graphene.Boolean()
+    user = graphene.Field(UserType)
+
+    def mutate(self, info, bio=None, hourly_rate=None, service_radius=None, 
+               facebook_url=None, instagram_url=None, tiktok_url=None, tag_ids=None):
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception('No autenticado')
+        
+        if user.user_type != User.UserType.PROFESSIONAL:
+            raise Exception('El usuario no es un profesional')
+            
+        profile, created = ProfessionalProfile.objects.get_or_create(user=user)
+        
+        if bio is not None:
+            profile.bio = bio
+        if hourly_rate is not None:
+            profile.hourly_rate = Decimal(str(hourly_rate))
+        if service_radius is not None:
+            profile.service_radius = service_radius
+        if facebook_url is not None:
+            profile.facebook_url = facebook_url
+        if instagram_url is not None:
+            profile.instagram_url = instagram_url
+        if tiktok_url is not None:
+            profile.tiktok_url = tiktok_url
+            
+        if tag_ids is not None:
+            # tag_ids can be a list of IDs or strings
+            profile.tags.set(tag_ids)
+            
+        profile.save()
+        return UpdateProfessionalProfile(success=True, user=user)
+
+class AddPortfolioPhoto(graphene.Mutation):
+    class Arguments:
+        image_base64 = graphene.String(required=True)
+
+    success = graphene.Boolean()
+    photo = graphene.Field(ProfessionalPhotoType)
+    user = graphene.Field(UserType)
+
+    def mutate(self, info, image_base64):
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception('No autenticado')
+            
+        if user.user_type != User.UserType.PROFESSIONAL:
+            raise Exception('El usuario no es un profesional')
+            
+        profile, created = ProfessionalProfile.objects.get_or_create(user=user)
+        
+        if profile.photos.count() >= 8:
+            raise Exception('No puedes subir más de 8 fotos a tu portafolio')
+            
+        if ';base64,' in image_base64:
+            header, imgstr = image_base64.split(';base64,')
+            ext = header.split('/')[-1]
+        else:
+            imgstr = image_base64
+            ext = 'jpg'
+            
+        import time
+        file_name = f"portfolio_{user.id}_{int(time.time())}.{ext}"
+        
+        photo = ProfessionalPhoto(profile=profile)
+        photo.image.save(file_name, ContentFile(base64.b64decode(imgstr)), save=True)
+        
+        return AddPortfolioPhoto(success=True, photo=photo, user=user)
+
+class DeletePortfolioPhoto(graphene.Mutation):
+    class Arguments:
+        photo_id = graphene.ID(required=True)
+
+    success = graphene.Boolean()
+    user = graphene.Field(UserType)
+
+    def mutate(self, info, photo_id):
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception('No autenticado')
+            
+        if user.user_type != User.UserType.PROFESSIONAL:
+            raise Exception('El usuario no es un profesional')
+            
+        try:
+            photo = ProfessionalPhoto.objects.get(id=photo_id, profile__user=user)
+        except ProfessionalPhoto.DoesNotExist:
+            raise Exception('Foto no encontrada o no pertenece a tu perfil')
+            
+        if photo.image:
+            photo.image.delete(save=False)
+        photo.delete()
+        
+        return DeletePortfolioPhoto(success=True, user=user)
+
 class Mutation(graphene.ObjectType):
     token_auth = graphql_jwt.ObtainJSONWebToken.Field()
     verify_token = graphql_jwt.Verify.Field()
@@ -295,3 +422,6 @@ class Mutation(graphene.ObjectType):
     toggle_favorite = ToggleFavorite.Field()
     update_availability = UpdateAvailability.Field()
     update_fcm_token = UpdateFcmToken.Field()
+    update_professional_profile = UpdateProfessionalProfile.Field()
+    add_portfolio_photo = AddPortfolioPhoto.Field()
+    delete_portfolio_photo = DeletePortfolioPhoto.Field()
