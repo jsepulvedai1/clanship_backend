@@ -71,7 +71,7 @@ class Specialty(models.Model):
     Especialidades de los profesionales (ej: Electricista, Pintor).
     """
     name = models.CharField(max_length=100, unique=True, verbose_name="Nombre")
-    icon = models.CharField(max_length=100, help_text="Nombre del icono (ej: electric_bolt)", null=True, blank=True)
+    icon = models.ImageField(upload_to="specialty_icons/", null=True, blank=True, verbose_name="Icono")
 
     class Meta:
         verbose_name = "Especialidad"
@@ -86,6 +86,12 @@ class Tag(models.Model):
     Etiquetas para asociar con profesionales (ej: cableado, grifería, pintura_exterior).
     """
     name = models.CharField(max_length=50, unique=True, verbose_name="Nombre")
+    synonyms = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Sub-etiquetas ocultas",
+        help_text="Sinónimos o palabras clave de búsqueda separadas por comas (ej: gafiter, plomeria, cañeria)"
+    )
 
     class Meta:
         verbose_name = "Etiqueta"
@@ -108,7 +114,14 @@ class ProfessionalProfile(models.Model):
         Specialty, 
         on_delete=models.SET_NULL, 
         null=True, 
-        related_name="professionals"
+        related_name="professionals",
+        verbose_name="Especialidad Principal"
+    )
+    specialties = models.ManyToManyField(
+        Specialty,
+        blank=True,
+        related_name="profile_specialties",
+        verbose_name="Especialidades"
     )
     bio = models.TextField(max_length=500, verbose_name="Biografía", null=True, blank=True)
     hourly_rate = models.DecimalField(

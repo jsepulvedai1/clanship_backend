@@ -75,14 +75,22 @@ class UserType(DjangoObjectType):
         return 0
 
 class SpecialtyType(DjangoObjectType):
+    icon_url = graphene.String()
+
     class Meta:
         model = Specialty
-        fields = ("id", "name", "icon")
+        fields = ("id", "name", "icon", "icon_url")
+
+    def resolve_icon_url(self, info):
+        if self.icon:
+            return info.context.build_absolute_uri(self.icon.url)
+        return None
 
 class TagType(DjangoObjectType):
     class Meta:
         model = Tag
-        fields = ("id", "name")
+        fields = ("id", "name", "synonyms")
+
 
 class ProfessionalPhotoType(DjangoObjectType):
     image_url = graphene.String()
@@ -178,13 +186,17 @@ class Query(graphene.ObjectType):
 
         if query:
             from django.db.models import Q
+            matching_tags = Tag.objects.filter(
+                Q(name__icontains=query) | Q(synonyms__icontains=query)
+            )
             queryset = queryset.filter(
                 Q(first_name__icontains=query) |
                 Q(last_name__icontains=query) |
                 Q(username__icontains=query) |
                 Q(professional_profile__specialty__name__icontains=query) |
-                Q(professional_profile__bio__icontains=query)
-            )
+                Q(professional_profile__bio__icontains=query) |
+                Q(professional_profile__tags__in=matching_tags)
+            ).distinct()
 
         # Cálculo aproximado de Bounding Box (1 grado latitud ~ 111km)
         lat_range = radius_km / 111.0
@@ -346,12 +358,15 @@ class UpdateProfessionalProfile(graphene.Mutation):
         instagram_url = graphene.String()
         tiktok_url = graphene.String()
         tag_ids = graphene.List(graphene.ID)
+        specialty_id = graphene.Int()
+        specialty_ids = graphene.List(graphene.ID)
 
     success = graphene.Boolean()
     user = graphene.Field(UserType)
 
     def mutate(self, info, bio=None, hourly_rate=None, service_radius=None, 
-               facebook_url=None, instagram_url=None, tiktok_url=None, tag_ids=None):
+               facebook_url=None, instagram_url=None, tiktok_url=None, tag_ids=None,
+               specialty_id=None, specialty_ids=None):
         user = info.context.user
         if user.is_anonymous:
             raise Exception('No autenticado')
@@ -373,10 +388,15 @@ class UpdateProfessionalProfile(graphene.Mutation):
             profile.instagram_url = instagram_url
         if tiktok_url is not None:
             profile.tiktok_url = tiktok_url
+        if specialty_id is not None:
+            profile.specialty_id = specialty_id
             
         if tag_ids is not None:
             # tag_ids can be a list of IDs or strings
             profile.tags.set(tag_ids)
+            
+        if specialty_ids is not None:
+            profile.specialties.set(specialty_ids)
             
         profile.save()
         return UpdateProfessionalProfile(success=True, user=user)
