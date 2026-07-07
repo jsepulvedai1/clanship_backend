@@ -3,6 +3,11 @@ from graphene_django import DjangoObjectType
 from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto, ProfessionalDocument
 import graphql_jwt
 from decimal import Decimal
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode
+from django.utils.encoding import force_bytes
+from django.core.mail import send_mail
+
 
 class UserType(DjangoObjectType):
     avatar_url = graphene.String()
@@ -267,6 +272,11 @@ class RegisterUser(graphene.Mutation):
         )
         user.set_password(password)
         user.save()
+
+        if user_type == 'PROFESSIONAL':
+            from users.models import ProfessionalProfile
+            ProfessionalProfile.objects.get_or_create(user=user)
+
         return RegisterUser(user=user, success=True)
 
 class UpdateAvailability(graphene.Mutation):
@@ -522,6 +532,47 @@ class DeleteProfessionalDocument(graphene.Mutation):
         
         return DeleteProfessionalDocument(success=True, user=user)
 
+class RequestPasswordReset(graphene.Mutation):
+    class Arguments:
+        email = graphene.String(required=True)
+
+    success = graphene.Boolean()
+    message = graphene.String()
+
+    def mutate(self, info, email):
+        try:
+            user = User.objects.get(email=email)
+            
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            
+            domain = info.context.get_host()
+            protocol = 'https' if info.context.is_secure() else 'http'
+            reset_url = f"{protocol}://{domain}/auth/reset/{uid}/{token}/"
+            
+            subject = "Recuperación de contraseña - ClanShip"
+            message_content = (
+                f"Hola {user.first_name},\n\n"
+                f"Para restablecer tu contraseña en ClanShip, haz clic en el siguiente enlace:\n"
+                f"{reset_url}\n\n"
+                f"Este enlace es válido solo por tiempo limitado.\n"
+                f"Si no solicitaste este cambio, por favor ignora este mensaje.\n\n"
+                f"Atentamente,\n"
+                f"El equipo de ClanShip"
+            )
+            
+            send_mail(
+                subject,
+                message_content,
+                None,
+                [user.email],
+                fail_silently=False,
+            )
+            
+            return RequestPasswordReset(success=True, message="Se ha enviado un correo con las instrucciones.")
+        except User.DoesNotExist:
+            return RequestPasswordReset(success=True, message="Se ha enviado un correo con las instrucciones.")
+
 class Mutation(graphene.ObjectType):
     token_auth = graphql_jwt.ObtainJSONWebToken.Field()
     verify_token = graphql_jwt.Verify.Field()
@@ -537,3 +588,5 @@ class Mutation(graphene.ObjectType):
     add_professional_document = AddProfessionalDocument.Field()
     toggle_document_visibility = ToggleDocumentVisibility.Field()
     delete_professional_document = DeleteProfessionalDocument.Field()
+    request_password_reset = RequestPasswordReset.Field()
+
