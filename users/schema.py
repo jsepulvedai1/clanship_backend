@@ -1,6 +1,6 @@
 import graphene
 from graphene_django import DjangoObjectType
-from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto, ProfessionalDocument
+from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan
 import graphql_jwt
 from decimal import Decimal
 from django.contrib.auth.tokens import default_token_generator
@@ -104,6 +104,12 @@ class ProfessionalPhotoType(DjangoObjectType):
             return info.context.build_absolute_uri(self.image.url)
         return None
 
+class SubscriptionPlanType(DjangoObjectType):
+    class Meta:
+        model = SubscriptionPlan
+        fields = ("id", "name", "description", "price", "duration_days")
+
+
 class ProfessionalDocumentType(DjangoObjectType):
     file_url = graphene.String()
 
@@ -135,6 +141,7 @@ class Query(graphene.ObjectType):
     tags = graphene.List(TagType)
     professionals = graphene.List(ProfessionalProfileType, specialty_id=graphene.Int())
     my_favorites = graphene.List(UserType)
+    subscription_plans = graphene.List(SubscriptionPlanType)
     
     # Nueva query para buscar maestros cercanos (soporta filtro de texto)
     nearby_professionals = graphene.List(
@@ -163,6 +170,9 @@ class Query(graphene.ObjectType):
         if user.is_anonymous:
             raise Exception('No autenticado')
         return user.favorite_professionals.all()
+
+    def resolve_subscription_plans(self, info):
+        return SubscriptionPlan.objects.all()
 
     def resolve_professionals(self, info, specialty_id=None):
         queryset = ProfessionalProfile.objects.filter(is_verified=True)
@@ -593,6 +603,36 @@ class RequestPasswordReset(graphene.Mutation):
         except User.DoesNotExist:
             return RequestPasswordReset(success=True, message="Se ha enviado un correo con las instrucciones.")
 
+
+class SubscribeToPlan(graphene.Mutation):
+    class Arguments:
+        plan_id = graphene.ID(required=True)
+
+    success = graphene.Boolean()
+    profile = graphene.Field(ProfessionalProfileType)
+
+    def mutate(self, info, plan_id):
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception('No autenticado')
+        if user.user_type != User.UserType.PROFESSIONAL:
+            raise Exception('El usuario debe ser un profesional')
+
+        try:
+            profile = user.professional_profile
+        except ProfessionalProfile.DoesNotExist:
+            raise Exception('Perfil profesional no encontrado')
+
+        try:
+            plan = SubscriptionPlan.objects.get(pk=plan_id)
+        except SubscriptionPlan.DoesNotExist:
+            raise Exception('El plan especificado no existe')
+
+        profile.plan = plan
+        profile.save()
+
+        return SubscribeToPlan(success=True, profile=profile)
+
 class Mutation(graphene.ObjectType):
     token_auth = graphql_jwt.ObtainJSONWebToken.Field()
     verify_token = graphql_jwt.Verify.Field()
@@ -609,4 +649,5 @@ class Mutation(graphene.ObjectType):
     toggle_document_visibility = ToggleDocumentVisibility.Field()
     delete_professional_document = DeleteProfessionalDocument.Field()
     request_password_reset = RequestPasswordReset.Field()
+    subscribe_to_plan = SubscribeToPlan.Field()
 

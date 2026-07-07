@@ -101,6 +101,23 @@ class Tag(models.Model):
         return self.name
 
 
+class SubscriptionPlan(models.Model):
+    """
+    Planes de suscripción para los profesionales.
+    """
+    name = models.CharField(max_length=100, verbose_name="Nombre")
+    description = models.TextField(blank=True, null=True, verbose_name="Descripción")
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Precio")
+    duration_days = models.IntegerField(default=30, verbose_name="Duración (días)")
+
+    class Meta:
+        verbose_name = "Plan de Suscripción"
+        verbose_name_plural = "Planes de Suscripción"
+
+    def __str__(self):
+        return f"{self.name} (${self.price})"
+
+
 class ProfessionalProfile(models.Model):
     """
     Perfil detallado para usuarios de tipo PROFESIONAL.
@@ -122,6 +139,14 @@ class ProfessionalProfile(models.Model):
         blank=True,
         related_name="profile_specialties",
         verbose_name="Especialidades"
+    )
+    plan = models.ForeignKey(
+        SubscriptionPlan,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="professionals",
+        verbose_name="Plan de Suscripción"
     )
     bio = models.TextField(max_length=500, verbose_name="Biografía", null=True, blank=True)
     hourly_rate = models.DecimalField(
@@ -148,6 +173,19 @@ class ProfessionalProfile(models.Model):
 
     def __str__(self):
         return f"Perfil de {self.user.username} - {self.specialty}"
+
+    def save(self, *args, **kwargs):
+        if not self.plan_id:
+            plan, _ = SubscriptionPlan.objects.get_or_create(
+                name="Plan Base",
+                defaults={
+                    "description": "Plan básico gratuito",
+                    "price": 0.00,
+                    "duration_days": 3650,
+                }
+            )
+            self.plan = plan
+        super().save(*args, **kwargs)
 
 
 class ProfessionalPhoto(models.Model):

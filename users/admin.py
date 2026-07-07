@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from unfold.admin import ModelAdmin, TabularInline
-from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto, ProfessionalDocument
+from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan
 
 class ProfessionalProfileInline(TabularInline):
     model = ProfessionalProfile
@@ -41,6 +41,12 @@ class TagAdmin(ModelAdmin):
     list_display = ('name',)
     search_fields = ('name',)
 
+@admin.register(SubscriptionPlan)
+class SubscriptionPlanAdmin(ModelAdmin):
+    list_display = ('name', 'price', 'duration_days')
+    search_fields = ('name',)
+    list_filter = ('price', 'duration_days')
+
 @admin.register(ProfessionalPhoto)
 class ProfessionalPhotoAdmin(ModelAdmin):
     list_display = ('id', 'profile', 'image', 'uploaded_at')
@@ -49,8 +55,8 @@ class ProfessionalPhotoAdmin(ModelAdmin):
 @admin.register(ProfessionalProfile)
 class ProfessionalProfileAdmin(ModelAdmin):
     inlines = [ProfessionalPhotoInline, ProfessionalDocumentInline]
-    list_display = ('user', 'specialty', 'hourly_rate', 'rating', 'service_radius', 'is_verified')
-    list_filter = ('specialty', 'is_verified')
+    list_display = ('user', 'specialty', 'plan', 'hourly_rate', 'rating', 'service_radius', 'is_verified')
+    list_filter = ('specialty', 'plan', 'is_verified')
     filter_horizontal = ('tags',)
     search_fields = ('user__username', 'user__email', 'user__first_name', 'user__last_name')
     actions = ['make_verified', 'make_unverified']
