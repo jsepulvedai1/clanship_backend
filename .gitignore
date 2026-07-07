@@ -124,6 +124,9 @@ env.bak/
 venv.bak/
 venvclanship/
 venv_clanship/
+.DS_Store
+DS_Store
+
 
 # Spyder project settings
 .spyderproject

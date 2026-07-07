@@ -108,6 +108,7 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 STATIC_URL = 'static/'
+STATICFILES_DIRS = [BASE_DIR / 'static']
 
 # Esta línea le dice a Django dónde reunir todos los estáticos del proyecto
 STATIC_ROOT = BASE_DIR / 'staticfiles'
@@ -198,10 +199,21 @@ UNFOLD = {
     "SITE_TITLE": "Administración de Clanship",
     "SITE_HEADER": "Clanship",
     "SITE_SYMBOL": "handyman",  # Icono para la marca (Material Symbols)
+    "SITE_ICON": {
+        "light": lambda request: "/static/app_icon.jpg",
+        "dark": lambda request: "/static/app_icon.jpg",
+    },
+    "SITE_LOGO": {
+        "light": lambda request: "/static/app_icon.jpg",
+        "dark": lambda request: "/static/app_icon.jpg",
+    },
+    "STYLES": [
+        lambda request: "/static/css/admin_theme.css",
+    ],
     "DASHBOARD_CALLBACK": "core.views.dashboard_callback",
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": False,
-    "THEME": "dark",  # Oscuro por defecto, pero se puede alternar en la UI
+    "THEME": "light",  # Changed to light to match Blanco Humo background
     "COLORS": {
         "primary": {
             "50": "236 253 245",

@@ -1,0 +1,61 @@
+/* Custom Admin Theme Colors */
+:root {
+  /* Azul profundo: #0D2B45 */
+  /* Verde esmeralda: #0B6E4F */
+  /* Naranjo activo: #F28C28 */
+  /* Blanco humo: #F7F7F5 */
+  /* Gris grafito: #2E3135 */
+}
+
+/* Override Unfold primary colors with Azul profundo */
+html[data-theme="light"], html[data-theme="dark"], html {
+    --color-primary-500: 13 43 69 !important; /* Azul profundo */
+    --color-primary-600: 11 110 79 !important; /* Verde esmeralda para hover */
+    --color-primary-700: 11 110 79 !important; 
+    
+    /* Variables adicionales si se requiere forzar background o textos */
+    --bg-base: #F7F7F5 !important; /* Blanco humo */
+    --bg-surface: #ffffff !important;
+    --text-base: #2E3135 !important; /* Gris grafito */
+    
+    /* Acentos para botones o tags en naranjo */
+    --color-accent-500: 242 140 40 !important;
+}
+
+/* Personalizar barra lateral y header para que usen Azul profundo */
+#sidebar {
+    background-color: #0D2B45 !important;
+}
+
+#sidebar * {
+    color: #F7F7F5 !important; /* Blanco humo text on sidebar */
+}
+
+/* Hover en sidebar a Verde Esmeralda */
+#sidebar a:hover {
+    background-color: #0B6E4F !important;
+    color: #F7F7F5 !important;
+}
+
+/* Botones y acciones principales */
+button.bg-primary-600, a.bg-primary-600 {
+    background-color: #0D2B45 !important;
+    color: #F7F7F5 !important;
+}
+
+button.bg-primary-600:hover, a.bg-primary-600:hover {
+    background-color: #0B6E4F !important; /* Verde esmeralda */
+}
+
+/* Cajas e inputs */
+input:focus, select:focus, textarea:focus {
+    border-color: #F28C28 !important; /* Naranjo activo focus */
+    --tw-ring-color: #F28C28 !important;
+}
+
+/* Ajuste del logo para que se vea bien en el header */
+img.logo, .logo img, #site-name img {
+    border-radius: 8px;
+    object-fit: contain;
+    max-height: 40px;
+}
