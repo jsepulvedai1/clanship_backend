@@ -66,12 +66,27 @@ class SendMessage(graphene.Mutation):
 class GetOrCreateChatRoom(graphene.Mutation):
     class Arguments:
         professional_id = graphene.Int(required=True)
+        job_id = graphene.Int(required=False)
 
     room = graphene.Field(ChatRoomType)
 
     @login_required
-    def mutate(self, info, professional_id):
+    def mutate(self, info, professional_id, job_id=None):
         user = info.context.user
+        
+        if job_id:
+            from jobs.models import Job
+            try:
+                job = Job.objects.get(pk=job_id)
+            except Job.DoesNotExist:
+                raise Exception("El trabajo no existe.")
+            room, created = ChatRoom.objects.get_or_create(
+                customer=user,
+                professional=job.professional,
+                job=job
+            )
+            return GetOrCreateChatRoom(room=room)
+
         try:
             professional = User.objects.get(pk=professional_id, user_type='PROFESSIONAL')
         except User.DoesNotExist:
@@ -79,22 +94,37 @@ class GetOrCreateChatRoom(graphene.Mutation):
 
         room, created = ChatRoom.objects.get_or_create(
             customer=user,
-            professional=professional
+            professional=professional,
+            job=None
         )
         return GetOrCreateChatRoom(room=room)
 
 class GetOrCreateChatRoomWithCustomer(graphene.Mutation):
     class Arguments:
         customer_id = graphene.Int(required=True)
+        job_id = graphene.Int(required=False)
 
     room = graphene.Field(ChatRoomType)
 
     @login_required
-    def mutate(self, info, customer_id):
+    def mutate(self, info, customer_id, job_id=None):
         user = info.context.user
         if user.user_type != 'PROFESSIONAL':
             raise Exception("Solo los profesionales pueden iniciar un chat con un cliente usando esta mutación.")
             
+        if job_id:
+            from jobs.models import Job
+            try:
+                job = Job.objects.get(pk=job_id)
+            except Job.DoesNotExist:
+                raise Exception("El trabajo no existe.")
+            room, created = ChatRoom.objects.get_or_create(
+                customer=job.customer,
+                professional=user,
+                job=job
+            )
+            return GetOrCreateChatRoomWithCustomer(room=room)
+
         try:
             customer = User.objects.get(pk=customer_id)
         except User.DoesNotExist:
@@ -102,7 +132,8 @@ class GetOrCreateChatRoomWithCustomer(graphene.Mutation):
 
         room, created = ChatRoom.objects.get_or_create(
             customer=customer,
-            professional=user
+            professional=user,
+            job=None
         )
         return GetOrCreateChatRoomWithCustomer(room=room)
 

@@ -15,12 +15,19 @@ class ChatRoom(models.Model):
         on_delete=models.CASCADE, 
         related_name="professional_chats"
     )
+    job = models.OneToOneField(
+        "jobs.Job",
+        on_delete=models.CASCADE,
+        related_name="chat_room",
+        null=True,
+        blank=True,
+        verbose_name="Trabajo asociado"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Sala de Chat"
         verbose_name_plural = "Salas de Chat"
-        unique_together = ('customer', 'professional')
 
     def __str__(self):
         return f"Chat: {self.customer.username} & {self.professional.username}"

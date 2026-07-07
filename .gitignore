@@ -123,6 +123,7 @@ ENV/
 env.bak/
 venv.bak/
 venvclanship/
+venv_clanship/
 
 # Spyder project settings
 .spyderproject

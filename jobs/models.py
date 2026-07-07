@@ -35,6 +35,10 @@ class Job(models.Model):
     )
     
     description = models.TextField(verbose_name="Descripción del trabajo", blank=True)
+    enriched_details = models.TextField(null=True, blank=True, verbose_name="Detalles adicionales")
+    additional_photo = models.ImageField(upload_to="job_photos/", null=True, blank=True, verbose_name="Foto adicional")
+    notification_lead_minutes = models.IntegerField(default=60, verbose_name="Minutos de aviso push previo")
+    lead_notification_sent = models.BooleanField(default=False, verbose_name="Notificación de aviso previo enviada")
     agreed_price = models.DecimalField(
         max_digits=12, 
         decimal_places=2, 

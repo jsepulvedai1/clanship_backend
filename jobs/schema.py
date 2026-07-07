@@ -7,9 +7,16 @@ from graphql_jwt.decorators import login_required
 User = get_user_model()
 
 class JobType(DjangoObjectType):
+    additional_photo_url = graphene.String()
+
     class Meta:
         model = Job
         fields = "__all__"
+
+    def resolve_additional_photo_url(self, info):
+        if self.additional_photo:
+            return info.context.build_absolute_uri(self.additional_photo.url)
+        return None
 
 class CreateJob(graphene.Mutation):
     """
@@ -48,6 +55,12 @@ class CreateJob(graphene.Mutation):
         ).first()
 
         if active_job:
+            from chat.models import ChatRoom
+            ChatRoom.objects.get_or_create(
+                customer=user,
+                professional=professional,
+                job=active_job
+            )
             return CreateJob(job=active_job)
 
         job = Job.objects.create(
@@ -55,6 +68,13 @@ class CreateJob(graphene.Mutation):
             professional=professional,
             status=Job.Status.REQUESTED,
             **kwargs
+        )
+
+        from chat.models import ChatRoom
+        ChatRoom.objects.create(
+            customer=user,
+            professional=professional,
+            job=job
         )
 
         return CreateJob(job=job)
@@ -144,7 +164,101 @@ class Query(graphene.ObjectType):
             queryset = queryset.filter(status=status)
         return queryset
 
+import base64
+from django.core.files.base import ContentFile
+
+class EnrichJob(graphene.Mutation):
+    """
+    Mutación para que el cliente enriquezca la solicitud de trabajo con detalles y fotos.
+    """
+    class Arguments:
+        job_id = graphene.Int(required=True)
+        enriched_details = graphene.String(required=True)
+        photo_base64 = graphene.String(required=False)
+
+    success = graphene.Boolean()
+    job = graphene.Field(JobType)
+
+    @login_required
+    def mutate(self, info, job_id, enriched_details, photo_base64=None):
+        user = info.context.user
+        try:
+            job = Job.objects.get(pk=job_id)
+        except Job.DoesNotExist:
+            raise Exception("El trabajo no existe.")
+
+        if job.customer != user:
+            raise Exception("No tienes permiso para modificar este trabajo.")
+
+        job.enriched_details = enriched_details
+
+        if photo_base64:
+            try:
+                format, imgstr = photo_base64.split(';base64,') 
+                ext = format.split('/')[-1] 
+            except ValueError:
+                imgstr = photo_base64
+                ext = "png"
+            
+            data = ContentFile(base64.b64decode(imgstr), name=f"job_{job_id}_additional.{ext}")
+            job.additional_photo = data
+
+        job.save()
+        return EnrichJob(success=True, job=job)
+
+
+class ScheduleJobVisit(graphene.Mutation):
+    """
+    Mutación para que el profesional agende/programe la visita y el aviso push.
+    """
+    class Arguments:
+        job_id = graphene.Int(required=True)
+        scheduled_date = graphene.Date(required=True)
+        scheduled_time = graphene.Time(required=True)
+        notification_lead_minutes = graphene.Int(required=True)
+
+    success = graphene.Boolean()
+    job = graphene.Field(JobType)
+
+    @login_required
+    def mutate(self, info, job_id, scheduled_date, scheduled_time, notification_lead_minutes):
+        user = info.context.user
+        try:
+            job = Job.objects.get(pk=job_id)
+        except Job.DoesNotExist:
+            raise Exception("El trabajo no existe.")
+
+        if job.professional != user:
+            raise Exception("No tienes permiso para programar esta visita.")
+
+        job.scheduled_date = scheduled_date
+        job.scheduled_time = scheduled_time
+        job.notification_lead_minutes = notification_lead_minutes
+        job.status = Job.Status.AGREED
+        job.lead_notification_sent = False  # Reset reminder flag
+        job.save()
+
+        # Notificar al cliente de la programación de la visita
+        try:
+            cust = job.customer
+            if cust and cust.fcm_token:
+                prof_name = job.professional.get_full_name() or job.professional.username
+                from core.firebase import send_push_notification
+                send_push_notification(
+                    fcm_token=cust.fcm_token,
+                    title="Visita Programada",
+                    body=f"El profesional {prof_name} ha programado la visita para el {scheduled_date} a las {scheduled_time}.",
+                    data={"event": "job_updated", "job_id": job.id}
+                )
+        except Exception as e:
+            print(f"Error al enviar notificacion push: {e}")
+
+        return ScheduleJobVisit(success=True, job=job)
+
+
 class Mutation(graphene.ObjectType):
     create_job = CreateJob.Field()
     update_job_status = UpdateJobStatus.Field()
     mark_job_as_read = MarkJobAsRead.Field()
+    enrich_job = EnrichJob.Field()
+    schedule_job_visit = ScheduleJobVisit.Field()
