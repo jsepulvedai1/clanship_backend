@@ -1,61 +1,133 @@
-/* Custom Admin Theme Colors */
+/* Modern and Sober Theme for Clanship Admin */
+
+/* ==========================================
+   1. COLOR VARIABLES OVERRIDES
+   ========================================== */
+
+/* LIGHT MODE */
 :root {
-  /* Azul profundo: #0D2B45 */
-  /* Verde esmeralda: #0B6E4F */
-  /* Naranjo activo: #F28C28 */
-  /* Blanco humo: #F7F7F5 */
-  /* Gris grafito: #2E3135 */
+  /* Primary: Azul Profundo (#0D2B45) */
+  --color-primary-50: 240 244 248;
+  --color-primary-100: 217 226 236;
+  --color-primary-200: 185 201 219;
+  --color-primary-300: 142 166 193;
+  --color-primary-400: 98 127 161;
+  --color-primary-500: 13 43 69 !important;       /* #0D2B45 */
+  --color-primary-600: 10 33 53 !important;
+  --color-primary-700: 8 27 43 !important;
+  --color-primary-800: 5 18 29 !important;
+  --color-primary-900: 3 10 16 !important;
+  --color-primary-950: 1 5 8 !important;
+
+  /* Base: Blanco humo (#F7F7F5) to Gris grafito (#2E3135) */
+  --color-base-50: 247 247 245 !important;       /* #F7F7F5 */
+  --color-base-100: 240 240 238 !important;
+  --color-base-200: 226 227 230 !important;       /* Borders */
+  --color-base-300: 186 189 194 !important;
+  --color-base-400: 120 123 128 !important;
+  --color-base-500: 90 93 98 !important;
+  --color-base-600: 70 73 78 !important;
+  --color-base-700: 46 49 53 !important;         /* #2E3135 */
+  --color-base-800: 36 39 43 !important;
+  --color-base-900: 26 29 33 !important;
+  --color-base-950: 16 19 23 !important;
+
+  --color-font-subtle-light: 120 123 128 !important;
+  --color-font-default-light: 46 49 53 !important;
+  --color-font-important-light: 13 43 69 !important;
 }
 
-/* Override Unfold primary colors with Azul profundo */
-html[data-theme="light"], html[data-theme="dark"], html {
-    --color-primary-500: 13 43 69 !important; /* Azul profundo */
-    --color-primary-600: 11 110 79 !important; /* Verde esmeralda para hover */
-    --color-primary-700: 11 110 79 !important; 
-    
-    /* Variables adicionales si se requiere forzar background o textos */
-    --bg-base: #F7F7F5 !important; /* Blanco humo */
-    --bg-surface: #ffffff !important;
-    --text-base: #2E3135 !important; /* Gris grafito */
-    
-    /* Acentos para botones o tags en naranjo */
-    --color-accent-500: 242 140 40 !important;
+/* DARK MODE (Sober Zinc/Graphite Dark Theme) */
+html.dark, [data-theme="dark"] {
+  /* Primary: Verde Esmeralda (#0B6E4F) - Much more premium in dark mode than blue */
+  --color-primary-50: 236 253 245;
+  --color-primary-100: 209 250 229;
+  --color-primary-200: 167 243 208;
+  --color-primary-300: 110 231 183;
+  --color-primary-400: 52 211 153;
+  --color-primary-500: 11 110 79 !important;      /* #0B6E4F */
+  --color-primary-600: 9 95 68 !important;
+  --color-primary-700: 7 78 56 !important;
+  --color-primary-800: 5 62 44 !important;
+  --color-primary-900: 4 47 34 !important;
+  --color-primary-950: 2 31 22 !important;
+
+  /* Base: Muted dark graphite/zinc (Not pitch black, not bright blue) */
+  --color-base-50: 247 247 245 !important;
+  --color-base-100: 60 63 68 !important;
+  --color-base-200: 46 49 53 !important;          /* Borders: #2E3135 */
+  --color-base-300: 36 39 43 !important;
+  --color-base-400: 156 163 175 !important;
+  --color-base-500: 107 114 128 !important;
+  --color-base-600: 75 85 99 !important;
+  --color-base-700: 24 25 28 !important;          /* Card Background */
+  --color-base-800: 18 19 22 !important;          /* Sidebar Background */
+  --color-base-900: 13 14 16 !important;          /* General App Background */
+  --color-base-950: 9 10 11 !important;
+
+  --color-font-subtle-dark: 156 163 175 !important;
+  --color-font-default-dark: 247 247 245 !important; /* Blanco humo */
+  --color-font-important-dark: 255 255 255 !important;
 }
 
-/* Personalizar barra lateral y header para que usen Azul profundo */
+/* ==========================================
+   2. INTERFACE FINE-TUNING & SOBER LOOKS
+   ========================================== */
+
+/* Clean up borders and boxes */
+.border-base-200 {
+  border-color: rgba(var(--color-base-200), 0.5) !important;
+}
+
+/* Sidebar styling - more subtle and integrated */
 #sidebar {
-    background-color: #0D2B45 !important;
+  border-right: 1px solid rgba(var(--color-base-200), 0.3) !important;
+  transition: all 0.2s ease-in-out;
 }
 
-#sidebar * {
-    color: #F7F7F5 !important; /* Blanco humo text on sidebar */
+/* Active navigation item indicator */
+#sidebar a.bg-primary-500\/10,
+#sidebar a.bg-primary-600\/10,
+#sidebar a.bg-primary-500,
+#sidebar a.bg-primary-600 {
+  background-color: rgba(var(--color-primary-500), 0.12) !important;
+  color: rgb(var(--color-primary-500)) !important;
+  border-left: 3px solid rgb(var(--color-primary-500)) !important;
+  border-radius: 0 6px 6px 0 !important;
 }
 
-/* Hover en sidebar a Verde Esmeralda */
-#sidebar a:hover {
-    background-color: #0B6E4F !important;
-    color: #F7F7F5 !important;
+/* Subtle focus indicators using Naranjo activo (#F28C28) */
+input:focus, select:focus, textarea:focus, button:focus {
+  --tw-ring-color: rgb(242 140 40) !important;
+  border-color: rgb(242 140 40) !important;
 }
 
-/* Botones y acciones principales */
-button.bg-primary-600, a.bg-primary-600 {
-    background-color: #0D2B45 !important;
-    color: #F7F7F5 !important;
+/* Buttons custom polish */
+button, .button, a.bg-primary-600 {
+  border-radius: 6px !important;
+  transition: all 0.15s ease-in-out !important;
 }
 
-button.bg-primary-600:hover, a.bg-primary-600:hover {
-    background-color: #0B6E4F !important; /* Verde esmeralda */
+/* Adjust table layouts for premium look */
+table th {
+  font-weight: 600 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  font-size: 0.75rem !important;
+  color: rgb(var(--color-base-400)) !important;
+  background-color: rgba(var(--color-base-100), 0.2) !important;
 }
 
-/* Cajas e inputs */
-input:focus, select:focus, textarea:focus {
-    border-color: #F28C28 !important; /* Naranjo activo focus */
-    --tw-ring-color: #F28C28 !important;
+table tr {
+  transition: background-color 0.15s ease !important;
 }
 
-/* Ajuste del logo para que se vea bien en el header */
-img.logo, .logo img, #site-name img {
-    border-radius: 8px;
-    object-fit: contain;
-    max-height: 40px;
+table tr:hover {
+  background-color: rgba(var(--color-base-100), 0.15) !important;
+}
+
+/* Logo image polish */
+#site-name img, .logo img {
+  border-radius: 4px;
+  filter: contrast(1.05);
 }

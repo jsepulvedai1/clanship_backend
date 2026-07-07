@@ -213,7 +213,7 @@ UNFOLD = {
     "DASHBOARD_CALLBACK": "core.views.dashboard_callback",
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": False,
-    "THEME": "light",  # Changed to light to match Blanco Humo background
+    "THEME": "dark",  # Oscuro por defecto, pero se puede alternar en la UI
     "COLORS": {
         "primary": {
             "50": "236 253 245",
