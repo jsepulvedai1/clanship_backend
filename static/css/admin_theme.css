@@ -4,37 +4,70 @@
    1. CSS VARIABLE OVERRIDES (Tailwind Engine)
    ========================================== */
 
+/* LIGHT MODE */
+:root {
+  /* Primary: Azul Profundo (#0D2B45) */
+  --color-primary-50: #f0f4f8 !important;
+  --color-primary-100: #d9e2ec !important;
+  --color-primary-200: #b9c5d9 !important;
+  --color-primary-300: #8ea6c1 !important;
+  --color-primary-400: #627fa1 !important;
+  --color-primary-500: #0D2B45 !important;
+  --color-primary-600: #0a2135 !important;
+  --color-primary-700: #081b2b !important;
+  --color-primary-800: #05121d !important;
+  --color-primary-900: #030a10 !important;
+  --color-primary-950: #010508 !important;
+
+  /* Base: Blanco humo (#F7F7F5) to Gris grafito (#2E3135) */
+  --color-base-50: #F7F7F5 !important;
+  --color-base-100: #ebebe6 !important;
+  --color-base-200: #dcdcda !important;
+  --color-base-300: #b4b4af !important;
+  --color-base-400: #82827d !important;
+  --color-base-500: #5a5a55 !important;
+  --color-base-600: #464953 !important;
+  --color-base-700: #2E3135 !important;
+  --color-base-800: #24272b !important;
+  --color-base-900: #1a1d21 !important;
+  --color-base-950: #101317 !important;
+
+  --color-font-subtle-light: #82827d !important;
+  --color-font-default-light: #2E3135 !important;
+  --color-font-important-light: #0D2B45 !important;
+}
+
 /* DARK MODE */
 html.dark, [data-theme="dark"] {
   /* Primary: Vibrant Emerald Green (#10B981) */
-  --color-primary-50: 236 253 245;
-  --color-primary-100: 209 250 229;
-  --color-primary-200: 167 243 208;
-  --color-primary-300: 110 231 183;
-  --color-primary-400: 52 211 153;
-  --color-primary-500: 16 185 129 !important;      /* #10B981 */
-  --color-primary-600: 5 150 105 !important;
-  --color-primary-700: 4 120 87 !important;
-  --color-primary-800: 6 95 70 !important;
-  --color-primary-900: 4 78 56 !important;
-  --color-primary-950: 2 44 34 !important;
+  --color-primary-50: #ecfdf5 !important;
+  --color-primary-100: #d1fae5 !important;
+  --color-primary-200: #a7f3d0 !important;
+  --color-primary-300: #6ee7b7 !important;
+  --color-primary-400: #34d199 !important;
+  --color-primary-500: #10B981 !important;      /* #10B981 */
+  --color-primary-600: #059669 !important;
+  --color-primary-700: #047857 !important;
+  --color-primary-800: #065f46 !important;
+  --color-primary-900: #044e38 !important;
+  --color-primary-950: #022c22 !important;
 
   /* Base shades - Charcoal Slate dark theme */
-  --color-base-50: 247 247 245 !important;
-  --color-base-100: 63 63 70 !important;
-  --color-base-200: 31 32 35 !important;           /* Borders: #1f2023 */
-  --color-base-300: 24 25 28 !important;
-  --color-base-400: 161 161 170 !important;        /* Text muted */
-  --color-base-500: 113 113 122 !important;
-  --color-base-600: 82 82 91 !important;
-  --color-base-700: 17 18 20 !important;           /* Card Background: #111214 */
-  --color-base-800: 8 9 10 !important;             /* Sidebar Background: #08090a */
-  --color-base-900: 12 13 14 !important;           /* General Body Background: #0c0d0e */
-  --color-base-950: 0 0 0 !important;              /* pure black */
+  --color-base-50: #fafafa !important;
+  --color-base-100: #f4f4f5 !important;
+  --color-base-200: #e4e4e7 !important;
+  --color-base-300: #d4d4d8 !important;
+  --color-base-400: #a1a1aa !important;        /* Text muted */
+  --color-base-500: #71717a !important;
+  --color-base-600: #52525b !important;
+  --color-base-700: #18191b !important;          /* Card Background: #18191b */
+  --color-base-800: #0e0f10 !important;          /* Sidebar Background: #0e0f10 */
+  --color-base-900: #0c0d0e !important;          /* General Body Background: #0c0d0e */
+  --color-base-950: #000000 !important;          /* pure black */
 
-  --color-font-subtle-dark: 161 161 170 !important;
-  --color-font-default-dark: 228 228 231 !important; /* light grey text #E4E4E7 */
-  --color-font-important-dark: 255 255 255 !important; /* white */
+  --color-font-subtle-dark: #a1a1aa !important;
+  --color-font-default-dark: #e4e4e7 !important; /* light grey text #E4E4E7 */
+  --color-font-important-dark: #ffffff !important; /* white */
 }
 
 /* ==========================================
@@ -48,13 +81,17 @@ html.dark, [data-theme="dark"] {
   }
 
   /* Sidebar styling - Pure Black with sleek layout */
-  #sidebar {
+  #nav-sidebar {
     background-color: #000000 !important;
     border-right: 1px solid #1f2023 !important;
   }
 
+  #nav-sidebar-inner {
+    background-color: transparent !important;
+  }
+
   /* Navigation links defaults */
-  #sidebar a {
+  #nav-sidebar a {
     color: #a1a1aa !important;
     background-color: transparent !important;
     border-left: none !important;
@@ -62,29 +99,28 @@ html.dark, [data-theme="dark"] {
   }
 
   /* Sidebar Active Navigation Item (Charcoal capsule + Green icon) */
-  #sidebar a.bg-primary-500\/10,
-  #sidebar a.bg-primary-600\/10,
-  #sidebar a[class*="bg-primary"],
-  #sidebar a:focus {
+  #nav-sidebar a.bg-primary-500\/10,
+  #nav-sidebar a.bg-primary-600\/10,
+  #nav-sidebar a[class*="bg-primary"],
+  #nav-sidebar a[class*="text-primary-600"],
+  #nav-sidebar a[class*="text-primary-500"],
+  #nav-sidebar a:focus {
     background-color: #1c1c1f !important;
     color: #ffffff !important;
     border-radius: 8px !important;
-    margin-left: 8px !important;
-    margin-right: 8px !important;
   }
 
-  #sidebar a.bg-primary-500\/10 span.material-symbols-outlined,
-  #sidebar a[class*="bg-primary"] span.material-symbols-outlined {
+  #nav-sidebar a.bg-primary-500\/10 span.material-symbols-outlined,
+  #nav-sidebar a[class*="bg-primary"] span.material-symbols-outlined,
+  #nav-sidebar a[class*="text-primary-500"] span.material-symbols-outlined {
     color: #10b981 !important; /* green icon for active item */
   }
 
   /* Hover state on nav links */
-  #sidebar a:hover {
+  #nav-sidebar a:hover {
     background-color: #18181b !important;
     color: #ffffff !important;
     border-radius: 8px !important;
-    margin-left: 8px !important;
-    margin-right: 8px !important;
   }
 
   /* Main header top-bar adjustments */
@@ -149,6 +185,7 @@ html.dark, [data-theme="dark"] {
     padding: 14px 16px !important;
     border-bottom: 1px solid #1f2023 !important;
     color: #e4e4e7 !important;
+    background-color: transparent !important;
   }
 
   table tr:last-child td {
