@@ -273,3 +273,23 @@ UNFOLD = {
     },
 }
 
+##SMTP_HOST=mail.getgoapp.cl
+##SMTP_PORT=465
+##SMTP_USER=welcome@getgo.cl
+##SMTP_PASS=cambia_esto
+##DEFAULT_FROM_EMAIL=welcome@getgo.cl
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+
+EMAIL_HOST = os.environ.get("SMTP_HOST", "mail.getgoapp.cl")
+EMAIL_PORT = int(os.environ.get("SMTP_PORT", 465))  # 465 = SSL
+EMAIL_USE_SSL = True                                # SSL para 465
+EMAIL_USE_TLS = False    
+
+# Credenciales para No Reply / welcome/notificaciones
+NO_REPLY_EMAIL_USER = "noreply@getgo.cl"
+NO_REPLY_EMAIL_PASSWORD = "@+qKr#~uy@B~"
+NO_REPLY_FROM_EMAIL = "Equipo GetGo <noreply@getgo.cl>"
+
+# Opcionales útiles
+EMAIL_TIMEOUT = 20
