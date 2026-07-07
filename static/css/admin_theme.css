@@ -1,133 +1,182 @@
-/* Modern and Sober Theme for Clanship Admin */
+/* Modern, Sober, and Premium Dark Theme (Inspired by Apex Dashboard) */
 
 /* ==========================================
-   1. COLOR VARIABLES OVERRIDES
+   1. CSS VARIABLE OVERRIDES (Tailwind Engine)
    ========================================== */
 
-/* LIGHT MODE */
-:root {
-  /* Primary: Azul Profundo (#0D2B45) */
-  --color-primary-50: 240 244 248;
-  --color-primary-100: 217 226 236;
-  --color-primary-200: 185 201 219;
-  --color-primary-300: 142 166 193;
-  --color-primary-400: 98 127 161;
-  --color-primary-500: 13 43 69 !important;       /* #0D2B45 */
-  --color-primary-600: 10 33 53 !important;
-  --color-primary-700: 8 27 43 !important;
-  --color-primary-800: 5 18 29 !important;
-  --color-primary-900: 3 10 16 !important;
-  --color-primary-950: 1 5 8 !important;
-
-  /* Base: Blanco humo (#F7F7F5) to Gris grafito (#2E3135) */
-  --color-base-50: 247 247 245 !important;       /* #F7F7F5 */
-  --color-base-100: 240 240 238 !important;
-  --color-base-200: 226 227 230 !important;       /* Borders */
-  --color-base-300: 186 189 194 !important;
-  --color-base-400: 120 123 128 !important;
-  --color-base-500: 90 93 98 !important;
-  --color-base-600: 70 73 78 !important;
-  --color-base-700: 46 49 53 !important;         /* #2E3135 */
-  --color-base-800: 36 39 43 !important;
-  --color-base-900: 26 29 33 !important;
-  --color-base-950: 16 19 23 !important;
-
-  --color-font-subtle-light: 120 123 128 !important;
-  --color-font-default-light: 46 49 53 !important;
-  --color-font-important-light: 13 43 69 !important;
-}
-
-/* DARK MODE (Sober Zinc/Graphite Dark Theme) */
+/* DARK MODE */
 html.dark, [data-theme="dark"] {
-  /* Primary: Verde Esmeralda (#0B6E4F) - Much more premium in dark mode than blue */
+  /* Primary: Vibrant Emerald Green (#10B981) */
   --color-primary-50: 236 253 245;
   --color-primary-100: 209 250 229;
   --color-primary-200: 167 243 208;
   --color-primary-300: 110 231 183;
   --color-primary-400: 52 211 153;
-  --color-primary-500: 11 110 79 !important;      /* #0B6E4F */
-  --color-primary-600: 9 95 68 !important;
-  --color-primary-700: 7 78 56 !important;
-  --color-primary-800: 5 62 44 !important;
-  --color-primary-900: 4 47 34 !important;
-  --color-primary-950: 2 31 22 !important;
+  --color-primary-500: 16 185 129 !important;      /* #10B981 */
+  --color-primary-600: 5 150 105 !important;
+  --color-primary-700: 4 120 87 !important;
+  --color-primary-800: 6 95 70 !important;
+  --color-primary-900: 4 78 56 !important;
+  --color-primary-950: 2 44 34 !important;
 
-  /* Base: Muted dark graphite/zinc (Not pitch black, not bright blue) */
+  /* Base shades - Charcoal Slate dark theme */
   --color-base-50: 247 247 245 !important;
-  --color-base-100: 60 63 68 !important;
-  --color-base-200: 46 49 53 !important;          /* Borders: #2E3135 */
-  --color-base-300: 36 39 43 !important;
-  --color-base-400: 156 163 175 !important;
-  --color-base-500: 107 114 128 !important;
-  --color-base-600: 75 85 99 !important;
-  --color-base-700: 24 25 28 !important;          /* Card Background */
-  --color-base-800: 18 19 22 !important;          /* Sidebar Background */
-  --color-base-900: 13 14 16 !important;          /* General App Background */
-  --color-base-950: 9 10 11 !important;
+  --color-base-100: 63 63 70 !important;
+  --color-base-200: 31 32 35 !important;           /* Borders: #1f2023 */
+  --color-base-300: 24 25 28 !important;
+  --color-base-400: 161 161 170 !important;        /* Text muted */
+  --color-base-500: 113 113 122 !important;
+  --color-base-600: 82 82 91 !important;
+  --color-base-700: 17 18 20 !important;           /* Card Background: #111214 */
+  --color-base-800: 8 9 10 !important;             /* Sidebar Background: #08090a */
+  --color-base-900: 12 13 14 !important;           /* General Body Background: #0c0d0e */
+  --color-base-950: 0 0 0 !important;              /* pure black */
 
-  --color-font-subtle-dark: 156 163 175 !important;
-  --color-font-default-dark: 247 247 245 !important; /* Blanco humo */
-  --color-font-important-dark: 255 255 255 !important;
+  --color-font-subtle-dark: 161 161 170 !important;
+  --color-font-default-dark: 228 228 231 !important; /* light grey text #E4E4E7 */
+  --color-font-important-dark: 255 255 255 !important; /* white */
 }
 
 /* ==========================================
-   2. INTERFACE FINE-TUNING & SOBER LOOKS
+   2. APEX CUSTOM STYLE INJECTIONS
    ========================================== */
 
-/* Clean up borders and boxes */
-.border-base-200 {
-  border-color: rgba(var(--color-base-200), 0.5) !important;
-}
+html.dark, [data-theme="dark"] {
+  /* General body background override */
+  body, #content {
+    background-color: #0c0d0e !important;
+  }
 
-/* Sidebar styling - more subtle and integrated */
-#sidebar {
-  border-right: 1px solid rgba(var(--color-base-200), 0.3) !important;
-  transition: all 0.2s ease-in-out;
-}
+  /* Sidebar styling - Pure Black with sleek layout */
+  #sidebar {
+    background-color: #000000 !important;
+    border-right: 1px solid #1f2023 !important;
+  }
 
-/* Active navigation item indicator */
-#sidebar a.bg-primary-500\/10,
-#sidebar a.bg-primary-600\/10,
-#sidebar a.bg-primary-500,
-#sidebar a.bg-primary-600 {
-  background-color: rgba(var(--color-primary-500), 0.12) !important;
-  color: rgb(var(--color-primary-500)) !important;
-  border-left: 3px solid rgb(var(--color-primary-500)) !important;
-  border-radius: 0 6px 6px 0 !important;
-}
+  /* Navigation links defaults */
+  #sidebar a {
+    color: #a1a1aa !important;
+    background-color: transparent !important;
+    border-left: none !important;
+    transition: all 0.15s ease-in-out;
+  }
 
-/* Subtle focus indicators using Naranjo activo (#F28C28) */
-input:focus, select:focus, textarea:focus, button:focus {
-  --tw-ring-color: rgb(242 140 40) !important;
-  border-color: rgb(242 140 40) !important;
-}
+  /* Sidebar Active Navigation Item (Charcoal capsule + Green icon) */
+  #sidebar a.bg-primary-500\/10,
+  #sidebar a.bg-primary-600\/10,
+  #sidebar a[class*="bg-primary"],
+  #sidebar a:focus {
+    background-color: #1c1c1f !important;
+    color: #ffffff !important;
+    border-radius: 8px !important;
+    margin-left: 8px !important;
+    margin-right: 8px !important;
+  }
 
-/* Buttons custom polish */
-button, .button, a.bg-primary-600 {
-  border-radius: 6px !important;
-  transition: all 0.15s ease-in-out !important;
-}
+  #sidebar a.bg-primary-500\/10 span.material-symbols-outlined,
+  #sidebar a[class*="bg-primary"] span.material-symbols-outlined {
+    color: #10b981 !important; /* green icon for active item */
+  }
 
-/* Adjust table layouts for premium look */
-table th {
-  font-weight: 600 !important;
-  letter-spacing: 0.05em !important;
-  text-transform: uppercase !important;
-  font-size: 0.75rem !important;
-  color: rgb(var(--color-base-400)) !important;
-  background-color: rgba(var(--color-base-100), 0.2) !important;
-}
+  /* Hover state on nav links */
+  #sidebar a:hover {
+    background-color: #18181b !important;
+    color: #ffffff !important;
+    border-radius: 8px !important;
+    margin-left: 8px !important;
+    margin-right: 8px !important;
+  }
 
-table tr {
-  transition: background-color 0.15s ease !important;
-}
+  /* Main header top-bar adjustments */
+  header, #header, .header-container {
+    background-color: #0c0d0e !important;
+    border-bottom: 1px solid #1f2023 !important;
+  }
 
-table tr:hover {
-  background-color: rgba(var(--color-base-100), 0.15) !important;
-}
+  /* Primary action buttons ("Add professional profile" / "New User") */
+  a.bg-primary-600, 
+  button.bg-primary-600,
+  a[class*="bg-primary-600"],
+  button[class*="bg-primary-600"],
+  .btn-primary {
+    background-color: #10b981 !important;
+    color: #000000 !important;
+    font-weight: 600 !important;
+    border-radius: 8px !important;
+    border: none !important;
+    padding: 0.5rem 1rem !important;
+    transition: all 0.15s ease-in-out;
+  }
 
-/* Logo image polish */
-#site-name img, .logo img {
-  border-radius: 4px;
-  filter: contrast(1.05);
+  a.bg-primary-600:hover, 
+  button.bg-primary-600:hover {
+    background-color: #059669 !important; /* darker green */
+    color: #ffffff !important;
+  }
+
+  /* Accent focus rings in orange */
+  input:focus, select:focus, textarea:focus, button:focus {
+    --tw-ring-color: #F28C28 !important;
+    border-color: #F28C28 !important;
+  }
+
+  /* Cards, tables and wrapper styling */
+  .bg-white, .dark\:bg-base-900, .dark\:bg-base-800 {
+    background-color: #111214 !important;
+    border: 1px solid #1f2023 !important;
+    border-radius: 12px !important;
+  }
+
+  /* Table layout adjustments */
+  table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    width: 100% !important;
+  }
+
+  table th {
+    background-color: #16171a !important;
+    color: #a1a1aa !important;
+    font-weight: 600 !important;
+    font-size: 0.75rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    border-bottom: 1px solid #1f2023 !important;
+    padding: 12px 16px !important;
+  }
+
+  table td {
+    padding: 14px 16px !important;
+    border-bottom: 1px solid #1f2023 !important;
+    color: #e4e4e7 !important;
+  }
+
+  table tr:last-child td {
+    border-bottom: none !important;
+  }
+
+  table tr:hover td {
+    background-color: rgba(255, 255, 255, 0.02) !important;
+  }
+
+  /* Green alerts style (Sober layout) */
+  .bg-green-500\/10, .bg-emerald-500\/10, [class*="bg-green"] {
+    background-color: rgba(16, 185, 129, 0.1) !important;
+    border: 1px solid rgba(16, 185, 129, 0.2) !important;
+    color: #10b981 !important;
+    border-radius: 8px !important;
+  }
+
+  /* Inputs inside table search and filters */
+  input[type="text"], input[type="search"], select {
+    background-color: #16171a !important;
+    border: 1px solid #1f2023 !important;
+    border-radius: 8px !important;
+    color: #e4e4e7 !important;
+  }
+
+  /* Badge indicator for verification */
+  .bg-green-500, .bg-emerald-500 {
+    background-color: #10b981 !important;
+  }
 }
