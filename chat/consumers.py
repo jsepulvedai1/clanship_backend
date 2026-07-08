@@ -63,6 +63,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             job_created = await self.create_job_if_not_exists(self.room_id)
             if job_created:
                 sys_msg = await self.save_message(self.room_id, self.user, "El cliente ha solicitado iniciar un trabajo.")
+                avatar_url = await self.get_user_avatar_url(self.user)
                 await self.channel_layer.group_send(
                     self.room_group_name,
                     {
@@ -70,6 +71,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                         'message': sys_msg.text,
                         'sender_id': self.user.id,
                         'sender_username': self.user.username,
+                        'sender_avatar_url': avatar_url,
                         'created_at': sys_msg.created_at.isoformat(),
                         'system': True
                     }
@@ -78,6 +80,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if message_text:
             # Guardar el mensaje en DB
             message = await self.save_message(self.room_id, self.user, message_text)
+            avatar_url = await self.get_user_avatar_url(self.user)
 
             # Enviar mensaje al grupo de la sala
             await self.channel_layer.group_send(
@@ -87,6 +90,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'message': message.text,
                     'sender_id': self.user.id,
                     'sender_username': self.user.username,
+                    'sender_avatar_url': avatar_url,
                     'created_at': message.created_at.isoformat()
                 }
             )
@@ -98,9 +102,34 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'message': event['message'],
             'sender_id': event['sender_id'],
             'sender_username': event['sender_username'],
+            'sender_avatar_url': event.get('sender_avatar_url'),
             'created_at': event['created_at'],
             'system': event.get('system', False)
         }))
+
+    @database_sync_to_async
+    def get_user_avatar_url(self, user):
+        if not user.avatar:
+            return None
+        host = None
+        for key, value in self.scope.get('headers', []):
+            if key == b'host':
+                host = value.decode('utf-8')
+                break
+        
+        if not host:
+            host = "localhost:8000"
+            
+        proto = 'http'
+        for key, value in self.scope.get('headers', []):
+            if key == b'x-forwarded-proto':
+                proto = value.decode('utf-8')
+                break
+                
+        if self.scope.get('scheme') == 'wss':
+            proto = 'https'
+            
+        return f"{proto}://{host}{user.avatar.url}"
 
     @database_sync_to_async
     def get_user_from_token(self, token):

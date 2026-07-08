@@ -234,7 +234,7 @@ class ScheduleJobVisit(graphene.Mutation):
         job.scheduled_date = scheduled_date
         job.scheduled_time = scheduled_time
         job.notification_lead_minutes = notification_lead_minutes
-        job.status = Job.Status.AGREED
+        job.status = Job.Status.SCHEDULED
         job.lead_notification_sent = False  # Reset reminder flag
         job.save()
 
@@ -246,8 +246,8 @@ class ScheduleJobVisit(graphene.Mutation):
                 from core.firebase import send_push_notification
                 send_push_notification(
                     fcm_token=cust.fcm_token,
-                    title="Visita Programada",
-                    body=f"El profesional {prof_name} ha programado la visita para el {scheduled_date} a las {scheduled_time}.",
+                    title="Propuesta de Visita Programada",
+                    body=f"El profesional {prof_name} ha propuesto una visita para el {scheduled_date} a las {scheduled_time}. Por favor valida la agenda.",
                     data={"event": "job_updated", "job_id": job.id}
                 )
         except Exception as e:

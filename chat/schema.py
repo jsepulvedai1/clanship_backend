@@ -55,6 +55,7 @@ class SendMessage(graphene.Mutation):
                     'message': message.text,
                     'sender_id': user.id,
                     'sender_username': user.username,
+                    'sender_avatar_url': info.context.build_absolute_uri(user.avatar.url) if user.avatar else None,
                     'created_at': message.created_at.isoformat()
                 }
             )

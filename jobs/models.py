@@ -7,6 +7,7 @@ class Job(models.Model):
     """
     class Status(models.TextChoices):
         REQUESTED = 'REQUESTED', 'Solicitado'
+        SCHEDULED = 'SCHEDULED', 'Propuesto por Confirmar'
         AGREED = 'AGREED', 'Acordado'
         IN_VISIT = 'IN_VISIT', 'En Visita'
         FINISHED = 'FINISHED', 'Finalizado'
