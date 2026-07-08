@@ -204,6 +204,7 @@ class Query(graphene.ObjectType):
                 Q(last_name__icontains=query) |
                 Q(username__icontains=query) |
                 Q(professional_profile__specialty__name__icontains=query) |
+                Q(professional_profile__specialty__synonyms__icontains=query) |
                 Q(professional_profile__bio__icontains=query) |
                 Q(professional_profile__tags__in=matching_tags)
             ).distinct()

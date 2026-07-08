@@ -72,6 +72,12 @@ class Specialty(models.Model):
     """
     name = models.CharField(max_length=100, unique=True, verbose_name="Nombre")
     icon = models.ImageField(upload_to="specialty_icons/", null=True, blank=True, verbose_name="Icono")
+    synonyms = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Sub-etiquetas ocultas",
+        help_text="Sinónimos o palabras clave de búsqueda separadas por comas (ej: electricidad, corriente)"
+    )
 
     class Meta:
         verbose_name = "Especialidad"
