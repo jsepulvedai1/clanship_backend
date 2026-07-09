@@ -216,12 +216,13 @@ class ScheduleJobVisit(graphene.Mutation):
         scheduled_date = graphene.Date(required=True)
         scheduled_time = graphene.Time(required=True)
         notification_lead_minutes = graphene.Int(required=True)
+        agreed_price = graphene.Decimal(required=False)
 
     success = graphene.Boolean()
     job = graphene.Field(JobType)
 
     @login_required
-    def mutate(self, info, job_id, scheduled_date, scheduled_time, notification_lead_minutes):
+    def mutate(self, info, job_id, scheduled_date, scheduled_time, notification_lead_minutes, agreed_price=None):
         user = info.context.user
         try:
             job = Job.objects.get(pk=job_id)
@@ -234,6 +235,8 @@ class ScheduleJobVisit(graphene.Mutation):
         job.scheduled_date = scheduled_date
         job.scheduled_time = scheduled_time
         job.notification_lead_minutes = notification_lead_minutes
+        if agreed_price is not None:
+            job.agreed_price = agreed_price
         job.status = Job.Status.SCHEDULED
         job.lead_notification_sent = False  # Reset reminder flag
         job.save()
