@@ -100,7 +100,7 @@ class SpecialtyType(DjangoObjectType):
 
     class Meta:
         model = Specialty
-        fields = ("id", "name", "icon", "icon_url", "color")
+        fields = ("id", "name", "icon", "icon_url", "color", "synonyms")
 
     def resolve_icon_url(self, info):
         if self.icon:
