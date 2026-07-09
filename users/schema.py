@@ -240,6 +240,11 @@ class UpdateProfile(graphene.Mutation):
         if user.is_anonymous:
             raise Exception('No autenticado')
 
+        if len(first_name) > 30:
+            raise Exception('El nombre no puede tener más de 30 caracteres')
+        if len(last_name) > 30:
+            raise Exception('El apellido no puede tener más de 30 caracteres')
+
         user.first_name = first_name
         user.last_name = last_name
         user.email = email
@@ -282,6 +287,11 @@ class RegisterUser(graphene.Mutation):
     success = graphene.Boolean()
 
     def mutate(self, info, email, password, first_name, last_name, phone_number=None, user_type='CUSTOMER'):
+        if len(first_name) > 30:
+            raise Exception('El nombre no puede tener más de 30 caracteres')
+        if len(last_name) > 30:
+            raise Exception('El apellido no puede tener más de 30 caracteres')
+
         if User.objects.filter(email=email).exists() or User.objects.filter(username=email).exists():
             raise Exception('El usuario ya existe')
 

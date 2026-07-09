@@ -11,6 +11,17 @@ class User(AbstractUser):
         PROFESSIONAL = 'PROFESSIONAL', 'Profesional'
         ADMIN = 'ADMIN', 'Administrador'
 
+    first_name = models.CharField(
+        max_length=30,
+        verbose_name="Nombre",
+        blank=True
+    )
+    last_name = models.CharField(
+        max_length=30,
+        verbose_name="Apellido",
+        blank=True
+    )
+
     phone_number = models.CharField(
         max_length=15, 
         unique=True, 
