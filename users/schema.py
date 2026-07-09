@@ -89,7 +89,7 @@ class SpecialtyType(DjangoObjectType):
 
     class Meta:
         model = Specialty
-        fields = ("id", "name", "icon", "icon_url")
+        fields = ("id", "name", "icon", "icon_url", "color")
 
     def resolve_icon_url(self, info):
         if self.icon:
@@ -99,7 +99,7 @@ class SpecialtyType(DjangoObjectType):
 class TagType(DjangoObjectType):
     class Meta:
         model = Tag
-        fields = ("id", "name", "synonyms")
+        fields = ("id", "name", "synonyms", "color")
 
 
 class ProfessionalPhotoType(DjangoObjectType):

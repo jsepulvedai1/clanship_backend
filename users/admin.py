@@ -33,13 +33,13 @@ class CustomUserAdmin(ModelAdmin, BaseUserAdmin):
 
 @admin.register(Specialty)
 class SpecialtyAdmin(ModelAdmin):
-    list_display = ('name', 'icon')
-    search_fields = ('name',)
+    list_display = ('name', 'icon', 'color')
+    search_fields = ('name', 'color')
 
 @admin.register(Tag)
 class TagAdmin(ModelAdmin):
-    list_display = ('name',)
-    search_fields = ('name',)
+    list_display = ('name', 'color')
+    search_fields = ('name', 'color')
 
 @admin.register(SubscriptionPlan)
 class SubscriptionPlanAdmin(ModelAdmin):

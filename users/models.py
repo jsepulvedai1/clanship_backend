@@ -83,6 +83,12 @@ class Specialty(models.Model):
     """
     name = models.CharField(max_length=100, unique=True, verbose_name="Nombre")
     icon = models.ImageField(upload_to="specialty_icons/", null=True, blank=True, verbose_name="Icono")
+    color = models.CharField(
+        max_length=7,
+        default="#0B6E4F",
+        verbose_name="Color hexadecimal",
+        help_text="Color para la especialidad/etiqueta en formato hexadecimal (ej: #FF5733)"
+    )
     synonyms = models.TextField(
         blank=True,
         null=True,
@@ -108,6 +114,12 @@ class Tag(models.Model):
         null=True,
         verbose_name="Sub-etiquetas ocultas",
         help_text="Sinónimos o palabras clave de búsqueda separadas por comas (ej: gafiter, plomeria, cañeria)"
+    )
+    color = models.CharField(
+        max_length=7,
+        default="#0B6E4F",
+        verbose_name="Color hexadecimal",
+        help_text="Color para la etiqueta en formato hexadecimal (ej: #FF5733)"
     )
 
     class Meta:
