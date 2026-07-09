@@ -1,12 +1,18 @@
 import graphene
 from graphene_django import DjangoObjectType
-from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan
+from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress
 import graphql_jwt
 from decimal import Decimal
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.core.mail import send_mail
+
+
+class UserAddressType(DjangoObjectType):
+    class Meta:
+        model = UserAddress
+        fields = ("id", "address", "latitude", "longitude", "alias")
 
 
 class UserType(DjangoObjectType):
@@ -17,6 +23,7 @@ class UserType(DjangoObjectType):
     rejected_jobs = graphene.Int()
     reviews_count = graphene.Int()
     is_favorite = graphene.Boolean()
+    saved_addresses = graphene.List(UserAddressType)
 
     class Meta:
         model = User
@@ -25,8 +32,11 @@ class UserType(DjangoObjectType):
             "avatar", "latitude", "longitude", "address", 
             "is_available", "professional_profile", "first_name", "last_name",
             "active_jobs", "completed_jobs", "scheduled_jobs", "rejected_jobs", "reviews_count",
-            "is_favorite", "fcm_token"
+            "is_favorite", "fcm_token", "saved_addresses"
         )
+
+    def resolve_saved_addresses(self, info):
+        return self.saved_addresses.all()
 
     def resolve_is_favorite(self, info):
         user = info.context.user
@@ -654,6 +664,49 @@ class SubscribeToPlan(graphene.Mutation):
 
         return SubscribeToPlan(success=True, profile=profile)
 
+
+class AddUserAddress(graphene.Mutation):
+    class Arguments:
+        address = graphene.String(required=True)
+        latitude = graphene.Float(required=True)
+        longitude = graphene.Float(required=True)
+        alias = graphene.String(required=False)
+
+    user_address = graphene.Field(UserAddressType)
+
+    @login_required
+    def mutate(self, info, address, latitude, longitude, alias=None):
+        user = info.context.user
+        if UserAddress.objects.filter(user=user).count() >= 3:
+            raise Exception("No puedes guardar más de 3 direcciones.")
+        
+        user_address = UserAddress.objects.create(
+            user=user,
+            address=address,
+            latitude=latitude,
+            longitude=longitude,
+            alias=alias
+        )
+        return AddUserAddress(user_address=user_address)
+
+
+class DeleteUserAddress(graphene.Mutation):
+    class Arguments:
+        address_id = graphene.Int(required=True)
+
+    success = graphene.Boolean()
+
+    @login_required
+    def mutate(self, info, address_id):
+        user = info.context.user
+        try:
+            user_address = UserAddress.objects.get(pk=address_id, user=user)
+            user_address.delete()
+            return DeleteUserAddress(success=True)
+        except UserAddress.DoesNotExist:
+            raise Exception("Dirección no encontrada.")
+
+
 class Mutation(graphene.ObjectType):
     token_auth = graphql_jwt.ObtainJSONWebToken.Field()
     verify_token = graphql_jwt.Verify.Field()
@@ -671,4 +724,6 @@ class Mutation(graphene.ObjectType):
     delete_professional_document = DeleteProfessionalDocument.Field()
     request_password_reset = RequestPasswordReset.Field()
     subscribe_to_plan = SubscribeToPlan.Field()
+    add_user_address = AddUserAddress.Field()
+    delete_user_address = DeleteUserAddress.Field()
 

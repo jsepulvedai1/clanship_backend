@@ -1,12 +1,18 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from unfold.admin import ModelAdmin, TabularInline
-from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan
+from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress
+
+@admin.register(UserAddress)
+class UserAddressAdmin(ModelAdmin):
+    list_display = ('user', 'alias', 'address', 'latitude', 'longitude')
+    search_fields = ('user__username', 'alias', 'address')
+    list_filter = ('user',)
 
 class ProfessionalProfileInline(TabularInline):
     model = ProfessionalProfile
     extra = 0
-    raw_id_fields = ('specialty',)
+    raw_id_fields = ('specialty', )
 
 class ProfessionalPhotoInline(TabularInline):
     model = ProfessionalPhoto

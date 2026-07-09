@@ -295,3 +295,18 @@ class ProfessionalDocument(models.Model):
         return f"{self.name} ({self.get_status_display()}) - {self.profile.user.username}"
 
 
+class UserAddress(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="saved_addresses", verbose_name="Usuario")
+    address = models.CharField(max_length=255, verbose_name="Dirección")
+    latitude = models.FloatField(verbose_name="Latitud")
+    longitude = models.FloatField(verbose_name="Longitud")
+    alias = models.CharField(max_length=50, blank=True, null=True, verbose_name="Alias", help_text="Ej: Hogar, Trabajo")
+
+    class Meta:
+        verbose_name = "Dirección de Usuario"
+        verbose_name_plural = "Direcciones de Usuario"
+
+    def __str__(self):
+        return f"{self.alias or 'Dirección'} - {self.user.username}"
+
+
