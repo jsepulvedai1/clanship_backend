@@ -39,6 +39,16 @@ class UserType(DjangoObjectType):
             return info.context.build_absolute_uri(self.avatar.url)
         return None
 
+    def resolve_first_name(self, info):
+        if self.first_name:
+            return self.first_name.strip().title()
+        return ""
+
+    def resolve_last_name(self, info):
+        if self.last_name:
+            return self.last_name.strip().title()
+        return ""
+
     def resolve_active_jobs(self, info):
         from jobs.models import Job
         from django.db.models import Q
