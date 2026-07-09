@@ -25,6 +25,7 @@ class UserType(DjangoObjectType):
     reviews_count = graphene.Int()
     is_favorite = graphene.Boolean()
     saved_addresses = graphene.List(UserAddressType)
+    distance = graphene.Float()
 
     class Meta:
         model = User
@@ -35,6 +36,9 @@ class UserType(DjangoObjectType):
             "active_jobs", "completed_jobs", "scheduled_jobs", "rejected_jobs", "reviews_count",
             "is_favorite", "fcm_token", "saved_addresses"
         )
+
+    def resolve_distance(self, info):
+        return getattr(self, 'distance', 0.0)
 
     def resolve_saved_addresses(self, info):
         return self.saved_addresses.all()
@@ -202,7 +206,7 @@ class Query(graphene.ObjectType):
         return queryset
 
     def resolve_nearby_professionals(self, info, latitude, longitude, radius_km, specialty_id=None, query=None):
-        from math import cos, radians
+        from math import cos, radians, sin, atan2, sqrt
         
         # Filtramos usuarios que sean profesionales, estén disponibles y tengan ubicación
         queryset = User.objects.filter(
@@ -234,10 +238,36 @@ class Query(graphene.ObjectType):
         lat_range = radius_km / 111.0
         lon_range = radius_km / (111.0 * cos(radians(latitude)))
 
-        return queryset.filter(
+        filtered_queryset = queryset.filter(
             latitude__range=(latitude - lat_range, latitude + lat_range),
             longitude__range=(longitude - lon_range, longitude + lon_range)
         )
+
+        # Convert to list and calculate Haversine distance for each
+        results = list(filtered_queryset)
+
+        def calculate_haversine(lat1, lon1, lat2, lon2):
+            R = 6371.0  # Radius of earth in kilometers
+            d_lat = radians(lat2 - lat1)
+            d_lon = radians(lon2 - lon1)
+            a = sin(d_lat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
+            c = 2 * atan2(sqrt(a), sqrt(1 - a))
+            return R * c
+
+        for user in results:
+            if user.latitude is not None and user.longitude is not None:
+                user.distance = calculate_haversine(
+                    latitude,
+                    longitude,
+                    float(user.latitude),
+                    float(user.longitude)
+                )
+            else:
+                user.distance = 0.0
+
+        # Sort by distance
+        results.sort(key=lambda u: u.distance)
+        return results
 
 import base64
 from django.core.files.base import ContentFile

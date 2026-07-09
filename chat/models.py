@@ -57,3 +57,30 @@ class Message(models.Model):
 
     def __str__(self):
         return f"De {self.sender.username} en {self.room}"
+
+
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from core.firebase import send_push_notification
+
+@receiver(post_save, sender=Message)
+def notify_message_saved(sender, instance, created, **kwargs):
+    if created:
+        try:
+            room = instance.room
+            recipient = room.professional if instance.sender == room.customer else room.customer
+            if recipient and recipient.fcm_token:
+                sender_name = instance.sender.get_full_name() or instance.sender.username
+                send_push_notification(
+                    fcm_token=recipient.fcm_token,
+                    title=f"Mensaje de {sender_name}",
+                    body=instance.text,
+                    data={
+                        "event": "chat_message",
+                        "room_id": str(room.id),
+                        "job_id": str(room.job.id) if room.job else ""
+                    }
+                )
+        except Exception as e:
+            print(f"Error in notify_message_saved signal: {e}")
+
