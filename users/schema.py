@@ -2,6 +2,7 @@ import graphene
 from graphene_django import DjangoObjectType
 from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress
 import graphql_jwt
+from graphql_jwt.decorators import login_required
 from decimal import Decimal
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
