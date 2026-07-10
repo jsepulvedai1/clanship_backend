@@ -13,20 +13,33 @@ class ChatRoomType(DjangoObjectType):
         fields = "__all__"
 
 class MessageType(DjangoObjectType):
+    file_url = graphene.String()
+
     class Meta:
         model = Message
         fields = "__all__"
 
+    def resolve_file_url(self, info):
+        if self.file:
+            return info.context.build_absolute_uri(self.file.url)
+        return None
+
+
+import base64
+from django.core.files.base import ContentFile
 
 class SendMessage(graphene.Mutation):
     class Arguments:
         room_id = graphene.Int(required=True)
-        text = graphene.String(required=True)
+        text = graphene.String(required=False)
+        file_base64 = graphene.String(required=False)
+        file_name = graphene.String(required=False)
+        message_type = graphene.String(required=False)
 
     message = graphene.Field(MessageType)
 
     @login_required
-    def mutate(self, info, room_id, text):
+    def mutate(self, info, room_id, text=None, file_base64=None, file_name=None, message_type='TEXT'):
         user = info.context.user
         try:
             room = ChatRoom.objects.get(pk=room_id)
@@ -36,11 +49,19 @@ class SendMessage(graphene.Mutation):
         if room.customer != user and room.professional != user:
             raise Exception("No perteneces a esta sala.")
 
-        message = Message.objects.create(
+        message = Message(
             room=room,
             sender=user,
-            text=text
+            text=text,
+            message_type=message_type or 'TEXT'
         )
+
+        if file_base64 and file_name:
+            format, imgstr = file_base64.split(';base64,') if ';base64,' in file_base64 else (None, file_base64)
+            data = ContentFile(base64.b64decode(imgstr), name=file_name)
+            message.file.save(file_name, data, save=False)
+
+        message.save()
 
         # Broadcast the message to Channels WebSocket clients in the same room group
         from asgiref.sync import async_to_sync
@@ -48,6 +69,7 @@ class SendMessage(graphene.Mutation):
         
         channel_layer = get_channel_layer()
         if channel_layer:
+            file_url = info.context.build_absolute_uri(message.file.url) if message.file else None
             async_to_sync(channel_layer.group_send)(
                 f"chat_{room_id}",
                 {
@@ -56,7 +78,9 @@ class SendMessage(graphene.Mutation):
                     'sender_id': user.id,
                     'sender_username': user.username,
                     'sender_avatar_url': info.context.build_absolute_uri(user.avatar.url) if user.avatar else None,
-                    'created_at': message.created_at.isoformat()
+                    'created_at': message.created_at.isoformat(),
+                    'file_url': file_url,
+                    'message_type': message.message_type
                 }
             )
 

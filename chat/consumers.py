@@ -57,6 +57,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data):
         text_data_json = json.loads(text_data)
         message_text = text_data_json.get('message', '')
+        file_base64 = text_data_json.get('file_base64', None)
+        file_name = text_data_json.get('file_name', None)
+        message_type = text_data_json.get('message_type', 'TEXT')
         action = text_data_json.get('action', '')
 
         if action == 'create_job':
@@ -77,10 +80,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     }
                 )
 
-        if message_text:
+        if message_text or (file_base64 and file_name):
             # Guardar el mensaje en DB
-            message = await self.save_message(self.room_id, self.user, message_text)
+            message = await self.save_message_with_file_async(
+                self.room_id, 
+                self.user, 
+                message_text, 
+                file_base64, 
+                file_name, 
+                message_type
+            )
             avatar_url = await self.get_user_avatar_url(self.user)
+            file_url = await self.get_message_file_url(message)
 
             # Enviar mensaje al grupo de la sala
             await self.channel_layer.group_send(
@@ -91,7 +102,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     'sender_id': self.user.id,
                     'sender_username': self.user.username,
                     'sender_avatar_url': avatar_url,
-                    'created_at': message.created_at.isoformat()
+                    'created_at': message.created_at.isoformat(),
+                    'file_url': file_url,
+                    'message_type': message.message_type
                 }
             )
 
@@ -99,12 +112,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def chat_message(self, event):
         # Enviar el mensaje al WebSocket en formato JSON
         await self.send(text_data=json.dumps({
-            'message': event['message'],
+            'message': event.get('message', ''),
             'sender_id': event['sender_id'],
             'sender_username': event['sender_username'],
             'sender_avatar_url': event.get('sender_avatar_url'),
             'created_at': event['created_at'],
-            'system': event.get('system', False)
+            'system': event.get('system', False),
+            'file_url': event.get('file_url'),
+            'message_type': event.get('message_type', 'TEXT')
         }))
 
     @database_sync_to_async
@@ -158,6 +173,43 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def save_message(self, room_id, user, text):
         room = ChatRoom.objects.get(id=room_id)
         return Message.objects.create(room=room, sender=user, text=text)
+
+    @database_sync_to_async
+    def save_message_with_file_async(self, room_id, user, text, file_base64, file_name, message_type):
+        import base64
+        from django.core.files.base import ContentFile
+        room = ChatRoom.objects.get(id=room_id)
+        msg = Message(room=room, sender=user, text=text, message_type=message_type)
+        if file_base64 and file_name:
+            format, imgstr = file_base64.split(';base64,') if ';base64,' in file_base64 else (None, file_base64)
+            data = ContentFile(base64.b64decode(imgstr), name=file_name)
+            msg.file.save(file_name, data, save=False)
+        msg.save()
+        return msg
+
+    @database_sync_to_async
+    def get_message_file_url(self, message):
+        if not message.file:
+            return None
+        host = None
+        for key, value in self.scope.get('headers', []):
+            if key == b'host':
+                host = value.decode('utf-8')
+                break
+        
+        if not host:
+            host = "localhost:8000"
+            
+        proto = 'http'
+        for key, value in self.scope.get('headers', []):
+            if key == b'x-forwarded-proto':
+                proto = value.decode('utf-8')
+                break
+                
+        if self.scope.get('scheme') == 'wss':
+            proto = 'https'
+            
+        return f"{proto}://{host}{message.file.url}"
 
     @database_sync_to_async
     def create_job_if_not_exists(self, room_id):
