@@ -37,15 +37,22 @@ class CustomUserAdmin(ModelAdmin, BaseUserAdmin):
     list_filter = ('user_type', 'is_available', 'is_staff', 'is_superuser', 'is_active')
     filter_horizontal = ('favorite_professionals',)
 
+class TagInline(TabularInline):
+    model = Tag
+    extra = 1
+    fields = ('name', 'color', 'synonyms')
+
 @admin.register(Specialty)
 class SpecialtyAdmin(ModelAdmin):
     list_display = ('name', 'icon', 'color')
     search_fields = ('name', 'color')
+    inlines = [TagInline]
 
 @admin.register(Tag)
 class TagAdmin(ModelAdmin):
-    list_display = ('name', 'color')
-    search_fields = ('name', 'color')
+    list_display = ('name', 'specialty', 'color')
+    list_filter = ('specialty',)
+    search_fields = ('name', 'color', 'specialty__name')
 
 @admin.register(SubscriptionPlan)
 class SubscriptionPlanAdmin(ModelAdmin):

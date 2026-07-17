@@ -4,6 +4,35 @@ from django.conf import settings
 from django.db import migrations, models
 import django.db.models.deletion
 
+def deduplicate_chats(apps, schema_editor):
+    ChatRoom = apps.get_model('chat', 'ChatRoom')
+    Message = apps.get_model('chat', 'Message')
+    
+    rooms = ChatRoom.objects.all()
+    from collections import defaultdict
+    grouped = defaultdict(list)
+    for r in rooms:
+        grouped[(r.customer_id, r.professional_id)].append(r)
+        
+    for key, room_list in grouped.items():
+        if len(room_list) > 1:
+            room_list.sort(key=lambda r: r.id)
+            primary_room = room_list[0]
+            duplicate_rooms = room_list[1:]
+            
+            for dup in duplicate_rooms:
+                # Reassign all messages of the duplicate chat room to the primary one
+                Message.objects.filter(room=dup).update(room=primary_room)
+                
+                # If duplicate has a job and primary doesn't, link it to the primary
+                if dup.job_id and not primary_room.job_id:
+                    primary_room.job_id = dup.job_id
+                    primary_room.save()
+                
+                # Dissociate job and delete duplicate room safely
+                dup.job_id = None
+                dup.save()
+                dup.delete()
 
 class Migration(migrations.Migration):
 
@@ -14,6 +43,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RunPython(deduplicate_chats, elidable=True),
         migrations.AlterField(
             model_name='chatroom',
             name='job',
