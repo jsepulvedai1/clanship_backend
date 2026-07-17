@@ -239,16 +239,26 @@ class Query(graphene.ObjectType):
             queryset = queryset.filter(professional_profile__tags__id__in=tag_ids).distinct()
 
         if subtag_ids:
-            queryset = queryset.filter(professional_profile__subtags__id__in=subtag_ids).distinct()
+            from django.db.models import Q
+            from .models import SubTag
+            parent_tag_ids = SubTag.objects.filter(id__in=subtag_ids).values_list('tag_id', flat=True)
+            queryset = queryset.filter(
+                Q(professional_profile__subtags__id__in=subtag_ids) |
+                Q(professional_profile__tags__id__in=parent_tag_ids)
+            ).distinct()
 
         if query:
             from django.db.models import Q
-            matching_tags = Tag.objects.filter(
-                Q(name__icontains=query) | Q(synonyms__icontains=query)
-            )
             matching_subtags = SubTag.objects.filter(
                 Q(name__icontains=query)
             )
+            # Parent tags of matching subtags should also match
+            parent_tags_of_subtags = Tag.objects.filter(subtags__in=matching_subtags)
+            
+            matching_tags = Tag.objects.filter(
+                Q(name__icontains=query) | Q(synonyms__icontains=query)
+            ) | parent_tags_of_subtags
+            
             queryset = queryset.filter(
                 Q(first_name__icontains=query) |
                 Q(last_name__icontains=query) |
