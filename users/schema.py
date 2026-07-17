@@ -1,6 +1,6 @@
 import graphene
 from graphene_django import DjangoObjectType
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP
 import graphql_jwt
 from graphql_jwt.decorators import login_required
 from decimal import Decimal
@@ -676,6 +676,10 @@ class DeleteProfessionalDocument(graphene.Mutation):
         
         return DeleteProfessionalDocument(success=True, user=user)
 
+import random
+from django.utils import timezone
+from datetime import timedelta
+
 class RequestPasswordReset(graphene.Mutation):
     class Arguments:
         email = graphene.String(required=True)
@@ -684,22 +688,29 @@ class RequestPasswordReset(graphene.Mutation):
     message = graphene.String()
 
     def mutate(self, info, email):
+        generic_message = "Si el correo está registrado, recibirás un código en unos minutos."
         try:
             user = User.objects.get(email=email)
             
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            token = default_token_generator.make_token(user)
+            # Generar OTP de 6 dígitos
+            otp = f"{random.randint(100000, 999999)}"
+            expires_at = timezone.now() + timedelta(minutes=15)
             
-            domain = info.context.get_host()
-            protocol = 'https' if info.context.is_secure() else 'http'
-            reset_url = f"{protocol}://{domain}/auth/reset/{uid}/{token}/"
+            # Guardar en base de datos
+            PasswordResetOTP.objects.create(
+                email=email,
+                otp_code=otp,
+                expires_at=expires_at
+            )
             
-            subject = "Recuperación de contraseña - ClanShip"
+            # Enviar por correo
+            subject = "Código de recuperación de contraseña - ClanShip"
             message_content = (
-                f"Hola {user.first_name},\n\n"
-                f"Para restablecer tu contraseña en ClanShip, haz clic en el siguiente enlace:\n"
-                f"{reset_url}\n\n"
-                f"Este enlace es válido solo por tiempo limitado.\n"
+                f"Hola {user.first_name or user.username},\n\n"
+                f"Has solicitado restablecer tu contraseña en ClanShip.\n"
+                f"Tu código de verificación de 6 dígitos es:\n\n"
+                f"      {otp}\n\n"
+                f"Este código es válido por 15 minutos.\n"
                 f"Si no solicitaste este cambio, por favor ignora este mensaje.\n\n"
                 f"Atentamente,\n"
                 f"El equipo de ClanShip"
@@ -713,9 +724,78 @@ class RequestPasswordReset(graphene.Mutation):
                 fail_silently=False,
             )
             
-            return RequestPasswordReset(success=True, message="Se ha enviado un correo con las instrucciones.")
+            return RequestPasswordReset(success=True, message=generic_message)
         except User.DoesNotExist:
-            return RequestPasswordReset(success=True, message="Se ha enviado un correo con las instrucciones.")
+            return RequestPasswordReset(success=True, message=generic_message)
+
+
+class VerifyPasswordResetOtp(graphene.Mutation):
+    class Arguments:
+        email = graphene.String(required=True)
+        otp_code = graphene.String(required=True)
+
+    success = graphene.Boolean()
+    message = graphene.String()
+    reset_token = graphene.String()
+
+    def mutate(self, info, email, otp_code):
+        try:
+            otp_record = PasswordResetOTP.objects.filter(
+                email=email,
+                otp_code=otp_code,
+                used=False,
+                expires_at__gt=timezone.now()
+            ).order_by('-created_at').first()
+
+            if not otp_record:
+                return VerifyPasswordResetOtp(success=False, message="Código inválido o expirado.")
+
+            otp_record.verified = True
+            otp_record.save()
+
+            return VerifyPasswordResetOtp(
+                success=True,
+                message="Código verificado con éxito.",
+                reset_token=str(otp_record.reset_token)
+            )
+        except Exception as e:
+            return VerifyPasswordResetOtp(success=False, message=str(e))
+
+
+class ResetPasswordWithOtp(graphene.Mutation):
+    class Arguments:
+        email = graphene.String(required=True)
+        reset_token = graphene.String(required=True)
+        new_password = graphene.String(required=True)
+
+    success = graphene.Boolean()
+    message = graphene.String()
+
+    def mutate(self, info, email, reset_token, new_password):
+        try:
+            otp_record = PasswordResetOTP.objects.filter(
+                email=email,
+                reset_token=reset_token,
+                verified=True,
+                used=False,
+                expires_at__gt=timezone.now()
+            ).first()
+
+            if not otp_record:
+                return ResetPasswordWithOtp(success=False, message="Token de recuperación inválido o expirado.")
+
+            user = User.objects.get(email=email)
+            user.set_password(new_password)
+            user.save()
+
+            otp_record.used = True
+            otp_record.save()
+
+            return ResetPasswordWithOtp(success=True, message="Contraseña actualizada correctamente.")
+        except User.DoesNotExist:
+            return ResetPasswordWithOtp(success=False, message="Usuario no encontrado.")
+        except Exception as e:
+            return ResetPasswordWithOtp(success=False, message=str(e))
 
 
 class SubscribeToPlan(graphene.Mutation):
@@ -806,6 +886,8 @@ class Mutation(graphene.ObjectType):
     toggle_document_visibility = ToggleDocumentVisibility.Field()
     delete_professional_document = DeleteProfessionalDocument.Field()
     request_password_reset = RequestPasswordReset.Field()
+    verify_password_reset_otp = VerifyPasswordResetOtp.Field()
+    reset_password_with_otp = ResetPasswordWithOtp.Field()
     subscribe_to_plan = SubscribeToPlan.Field()
     add_user_address = AddUserAddress.Field()
     delete_user_address = DeleteUserAddress.Field()

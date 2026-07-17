@@ -368,3 +368,26 @@ def limit_subtags_and_sync_tags(sender, instance, action, **kwargs):
         instance.tags.set(parent_tag_ids)
 
 
+import uuid
+
+class PasswordResetOTP(models.Model):
+    email = models.EmailField(verbose_name="Correo electrónico")
+    otp_code = models.CharField(max_length=6, verbose_name="Código OTP")
+    reset_token = models.UUIDField(default=uuid.uuid4, unique=True, verbose_name="Token de cambio")
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(verbose_name="Fecha de expiración")
+    used = models.BooleanField(default=False, verbose_name="Usado")
+    verified = models.BooleanField(default=False, verbose_name="Verificado")
+
+    class Meta:
+        verbose_name = "OTP de recuperación de contraseña"
+        verbose_name_plural = "OTPs de recuperación de contraseña"
+
+    def __str__(self):
+        return f"OTP para {self.email} - {'Usado' if self.used else 'Activo'}"
+
+    def is_valid(self):
+        from django.utils import timezone
+        return not self.used and timezone.now() < self.expires_at
+
+
