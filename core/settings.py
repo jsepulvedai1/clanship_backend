@@ -293,8 +293,8 @@ UNFOLD = {
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
-EMAIL_HOST = os.environ.get("SMTP_HOST", "mail.getgoapp.cl")
-EMAIL_PORT = int(os.environ.get("SMTP_PORT", 465))  # 465 = SSL
+EMAIL_HOST =  "mail.getgoapp.cl"
+EMAIL_PORT =  465 # 465 = SSL
 EMAIL_USE_SSL = True                                # SSL para 465
 EMAIL_USE_TLS = False    
 
