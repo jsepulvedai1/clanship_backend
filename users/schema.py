@@ -703,7 +703,10 @@ class RequestPasswordReset(graphene.Mutation):
                 expires_at=expires_at
             )
             
-            # Enviar por correo
+            # Enviar por correo usando conexión SMTP explícita
+            from django.core.mail import EmailMessage, get_connection
+            from django.conf import settings
+
             subject = "Código de recuperación de contraseña - ClanShip"
             message_content = (
                 f"Hola {user.first_name or user.username},\n\n"
@@ -715,14 +718,30 @@ class RequestPasswordReset(graphene.Mutation):
                 f"Atentamente,\n"
                 f"El equipo de ClanShip"
             )
-            
-            send_mail(
-                subject,
-                message_content,
-                None,
-                [user.email],
-                fail_silently=False,
-            )
+
+            try:
+                connection = get_connection(
+                    host=settings.EMAIL_HOST,
+                    port=settings.EMAIL_PORT,
+                    username=settings.NO_REPLY_EMAIL_USER,
+                    password=settings.NO_REPLY_EMAIL_PASSWORD,
+                    use_ssl=settings.EMAIL_USE_SSL,
+                    use_tls=settings.EMAIL_USE_TLS,
+                    timeout=settings.EMAIL_TIMEOUT,
+                )
+                email_msg = EmailMessage(
+                    subject=subject,
+                    body=message_content,
+                    from_email=settings.NO_REPLY_FROM_EMAIL,
+                    to=[user.email],
+                    connection=connection,
+                )
+                email_msg.send(fail_silently=False)
+            except Exception as mail_err:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error enviando OTP a {email}: {mail_err}")
+                # Aún retornamos éxito para no revelar si el correo existe
             
             return RequestPasswordReset(success=True, message=generic_message)
         except User.DoesNotExist:
