@@ -8,6 +8,7 @@ User = get_user_model()
 
 class JobType(DjangoObjectType):
     additional_photo_url = graphene.String()
+    has_unread_messages = graphene.Boolean()
 
     class Meta:
         model = Job
@@ -17,6 +18,16 @@ class JobType(DjangoObjectType):
         if self.additional_photo:
             return info.context.build_absolute_uri(self.additional_photo.url)
         return None
+
+    def resolve_has_unread_messages(self, info):
+        user = info.context.user
+        try:
+            chat_room = self.chat_room
+            if chat_room:
+                return chat_room.messages.exclude(sender=user).filter(is_read=False).exists()
+        except Exception:
+            pass
+        return False
 
 class CreateJob(graphene.Mutation):
     """

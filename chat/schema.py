@@ -177,6 +177,7 @@ class Query(graphene.ObjectType):
         try:
             room = ChatRoom.objects.get(pk=room_id)
             if room.customer == user or room.professional == user:
+                Message.objects.filter(room=room).exclude(sender=user).filter(is_read=False).update(is_read=True)
                 return Message.objects.filter(room=room).order_by('created_at')
             raise Exception("No tienes acceso a esta sala.")
         except ChatRoom.DoesNotExist:
