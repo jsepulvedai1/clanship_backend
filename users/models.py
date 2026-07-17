@@ -60,6 +60,10 @@ class User(AbstractUser):
         default=False, 
         verbose_name="Disponible para trabajos"
     )
+    is_emergency = models.BooleanField(
+        default=False, 
+        verbose_name="Modo Urgencia"
+    )
     fcm_token = models.CharField(
         max_length=255,
         null=True, blank=True,

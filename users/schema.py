@@ -32,7 +32,7 @@ class UserType(DjangoObjectType):
         fields = (
             "id", "username", "email", "phone_number", "user_type", 
             "avatar", "latitude", "longitude", "address", 
-            "is_available", "professional_profile", "first_name", "last_name",
+            "is_available", "is_emergency", "professional_profile", "first_name", "last_name",
             "active_jobs", "completed_jobs", "scheduled_jobs", "rejected_jobs", "reviews_count",
             "is_favorite", "fcm_token", "saved_addresses"
         )
@@ -392,16 +392,26 @@ class RegisterUser(graphene.Mutation):
 class UpdateAvailability(graphene.Mutation):
     class Arguments:
         is_available = graphene.Boolean(required=True)
+        is_emergency = graphene.Boolean(required=False)
 
     user = graphene.Field(UserType)
     success = graphene.Boolean()
 
-    def mutate(self, info, is_available):
+    def mutate(self, info, is_available, is_emergency=None):
         user = info.context.user
         if user.is_anonymous:
             raise Exception('No autenticado')
 
         user.is_available = is_available
+        if is_emergency is not None:
+            user.is_emergency = is_emergency
+
+        # Coordination logic
+        if user.is_emergency:
+            user.is_available = True
+        if not user.is_available:
+            user.is_emergency = False
+
         user.save()
         return UpdateAvailability(user=user, success=True)
 
