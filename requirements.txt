@@ -13,4 +13,5 @@ dj-database-url>=2.1.0
 whitenoise>=6.6.0
 django-unfold>=0.22.0
 firebase-admin>=6.2.0
+python-dotenv>=1.0.0
 # Para PostGIS se requiere GDAL/PROJ instalado en el sistema
