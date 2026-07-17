@@ -77,7 +77,7 @@ def notify_message_saved(sender, instance, created, **kwargs):
         try:
             room = instance.room
             recipient = room.professional if instance.sender == room.customer else room.customer
-            if recipient and recipient.fcm_token:
+            if recipient:
                 sender_name = instance.sender.get_full_name() or instance.sender.username
                 body_text = instance.text or ""
                 if instance.message_type == 'IMAGE':
@@ -85,16 +85,39 @@ def notify_message_saved(sender, instance, created, **kwargs):
                 elif instance.message_type == 'AUDIO':
                     body_text = "🎤 Mensaje de voz"
                 
-                send_push_notification(
-                    fcm_token=recipient.fcm_token,
-                    title=f"Mensaje de {sender_name}",
-                    body=body_text,
-                    data={
-                        "event": "chat_message",
-                        "room_id": str(room.id),
-                        "job_id": str(room.job.id) if room.job else ""
-                    }
-                )
+                # 1. Send push notification if fcm_token is available
+                if recipient.fcm_token:
+                    try:
+                        send_push_notification(
+                            fcm_token=recipient.fcm_token,
+                            title=f"Mensaje de {sender_name}",
+                            body=body_text,
+                            data={
+                                "event": "chat_message",
+                                "room_id": str(room.id),
+                                "job_id": str(room.job.id) if room.job else ""
+                            }
+                        )
+                    except Exception as e:
+                        print(f"Error sending push notification: {e}")
+
+                # 2. Send WebSocket notification to the recipient user group
+                try:
+                    from asgiref.sync import async_to_sync
+                    from channels.layers import get_channel_layer
+                    channel_layer = get_channel_layer()
+                    if channel_layer:
+                        async_to_sync(channel_layer.group_send)(
+                            f'user_{recipient.id}',
+                            {
+                                'type': 'job_notification',
+                                'event': 'new_message',
+                                'job_id': str(room.job.id) if room.job else "",
+                                'message': f"Mensaje de {sender_name}: {body_text}"
+                            }
+                        )
+                except Exception as e:
+                    print(f"Error sending WS notification: {e}")
         except Exception as e:
             print(f"Error in notify_message_saved signal: {e}")
 
