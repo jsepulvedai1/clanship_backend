@@ -293,15 +293,22 @@ UNFOLD = {
 
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
-EMAIL_HOST =  "mail.getgoapp.cl"
-EMAIL_PORT =  465 # 465 = SSL
-EMAIL_USE_SSL = True                                # SSL para 465
-EMAIL_USE_TLS = False    
+EMAIL_HOST =  "smtp.gmail.com"
+EMAIL_PORT =  587 # 465 = SSL
+EMAIL_USE_SSL = False                                # SSL para 465
+EMAIL_USE_TLS = True    
 
 # Credenciales para No Reply / welcome/notificaciones
-NO_REPLY_EMAIL_USER = "noreply@getgo.cl"
-NO_REPLY_EMAIL_PASSWORD = "@+qKr#~uy@B~"
-NO_REPLY_FROM_EMAIL = "Equipo GetGo <noreply@getgo.cl>"
+NO_REPLY_EMAIL_USER = "[EMAIL_ADDRESS]"
+NO_REPLY_EMAIL_PASSWORD = "[PASSWORD]"
+NO_REPLY_FROM_EMAIL = "Equipo Clanship <[EMAIL_ADDRESS]>"
 
 # Opcionales útiles
 EMAIL_TIMEOUT = 20
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_HOST = 'smtp.gmail.com'  # O tu proveedor
+# EMAIL_PORT = 587
+# EMAIL_USE_TLS = True
+# EMAIL_HOST_USER = 'tu-correo@gmail.com'
+# EMAIL_HOST_PASSWORD = 'tu-contrasenia-de-aplicacion' 
+# DEFAULT_FROM_EMAIL = 'Soporte Mi Web <tu-correo@gmail.com>'
