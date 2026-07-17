@@ -83,6 +83,16 @@ class SendMessage(graphene.Mutation):
                     'message_type': message.message_type
                 }
             )
+            receiver = room.professional if message.sender == room.customer else room.customer
+            async_to_sync(channel_layer.group_send)(
+                f"user_{receiver.id}",
+                {
+                    'type': 'job_notification',
+                    'event': 'NEW_MESSAGE',
+                    'job_id': room.job.id if room.job else None,
+                    'message': f"Nuevo mensaje en el chat"
+                }
+            )
 
         return SendMessage(message=message)
 
