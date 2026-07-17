@@ -703,9 +703,11 @@ class RequestPasswordReset(graphene.Mutation):
                 expires_at=expires_at
             )
             
-            # Enviar por correo usando conexión SMTP explícita
-            from django.core.mail import EmailMessage, get_connection
+            # Enviar correo: SendGrid API (producción) o SMTP (local/fallback)
             from django.conf import settings
+            import logging
+            import traceback
+            logger = logging.getLogger(__name__)
 
             subject = "Código de recuperación de contraseña - ClanShip"
             message_content = (
@@ -720,45 +722,67 @@ class RequestPasswordReset(graphene.Mutation):
             )
 
             try:
-                connection = get_connection(
-                    host=settings.EMAIL_HOST,
-                    port=settings.EMAIL_PORT,
-                    username=settings.NO_REPLY_EMAIL_USER,
-                    password=settings.NO_REPLY_EMAIL_PASSWORD,
-                    use_ssl=settings.EMAIL_USE_SSL,
-                    use_tls=settings.EMAIL_USE_TLS,
-                    timeout=settings.EMAIL_TIMEOUT,
-                )
-                email_msg = EmailMessage(
-                    subject=subject,
-                    body=message_content,
-                    from_email=settings.NO_REPLY_FROM_EMAIL,
-                    to=[user.email],
-                    connection=connection,
-                )
-                email_msg.send(fail_silently=False)
+                sendgrid_key = getattr(settings, 'SENDGRID_API_KEY', None)
+
+                if sendgrid_key:
+                    # ── SendGrid API (HTTPS/443 — funciona en DigitalOcean) ──
+                    import urllib.request
+                    import json as _json
+
+                    payload = _json.dumps({
+                        "personalizations": [{"to": [{"email": user.email}]}],
+                        "from": {"email": settings.NO_REPLY_EMAIL_USER, "name": "Equipo ClanShip"},
+                        "subject": subject,
+                        "content": [{"type": "text/plain", "value": message_content}],
+                    }).encode()
+
+                    req = urllib.request.Request(
+                        "https://api.sendgrid.com/v3/mail/send",
+                        data=payload,
+                        headers={
+                            "Authorization": f"Bearer {sendgrid_key}",
+                            "Content-Type": "application/json",
+                        },
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=20) as resp:
+                        logger.info(f"[SENDGRID] OTP enviado a '{user.email}'. Status: {resp.status}")
+
+                else:
+                    # ── Fallback SMTP (entorno local) ──
+                    from django.core.mail import EmailMessage, get_connection
+                    connection = get_connection(
+                        host=settings.EMAIL_HOST,
+                        port=settings.EMAIL_PORT,
+                        username=settings.NO_REPLY_EMAIL_USER,
+                        password=settings.NO_REPLY_EMAIL_PASSWORD,
+                        use_ssl=settings.EMAIL_USE_SSL,
+                        use_tls=settings.EMAIL_USE_TLS,
+                        timeout=settings.EMAIL_TIMEOUT,
+                    )
+                    email_msg = EmailMessage(
+                        subject=subject,
+                        body=message_content,
+                        from_email=settings.NO_REPLY_FROM_EMAIL,
+                        to=[user.email],
+                        connection=connection,
+                    )
+                    email_msg.send(fail_silently=False)
+                    logger.info(f"[SMTP] OTP enviado a '{user.email}'.")
+
             except Exception as mail_err:
-                import logging
-                import traceback
-                logger = logging.getLogger(__name__)
                 err_type = type(mail_err).__name__
                 err_msg  = str(mail_err)
                 logger.error(
-                    f"[SMTP ERROR] No se pudo enviar OTP a '{email}'.\n"
+                    f"[EMAIL ERROR] No se pudo enviar OTP a '{email}'.\n"
                     f"  Tipo de error : {err_type}\n"
                     f"  Mensaje       : {err_msg}\n"
-                    f"  Host SMTP     : {settings.EMAIL_HOST}:{settings.EMAIL_PORT}\n"
-                    f"  Usuario       : {settings.NO_REPLY_EMAIL_USER}\n"
-                    f"  TLS/SSL       : TLS={settings.EMAIL_USE_TLS} SSL={settings.EMAIL_USE_SSL}\n"
                     f"  Traceback:\n{traceback.format_exc()}"
                 )
-                # Hint específico para errores de red en Docker
                 if 'Network is unreachable' in err_msg or 'Connection refused' in err_msg:
                     logger.error(
-                        "[SMTP HINT] El contenedor no alcanza el servidor SMTP. "
-                        "Verifica: (1) el firewall del host permite salida por puerto 587, "
-                        "(2) la red Docker tiene acceso a internet, "
-                        "(3) los DNS del contenedor resuelven smtp.gmail.com."
+                        "[EMAIL HINT] Revisa: (1) SENDGRID_API_KEY en .env del servidor, "
+                        "(2) si usas SMTP verifica que el puerto no esté bloqueado por el proveedor."
                     )
                 # Aún retornamos éxito para no revelar si el correo existe
             

@@ -292,7 +292,7 @@ UNFOLD = {
     },
 }
 
-# ─── Configuración de Email SMTP ───────────────────────────────────────────────
+# ─── Configuración de Email ────────────────────────────────────────────────────
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
 EMAIL_HOST     = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
@@ -310,3 +310,7 @@ NO_REPLY_FROM_EMAIL     = os.environ.get('DEFAULT_FROM_EMAIL', f'Equipo Clanship
 EMAIL_HOST_USER     = NO_REPLY_EMAIL_USER
 EMAIL_HOST_PASSWORD = NO_REPLY_EMAIL_PASSWORD
 DEFAULT_FROM_EMAIL  = NO_REPLY_FROM_EMAIL
+
+# SendGrid API Key (producción — tiene prioridad sobre SMTP si está definido)
+# Obtén la tuya en: https://app.sendgrid.com/settings/api_keys
+SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
