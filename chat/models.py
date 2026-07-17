@@ -17,7 +17,7 @@ class ChatRoom(models.Model):
     )
     job = models.OneToOneField(
         "jobs.Job",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="chat_room",
         null=True,
         blank=True,
@@ -28,6 +28,7 @@ class ChatRoom(models.Model):
     class Meta:
         verbose_name = "Sala de Chat"
         verbose_name_plural = "Salas de Chat"
+        unique_together = ('customer', 'professional')
 
     def __str__(self):
         return f"Chat: {self.customer.username} & {self.professional.username}"

@@ -215,17 +215,23 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def create_job_if_not_exists(self, room_id):
         from jobs.models import Job
         room = ChatRoom.objects.get(id=room_id)
-        active_job_exists = Job.objects.filter(
+        active_job = Job.objects.filter(
             customer=room.customer,
             professional=room.professional,
             status__in=[Job.Status.REQUESTED, Job.Status.AGREED, Job.Status.IN_VISIT]
-        ).exists()
+        ).first()
 
-        if not active_job_exists:
-            Job.objects.create(
+        if not active_job:
+            job = Job.objects.create(
                 customer=room.customer,
                 professional=room.professional,
                 status=Job.Status.REQUESTED
             )
+            room.job = job
+            room.save()
             return True
+        else:
+            if room.job != active_job:
+                room.job = active_job
+                room.save()
         return False

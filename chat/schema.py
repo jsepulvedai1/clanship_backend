@@ -108,8 +108,9 @@ class GetOrCreateChatRoom(graphene.Mutation):
             room, created = ChatRoom.objects.get_or_create(
                 customer=user,
                 professional=job.professional,
-                job=job
             )
+            room.job = job
+            room.save()
             return GetOrCreateChatRoom(room=room)
 
         try:
@@ -120,7 +121,6 @@ class GetOrCreateChatRoom(graphene.Mutation):
         room, created = ChatRoom.objects.get_or_create(
             customer=user,
             professional=professional,
-            job=None
         )
         return GetOrCreateChatRoom(room=room)
 
@@ -146,8 +146,9 @@ class GetOrCreateChatRoomWithCustomer(graphene.Mutation):
             room, created = ChatRoom.objects.get_or_create(
                 customer=job.customer,
                 professional=user,
-                job=job
             )
+            room.job = job
+            room.save()
             return GetOrCreateChatRoomWithCustomer(room=room)
 
         try:
@@ -158,7 +159,6 @@ class GetOrCreateChatRoomWithCustomer(graphene.Mutation):
         room, created = ChatRoom.objects.get_or_create(
             customer=customer,
             professional=user,
-            job=None
         )
         return GetOrCreateChatRoomWithCustomer(room=room)
 

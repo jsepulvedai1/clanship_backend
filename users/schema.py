@@ -104,7 +104,7 @@ class SpecialtyType(DjangoObjectType):
 
     class Meta:
         model = Specialty
-        fields = ("id", "name", "icon", "icon_url", "color", "synonyms")
+        fields = ("id", "name", "icon", "icon_url", "color", "synonyms", "tags")
 
     def resolve_icon_url(self, info):
         if self.icon:
@@ -114,7 +114,7 @@ class SpecialtyType(DjangoObjectType):
 class TagType(DjangoObjectType):
     class Meta:
         model = Tag
-        fields = ("id", "name", "synonyms", "color")
+        fields = ("id", "name", "synonyms", "color", "specialty")
 
 
 class ProfessionalPhotoType(DjangoObjectType):
@@ -175,7 +175,8 @@ class Query(graphene.ObjectType):
         longitude=graphene.Float(required=True),
         radius_km=graphene.Float(default_value=10000000.0),
         specialty_id=graphene.Int(),
-        query=graphene.String()
+        query=graphene.String(),
+        tag_ids=graphene.List(graphene.Int)
     )
 
     def resolve_me(self, info):
@@ -205,7 +206,7 @@ class Query(graphene.ObjectType):
             queryset = queryset.filter(specialty_id=specialty_id)
         return queryset
 
-    def resolve_nearby_professionals(self, info, latitude, longitude, radius_km, specialty_id=None, query=None):
+    def resolve_nearby_professionals(self, info, latitude, longitude, radius_km, specialty_id=None, query=None, tag_ids=None):
         from math import cos, radians, sin, atan2, sqrt
         
         # Filtramos usuarios que sean profesionales, estén disponibles y tengan ubicación
@@ -218,6 +219,9 @@ class Query(graphene.ObjectType):
 
         if specialty_id:
             queryset = queryset.filter(professional_profile__specialty_id=specialty_id)
+
+        if tag_ids:
+            queryset = queryset.filter(professional_profile__tags__id__in=tag_ids).distinct()
 
         if query:
             from django.db.models import Q
@@ -464,6 +468,8 @@ class UpdateProfessionalProfile(graphene.Mutation):
             profile.specialty_id = specialty_id
             
         if tag_ids is not None:
+            if len(tag_ids) > 6:
+                raise Exception("No puedes seleccionar más de 6 subclases.")
             # tag_ids can be a list of IDs or strings
             profile.tags.set(tag_ids)
             

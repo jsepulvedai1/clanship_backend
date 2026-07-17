@@ -108,7 +108,15 @@ class Tag(models.Model):
     """
     Etiquetas para asociar con profesionales (ej: cableado, grifería, pintura_exterior).
     """
-    name = models.CharField(max_length=50, unique=True, verbose_name="Nombre")
+    name = models.CharField(max_length=100, unique=True, verbose_name="Nombre")
+    specialty = models.ForeignKey(
+        Specialty,
+        on_delete=models.CASCADE,
+        related_name="tags",
+        verbose_name="Clase (Especialidad)",
+        null=True,
+        blank=True
+    )
     synonyms = models.TextField(
         blank=True,
         null=True,
@@ -308,5 +316,19 @@ class UserAddress(models.Model):
 
     def __str__(self):
         return f"{self.alias or 'Dirección'} - {self.user.username}"
+
+
+from django.db.models.signals import m2m_changed
+from django.core.exceptions import ValidationError
+from django.dispatch import receiver
+
+@receiver(m2m_changed, sender=ProfessionalProfile.tags.through)
+def limit_tags(sender, instance, action, **kwargs):
+    if action == "pre_add":
+        pk_set = kwargs.get("pk_set", set())
+        current_tags = set(instance.tags.values_list('id', flat=True))
+        new_tags = current_tags.union(pk_set)
+        if len(new_tags) > 6:
+            raise ValidationError("No puedes seleccionar más de 6 subclases.")
 
 

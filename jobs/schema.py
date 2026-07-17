@@ -56,11 +56,12 @@ class CreateJob(graphene.Mutation):
 
         if active_job:
             from chat.models import ChatRoom
-            ChatRoom.objects.get_or_create(
+            room, created = ChatRoom.objects.get_or_create(
                 customer=user,
                 professional=professional,
-                job=active_job
             )
+            room.job = active_job
+            room.save()
             return CreateJob(job=active_job)
 
         job = Job.objects.create(
@@ -71,11 +72,12 @@ class CreateJob(graphene.Mutation):
         )
 
         from chat.models import ChatRoom
-        ChatRoom.objects.create(
+        room, created = ChatRoom.objects.get_or_create(
             customer=user,
             professional=professional,
-            job=job
         )
+        room.job = job
+        room.save()
 
         return CreateJob(job=job)
 
