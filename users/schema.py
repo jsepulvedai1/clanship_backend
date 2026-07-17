@@ -739,8 +739,27 @@ class RequestPasswordReset(graphene.Mutation):
                 email_msg.send(fail_silently=False)
             except Exception as mail_err:
                 import logging
+                import traceback
                 logger = logging.getLogger(__name__)
-                logger.error(f"Error enviando OTP a {email}: {mail_err}")
+                err_type = type(mail_err).__name__
+                err_msg  = str(mail_err)
+                logger.error(
+                    f"[SMTP ERROR] No se pudo enviar OTP a '{email}'.\n"
+                    f"  Tipo de error : {err_type}\n"
+                    f"  Mensaje       : {err_msg}\n"
+                    f"  Host SMTP     : {settings.EMAIL_HOST}:{settings.EMAIL_PORT}\n"
+                    f"  Usuario       : {settings.NO_REPLY_EMAIL_USER}\n"
+                    f"  TLS/SSL       : TLS={settings.EMAIL_USE_TLS} SSL={settings.EMAIL_USE_SSL}\n"
+                    f"  Traceback:\n{traceback.format_exc()}"
+                )
+                # Hint específico para errores de red en Docker
+                if 'Network is unreachable' in err_msg or 'Connection refused' in err_msg:
+                    logger.error(
+                        "[SMTP HINT] El contenedor no alcanza el servidor SMTP. "
+                        "Verifica: (1) el firewall del host permite salida por puerto 587, "
+                        "(2) la red Docker tiene acceso a internet, "
+                        "(3) los DNS del contenedor resuelven smtp.gmail.com."
+                    )
                 # Aún retornamos éxito para no revelar si el correo existe
             
             return RequestPasswordReset(success=True, message=generic_message)
