@@ -1,6 +1,6 @@
 import graphene
 from graphene_django import DjangoObjectType
-from .models import User, Specialty, ProfessionalProfile, Tag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress
 import graphql_jwt
 from graphql_jwt.decorators import login_required
 from decimal import Decimal
@@ -111,10 +111,20 @@ class SpecialtyType(DjangoObjectType):
             return info.context.build_absolute_uri(self.icon.url)
         return None
 
+class SubTagType(DjangoObjectType):
+    class Meta:
+        model = SubTag
+        fields = ("id", "name", "color", "tag")
+
 class TagType(DjangoObjectType):
+    subtags = graphene.List(lambda: SubTagType)
+
     class Meta:
         model = Tag
-        fields = ("id", "name", "synonyms", "color", "specialty")
+        fields = ("id", "name", "synonyms", "color", "specialty", "subtags")
+
+    def resolve_subtags(self, info):
+        return self.subtags.all()
 
 
 class ProfessionalPhotoType(DjangoObjectType):
@@ -164,6 +174,7 @@ class Query(graphene.ObjectType):
     me = graphene.Field(UserType)
     specialties = graphene.List(SpecialtyType)
     tags = graphene.List(TagType)
+    subtags = graphene.List(SubTagType)
     professionals = graphene.List(ProfessionalProfileType, specialty_id=graphene.Int())
     my_favorites = graphene.List(UserType)
     subscription_plans = graphene.List(SubscriptionPlanType)
@@ -176,7 +187,8 @@ class Query(graphene.ObjectType):
         radius_km=graphene.Float(default_value=10000000.0),
         specialty_id=graphene.Int(),
         query=graphene.String(),
-        tag_ids=graphene.List(graphene.Int)
+        tag_ids=graphene.List(graphene.Int),
+        subtag_ids=graphene.List(graphene.Int)
     )
 
     def resolve_me(self, info):
@@ -190,6 +202,9 @@ class Query(graphene.ObjectType):
 
     def resolve_tags(self, info):
         return Tag.objects.all()
+
+    def resolve_subtags(self, info):
+        return SubTag.objects.all()
 
     def resolve_my_favorites(self, info):
         user = info.context.user
@@ -206,7 +221,7 @@ class Query(graphene.ObjectType):
             queryset = queryset.filter(specialty_id=specialty_id)
         return queryset
 
-    def resolve_nearby_professionals(self, info, latitude, longitude, radius_km, specialty_id=None, query=None, tag_ids=None):
+    def resolve_nearby_professionals(self, info, latitude, longitude, radius_km, specialty_id=None, query=None, tag_ids=None, subtag_ids=None):
         from math import cos, radians, sin, atan2, sqrt
         
         # Filtramos usuarios que sean profesionales, estén disponibles y tengan ubicación
@@ -223,10 +238,16 @@ class Query(graphene.ObjectType):
         if tag_ids:
             queryset = queryset.filter(professional_profile__tags__id__in=tag_ids).distinct()
 
+        if subtag_ids:
+            queryset = queryset.filter(professional_profile__subtags__id__in=subtag_ids).distinct()
+
         if query:
             from django.db.models import Q
             matching_tags = Tag.objects.filter(
                 Q(name__icontains=query) | Q(synonyms__icontains=query)
+            )
+            matching_subtags = SubTag.objects.filter(
+                Q(name__icontains=query)
             )
             queryset = queryset.filter(
                 Q(first_name__icontains=query) |
@@ -235,7 +256,8 @@ class Query(graphene.ObjectType):
                 Q(professional_profile__specialty__name__icontains=query) |
                 Q(professional_profile__specialty__synonyms__icontains=query) |
                 Q(professional_profile__bio__icontains=query) |
-                Q(professional_profile__tags__in=matching_tags)
+                Q(professional_profile__tags__in=matching_tags) |
+                Q(professional_profile__subtags__in=matching_subtags)
             ).distinct()
 
         # Cálculo aproximado de Bounding Box (1 grado latitud ~ 111km)
@@ -434,6 +456,7 @@ class UpdateProfessionalProfile(graphene.Mutation):
         instagram_url = graphene.String()
         tiktok_url = graphene.String()
         tag_ids = graphene.List(graphene.ID)
+        subtag_ids = graphene.List(graphene.ID)
         specialty_id = graphene.Int()
         specialty_ids = graphene.List(graphene.ID)
 
@@ -442,7 +465,7 @@ class UpdateProfessionalProfile(graphene.Mutation):
 
     def mutate(self, info, bio=None, hourly_rate=None, service_radius=None, 
                facebook_url=None, instagram_url=None, tiktok_url=None, tag_ids=None,
-               specialty_id=None, specialty_ids=None):
+               subtag_ids=None, specialty_id=None, specialty_ids=None):
         user = info.context.user
         if user.is_anonymous:
             raise Exception('No autenticado')
@@ -468,10 +491,13 @@ class UpdateProfessionalProfile(graphene.Mutation):
             profile.specialty_id = specialty_id
             
         if tag_ids is not None:
-            if len(tag_ids) > 6:
-                raise Exception("No puedes seleccionar más de 6 subclases.")
-            # tag_ids can be a list of IDs or strings
+            # Note: tags are auto-populated by the subtags signals, but we support setting them directly as fallback
             profile.tags.set(tag_ids)
+
+        if subtag_ids is not None:
+            if len(subtag_ids) > 6:
+                raise Exception("No puedes seleccionar más de 6 especializaciones.")
+            profile.subtags.set(subtag_ids)
             
         if specialty_ids is not None:
             profile.specialties.set(specialty_ids)

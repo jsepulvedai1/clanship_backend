@@ -138,6 +138,33 @@ class Tag(models.Model):
         return self.name
 
 
+class SubTag(models.Model):
+    """
+    Sub-etiquetas o especializaciones específicas dentro de una etiqueta principal.
+    """
+    name = models.CharField(max_length=150, verbose_name="Nombre")
+    tag = models.ForeignKey(
+        Tag,
+        on_delete=models.CASCADE,
+        related_name="subtags",
+        verbose_name="Etiqueta Principal (Subclase)"
+    )
+    color = models.CharField(
+        max_length=7,
+        default="#0B6E4F",
+        verbose_name="Color hexadecimal",
+        help_text="Color para la sub-etiqueta en formato hexadecimal (ej: #FF5733)"
+    )
+
+    class Meta:
+        verbose_name = "Especialización (Sub-etiqueta)"
+        verbose_name_plural = "Especializaciones (Sub-etiquetas)"
+        unique_together = ('tag', 'name')
+
+    def __str__(self):
+        return f"{self.tag.name} -> {self.name}"
+
+
 class SubscriptionPlan(models.Model):
     """
     Planes de suscripción para los profesionales.
@@ -203,6 +230,7 @@ class ProfessionalProfile(models.Model):
     # Radio de servicio y etiquetas asociadas
     service_radius = models.IntegerField(default=10, verbose_name="Radio de servicio (km)")
     tags = models.ManyToManyField(Tag, blank=True, related_name="professionals", verbose_name="Etiquetas")
+    subtags = models.ManyToManyField(SubTag, blank=True, related_name="professionals", verbose_name="Especializaciones")
 
     class Meta:
         verbose_name = "Perfil Profesional"
@@ -322,13 +350,17 @@ from django.db.models.signals import m2m_changed
 from django.core.exceptions import ValidationError
 from django.dispatch import receiver
 
-@receiver(m2m_changed, sender=ProfessionalProfile.tags.through)
-def limit_tags(sender, instance, action, **kwargs):
+@receiver(m2m_changed, sender=ProfessionalProfile.subtags.through)
+def limit_subtags_and_sync_tags(sender, instance, action, **kwargs):
     if action == "pre_add":
         pk_set = kwargs.get("pk_set", set())
-        current_tags = set(instance.tags.values_list('id', flat=True))
-        new_tags = current_tags.union(pk_set)
-        if len(new_tags) > 6:
-            raise ValidationError("No puedes seleccionar más de 6 subclases.")
+        current_subtags = set(instance.subtags.values_list('id', flat=True))
+        new_subtags = current_subtags.union(pk_set)
+        if len(new_subtags) > 6:
+            raise ValidationError("No puedes seleccionar más de 6 especializaciones.")
+
+    if action in ["post_add", "post_remove", "post_clear"]:
+        parent_tag_ids = list(instance.subtags.values_list('tag_id', flat=True).distinct())
+        instance.tags.set(parent_tag_ids)
 
 
