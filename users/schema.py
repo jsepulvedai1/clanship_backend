@@ -1,6 +1,6 @@
 import graphene
 from graphene_django import DjangoObjectType
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP, UserDevice
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP, UserDevice, SystemSetting
 import graphql_jwt
 from graphql_jwt.decorators import login_required
 from decimal import Decimal
@@ -178,6 +178,10 @@ class Query(graphene.ObjectType):
     professionals = graphene.List(ProfessionalProfileType, specialty_id=graphene.Int())
     my_favorites = graphene.List(UserType)
     subscription_plans = graphene.List(SubscriptionPlanType)
+    max_specialties_per_tradesman = graphene.Int()
+
+    def resolve_max_specialties_per_tradesman(self, info):
+        return SystemSetting.get_max_specialties()
     
     # Nueva query para buscar maestros cercanos (soporta filtro de texto)
     nearby_professionals = graphene.List(

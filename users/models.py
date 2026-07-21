@@ -350,6 +350,29 @@ class UserAddress(models.Model):
         return f"{self.alias or 'Dirección'} - {self.user.username}"
 
 
+class SystemSetting(models.Model):
+    """
+    Configuración global del sistema modificable desde Django Admin.
+    """
+    max_specialties_per_tradesman = models.PositiveIntegerField(
+        default=6,
+        verbose_name="Máximo de especialidades por maestro",
+        help_text="Número máximo de especialidades/subtags que puede seleccionar un maestro"
+    )
+
+    class Meta:
+        verbose_name = "Configuración del Sistema"
+        verbose_name_plural = "Configuración del Sistema"
+
+    def __str__(self):
+        return f"Configuración del Sistema (Máx. Especialidades: {self.max_specialties_per_tradesman})"
+
+    @classmethod
+    def get_max_specialties(cls):
+        setting = cls.objects.first()
+        return setting.max_specialties_per_tradesman if setting else 6
+
+
 from django.db.models.signals import m2m_changed
 from django.core.exceptions import ValidationError
 from django.dispatch import receiver
@@ -360,8 +383,9 @@ def limit_subtags_and_sync_tags(sender, instance, action, **kwargs):
         pk_set = kwargs.get("pk_set", set())
         current_subtags = set(instance.subtags.values_list('id', flat=True))
         new_subtags = current_subtags.union(pk_set)
-        if len(new_subtags) > 6:
-            raise ValidationError("No puedes seleccionar más de 6 especializaciones.")
+        max_limit = SystemSetting.get_max_specialties()
+        if len(new_subtags) > max_limit:
+            raise ValidationError(f"No puedes seleccionar más de {max_limit} especializaciones.")
 
     if action in ["post_add", "post_remove", "post_clear"]:
         parent_tag_ids = list(instance.subtags.values_list('tag_id', flat=True).distinct())
