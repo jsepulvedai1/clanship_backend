@@ -9,6 +9,7 @@ User = get_user_model()
 class JobType(DjangoObjectType):
     additional_photo_url = graphene.String()
     has_unread_messages = graphene.Boolean()
+    cancelled_by_user_name = graphene.String()
 
     class Meta:
         model = Job
@@ -28,6 +29,11 @@ class JobType(DjangoObjectType):
         except Exception:
             pass
         return False
+
+    def resolve_cancelled_by_user_name(self, info):
+        if self.cancelled_by:
+            return self.cancelled_by.get_full_name() or self.cancelled_by.username
+        return None
 
 class CreateJob(graphene.Mutation):
     """
@@ -100,11 +106,12 @@ class UpdateJobStatus(graphene.Mutation):
     class Arguments:
         job_id = graphene.Int(required=True)
         new_status = graphene.String(required=True)
+        cancellation_reason = graphene.String(required=False)
 
     job = graphene.Field(JobType)
 
     @login_required
-    def mutate(self, info, job_id, new_status):
+    def mutate(self, info, job_id, new_status, cancellation_reason=None):
         user = info.context.user
         try:
             job = Job.objects.get(pk=job_id)
@@ -120,6 +127,10 @@ class UpdateJobStatus(graphene.Mutation):
             raise Exception(f"Estado '{new_status}' no es válido.")
 
         job.status = new_status
+        if cancellation_reason or new_status == Job.Status.CANCELLED:
+            job.cancellation_reason = cancellation_reason
+            job.cancelled_by = user
+
         job.save()
 
         return UpdateJobStatus(job=job)
@@ -257,11 +268,11 @@ class ScheduleJobVisit(graphene.Mutation):
         # Notificar al cliente de la programación de la visita
         try:
             cust = job.customer
-            if cust and cust.fcm_token:
+            if cust:
                 prof_name = job.professional.get_full_name() or job.professional.username
-                from core.firebase import send_push_notification
-                send_push_notification(
-                    fcm_token=cust.fcm_token,
+                from core.firebase import send_user_push_notification
+                send_user_push_notification(
+                    user=cust,
                     title="Propuesta de Visita Programada",
                     body=f"El profesional {prof_name} ha propuesto una visita para el {scheduled_date} a las {scheduled_time}. Por favor valida la agenda.",
                     data={"event": "job_updated", "job_id": job.id}

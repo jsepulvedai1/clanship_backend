@@ -91,4 +91,42 @@ def send_push_notification(fcm_token, title, body, data=None):
         return True
     except Exception as e:
         logger.error(f"Error sending Firebase notification: {e}")
+        # Clean up unregistered or invalid tokens
+        err_msg = str(e).lower()
+        if "unregistered" in err_msg or "registration-token-not-registered" in err_msg or "invalid-argument" in err_msg:
+            try:
+                from users.models import UserDevice
+                UserDevice.objects.filter(fcm_token=fcm_token).delete()
+                logger.info(f"Cleaned up invalid/unregistered FCM token: {fcm_token}")
+            except Exception as clean_err:
+                logger.error(f"Error cleaning up FCM token: {clean_err}")
         return False
+
+
+def send_user_push_notification(user, title, body, data=None):
+    """
+    Sends a push notification to all active devices of the given user.
+    """
+    if not user:
+        return False
+
+    # Get all active tokens from UserDevice
+    from users.models import UserDevice
+    tokens = list(UserDevice.objects.filter(user=user).values_list('fcm_token', flat=True))
+
+    # Add legacy token for backwards compatibility if not already present
+    if user.fcm_token and user.fcm_token not in tokens:
+        tokens.append(user.fcm_token)
+
+    if not tokens:
+        logger.info(f"No FCM tokens found for user {user.username}. Skipping push notification.")
+        return False
+
+    success = False
+    for token in tokens:
+        res = send_push_notification(token, title, body, data)
+        if res:
+            success = True
+
+    return success
+

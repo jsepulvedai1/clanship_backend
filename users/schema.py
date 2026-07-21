@@ -1,6 +1,6 @@
 import graphene
 from graphene_django import DjangoObjectType
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP, UserDevice
 import graphql_jwt
 from graphql_jwt.decorators import login_required
 from decimal import Decimal
@@ -463,9 +463,39 @@ class UpdateFcmToken(graphene.Mutation):
         if user.is_anonymous:
             raise Exception('No autenticado')
 
+        # 1. Update legacy token on User model
         user.fcm_token = fcm_token
         user.save()
+
+        # 2. Register/Update in UserDevice
+        UserDevice.objects.update_or_create(
+            fcm_token=fcm_token,
+            defaults={'user': user}
+        )
+
         return UpdateFcmToken(user=user, success=True)
+
+class DeleteFcmToken(graphene.Mutation):
+    class Arguments:
+        fcm_token = graphene.String(required=True)
+
+    success = graphene.Boolean()
+
+    def mutate(self, info, fcm_token):
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception('No autenticado')
+
+        # 1. Delete matching UserDevice mapping
+        UserDevice.objects.filter(fcm_token=fcm_token, user=user).delete()
+
+        # 2. Clear legacy token if it matches
+        if user.fcm_token == fcm_token:
+            user.fcm_token = None
+            user.save()
+
+        return DeleteFcmToken(success=True)
+
 
 class UpdateProfessionalProfile(graphene.Mutation):
     class Arguments:
@@ -904,6 +934,7 @@ class Mutation(graphene.ObjectType):
     toggle_favorite = ToggleFavorite.Field()
     update_availability = UpdateAvailability.Field()
     update_fcm_token = UpdateFcmToken.Field()
+    delete_fcm_token = DeleteFcmToken.Field()
     update_professional_profile = UpdateProfessionalProfile.Field()
     add_portfolio_photo = AddPortfolioPhoto.Field()
     delete_portfolio_photo = DeletePortfolioPhoto.Field()

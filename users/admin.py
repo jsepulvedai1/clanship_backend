@@ -1,7 +1,17 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from unfold.admin import ModelAdmin, TabularInline
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice
+
+@admin.register(UserDevice)
+class UserDeviceAdmin(ModelAdmin):
+    list_display = ('user', 'fcm_token_truncated', 'created_at', 'updated_at')
+    search_fields = ('user__username', 'fcm_token')
+    list_filter = ('created_at', 'updated_at')
+
+    def fcm_token_truncated(self, obj):
+        return f"{obj.fcm_token[:30]}..." if obj.fcm_token else ""
+    fcm_token_truncated.short_description = 'FCM Token'
 
 @admin.register(UserAddress)
 class UserAddressAdmin(ModelAdmin):

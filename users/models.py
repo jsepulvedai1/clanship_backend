@@ -391,3 +391,27 @@ class PasswordResetOTP(models.Model):
         return not self.used and timezone.now() < self.expires_at
 
 
+class UserDevice(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="devices",
+        verbose_name="Usuario"
+    )
+    fcm_token = models.CharField(
+        max_length=500,
+        unique=True,
+        verbose_name="Token Firebase Cloud Messaging"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Dispositivo de Usuario"
+        verbose_name_plural = "Dispositivos de Usuario"
+
+    def __str__(self):
+        return f"{self.user.username} - {self.fcm_token[:20]}..."
+
+
+

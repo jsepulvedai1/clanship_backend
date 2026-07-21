@@ -69,7 +69,7 @@ class Message(models.Model):
 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from core.firebase import send_push_notification
+from core.firebase import send_user_push_notification
 
 @receiver(post_save, sender=Message)
 def notify_message_saved(sender, instance, created, **kwargs):
@@ -85,21 +85,21 @@ def notify_message_saved(sender, instance, created, **kwargs):
                 elif instance.message_type == 'AUDIO':
                     body_text = "🎤 Mensaje de voz"
                 
-                # 1. Send push notification if fcm_token is available
-                if recipient.fcm_token:
-                    try:
-                        send_push_notification(
-                            fcm_token=recipient.fcm_token,
-                            title=f"Mensaje de {sender_name}",
-                            body=body_text,
-                            data={
-                                "event": "chat_message",
-                                "room_id": str(room.id),
-                                "job_id": str(room.job.id) if room.job else ""
-                            }
-                        )
-                    except Exception as e:
-                        print(f"Error sending push notification: {e}")
+                # 1. Send push notification to all active devices
+                try:
+                    send_user_push_notification(
+                        user=recipient,
+                        title=f"Mensaje de {sender_name}",
+                        body=body_text,
+                        data={
+                            "event": "chat_message",
+                            "room_id": str(room.id),
+                            "job_id": str(room.job.id) if room.job else ""
+                        }
+                    )
+                except Exception as e:
+                    print(f"Error sending push notification: {e}")
+
 
                 # 2. Send WebSocket notification to the recipient user group
                 try:

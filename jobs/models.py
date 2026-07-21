@@ -48,6 +48,14 @@ class Job(models.Model):
     )
     address = models.CharField(max_length=255, verbose_name="Dirección de la visita", null=True, blank=True)
     is_read = models.BooleanField(default=False, verbose_name="Leído por el profesional")
+    cancellation_reason = models.TextField(null=True, blank=True, verbose_name="Razón de cancelación/rechazo")
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="cancelled_jobs",
+        verbose_name="Cancelado por"
+    )
     
     # Podríamos añadir PointField aquí cuando GDAL esté disponible
     # location = models.PointField(null=True, blank=True)
@@ -66,7 +74,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
-from core.firebase import send_push_notification
+from core.firebase import send_user_push_notification
 
 @receiver(post_save, sender=Job)
 def notify_job_saved(sender, instance, created, **kwargs):
@@ -74,15 +82,17 @@ def notify_job_saved(sender, instance, created, **kwargs):
     try:
         channel_layer = get_channel_layer()
         if channel_layer:
-            async_to_sync(channel_layer.group_send)(
-                f"user_{instance.professional.id}",
-                {
-                    "type": "job_notification",
-                    "event": "job_created" if created else "job_updated",
-                    "job_id": instance.id,
-                    "message": "Nuevo trabajo recibido" if created else "El estado del trabajo ha cambiado"
-                }
-            )
+            # Enviar a ambos (cliente y profesional)
+            for user in [instance.customer, instance.professional]:
+                async_to_sync(channel_layer.group_send)(
+                    f"user_{user.id}",
+                    {
+                        "type": "job_notification",
+                        "event": "job_created" if created else "job_updated",
+                        "job_id": instance.id,
+                        "message": "Nuevo trabajo recibido" if created else "El estado del trabajo ha cambiado"
+                    }
+                )
     except Exception as e:
         print(f"Error al enviar notificacion por WS: {e}")
 
@@ -91,10 +101,10 @@ def notify_job_saved(sender, instance, created, **kwargs):
         if created:
             # Notificar al profesional de una nueva solicitud
             prof = instance.professional
-            if prof and prof.fcm_token:
+            if prof:
                 client_name = instance.customer.get_full_name() or instance.customer.username
-                send_push_notification(
-                    fcm_token=prof.fcm_token,
+                send_user_push_notification(
+                    user=prof,
                     title="Nueva solicitud de trabajo",
                     body=f"Tienes una nueva solicitud de {client_name}.",
                     data={"event": "job_created", "job_id": instance.id}
@@ -102,10 +112,10 @@ def notify_job_saved(sender, instance, created, **kwargs):
         elif instance.status == Job.Status.CANCELLED:
             # Notificar al cliente que su solicitud fue rechazada/cancelada
             cust = instance.customer
-            if cust and cust.fcm_token:
+            if cust:
                 prof_name = instance.professional.get_full_name() or instance.professional.username
-                send_push_notification(
-                    fcm_token=cust.fcm_token,
+                send_user_push_notification(
+                    user=cust,
                     title="Solicitud Rechazada",
                     body=f"Tu solicitud con {prof_name} ha sido cancelada o rechazada.",
                     data={"event": "job_cancelled", "job_id": instance.id}

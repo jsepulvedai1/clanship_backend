@@ -2,7 +2,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from datetime import datetime, timedelta
 from jobs.models import Job
-from core.firebase import send_push_notification
+from core.firebase import send_user_push_notification
 
 class Command(BaseCommand):
     help = "Envía notificaciones de recordatorio de visitas programadas basadas en el tiempo configurable de aviso previo"
@@ -38,10 +38,10 @@ class Command(BaseCommand):
 
                     # Notificar al cliente
                     cust = job.customer
-                    if cust and cust.fcm_token:
+                    if cust:
                         prof_name = job.professional.get_full_name() or job.professional.username
-                        send_push_notification(
-                            fcm_token=cust.fcm_token,
+                        send_user_push_notification(
+                            user=cust,
                             title="Recordatorio de Visita",
                             body=f"Tu visita con el profesional {prof_name} es en {int(minutes_until_visit)} minutos.",
                             data={"event": "visit_reminder", "job_id": job.id}
@@ -49,10 +49,10 @@ class Command(BaseCommand):
 
                     # Notificar al profesional (maestro)
                     prof = job.professional
-                    if prof and prof.fcm_token:
+                    if prof:
                         cust_name = job.customer.get_full_name() or job.customer.username
-                        send_push_notification(
-                            fcm_token=prof.fcm_token,
+                        send_user_push_notification(
+                            user=prof,
                             title="Recordatorio de Visita",
                             body=f"Tu visita con el cliente {cust_name} es en {int(minutes_until_visit)} minutos.",
                             data={"event": "visit_reminder", "job_id": job.id}
@@ -66,3 +66,4 @@ class Command(BaseCommand):
                 self.stderr.write(f"Error procesando Trabajo ID {job.id}: {e}")
 
         self.stdout.write(self.style.SUCCESS(f"Proceso finalizado. Recordatorios enviados: {sent_count}"))
+
