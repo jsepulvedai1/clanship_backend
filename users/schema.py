@@ -702,9 +702,10 @@ class RequestPasswordReset(graphene.Mutation):
                 otp_code=otp,
                 expires_at=expires_at
             )
-            
-            # Enviar correo: SendGrid API (producción) o SMTP (local/fallback)
+
+            # Enviar correo vía SMTP — mail.clanship.cl
             from django.conf import settings
+            from django.core.mail import EmailMessage, get_connection
             import logging
             import traceback
             logger = logging.getLogger(__name__)
@@ -722,77 +723,38 @@ class RequestPasswordReset(graphene.Mutation):
             )
 
             try:
-                sendgrid_key = getattr(settings, 'SENDGRID_API_KEY', None)
-
-                if sendgrid_key:
-                    # ── SendGrid API (HTTPS/443 — funciona en DigitalOcean) ──
-                    import urllib.request
-                    import json as _json
-
-                    payload = _json.dumps({
-                        "personalizations": [{"to": [{"email": user.email}]}],
-                        "from": {"email": settings.NO_REPLY_EMAIL_USER, "name": "Equipo ClanShip"},
-                        "subject": subject,
-                        "content": [{"type": "text/plain", "value": message_content}],
-                    }).encode()
-
-                    req = urllib.request.Request(
-                        "https://api.sendgrid.com/v3/mail/send",
-                        data=payload,
-                        headers={
-                            "Authorization": f"Bearer {sendgrid_key}",
-                            "Content-Type": "application/json",
-                        },
-                        method="POST",
-                    )
-                    with urllib.request.urlopen(req, timeout=20) as resp:
-                        logger.info(f"[SENDGRID] OTP enviado a '{user.email}'. Status: {resp.status}")
-
-                else:
-                    # ── Fallback SMTP (entorno local) ──
-                    from django.core.mail import EmailMessage, get_connection
-                    connection = get_connection(
-                        host=settings.EMAIL_HOST,
-                        port=settings.EMAIL_PORT,
-                        username=settings.NO_REPLY_EMAIL_USER,
-                        password=settings.NO_REPLY_EMAIL_PASSWORD,
-                        use_ssl=settings.EMAIL_USE_SSL,
-                        use_tls=settings.EMAIL_USE_TLS,
-                        timeout=settings.EMAIL_TIMEOUT,
-                    )
-                    email_msg = EmailMessage(
-                        subject=subject,
-                        body=message_content,
-                        from_email=settings.NO_REPLY_FROM_EMAIL,
-                        to=[user.email],
-                        connection=connection,
-                    )
-                    email_msg.send(fail_silently=False)
-                    logger.info(f"[SMTP] OTP enviado a '{user.email}'.")
+                connection = get_connection(
+                    host=settings.EMAIL_HOST,
+                    port=settings.EMAIL_PORT,
+                    username=settings.NO_REPLY_EMAIL_USER,
+                    password=settings.NO_REPLY_EMAIL_PASSWORD,
+                    use_ssl=settings.EMAIL_USE_SSL,
+                    use_tls=settings.EMAIL_USE_TLS,
+                    timeout=settings.EMAIL_TIMEOUT,
+                )
+                email_msg = EmailMessage(
+                    subject=subject,
+                    body=message_content,
+                    from_email=settings.NO_REPLY_FROM_EMAIL,
+                    to=[user.email],
+                    connection=connection,
+                )
+                email_msg.send(fail_silently=False)
+                logger.info(f"[SMTP] OTP enviado a '{user.email}'.")
 
             except Exception as mail_err:
-                import urllib.error
                 err_type = type(mail_err).__name__
                 err_msg  = str(mail_err)
-                
-                # Intentar leer el cuerpo del error si es un HTTPError de urllib
-                detailed_body = ""
-                if isinstance(mail_err, urllib.error.HTTPError):
-                    try:
-                        detailed_body = f"\n  Cuerpo del Error: {mail_err.read().decode('utf-8')}"
-                    except Exception:
-                        pass
-
                 logger.error(
                     f"[EMAIL ERROR] No se pudo enviar OTP a '{email}'.\n"
                     f"  Tipo de error : {err_type}\n"
-                    f"  Mensaje       : {err_msg}{detailed_body}\n"
+                    f"  Mensaje       : {err_msg}\n"
                     f"  Traceback:\n{traceback.format_exc()}"
                 )
                 if 'Network is unreachable' in err_msg or 'Connection refused' in err_msg:
                     logger.error(
-                        "[EMAIL HINT] Revisa: (1) SENDGRID_API_KEY en .env del servidor, "
-                        "(2) si usas SMTP verifica que el puerto no esté bloqueado por el proveedor."
+                        "[EMAIL HINT] Verifica que el puerto 465 no esté bloqueado "
+                        "por el proveedor de hosting y que EMAIL_HOST_PASSWORD esté configurado en .env"
                     )
                 # Aún retornamos éxito para no revelar si el correo existe
             
