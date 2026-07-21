@@ -771,12 +771,22 @@ class RequestPasswordReset(graphene.Mutation):
                     logger.info(f"[SMTP] OTP enviado a '{user.email}'.")
 
             except Exception as mail_err:
+                import urllib.error
                 err_type = type(mail_err).__name__
                 err_msg  = str(mail_err)
+                
+                # Intentar leer el cuerpo del error si es un HTTPError de urllib
+                detailed_body = ""
+                if isinstance(mail_err, urllib.error.HTTPError):
+                    try:
+                        detailed_body = f"\n  Cuerpo del Error: {mail_err.read().decode('utf-8')}"
+                    except Exception:
+                        pass
+
                 logger.error(
                     f"[EMAIL ERROR] No se pudo enviar OTP a '{email}'.\n"
                     f"  Tipo de error : {err_type}\n"
-                    f"  Mensaje       : {err_msg}\n"
+                    f"  Mensaje       : {err_msg}{detailed_body}\n"
                     f"  Traceback:\n{traceback.format_exc()}"
                 )
                 if 'Network is unreachable' in err_msg or 'Connection refused' in err_msg:

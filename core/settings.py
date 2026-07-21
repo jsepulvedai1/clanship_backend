@@ -293,18 +293,22 @@ UNFOLD = {
 }
 
 # ─── Configuración de Email ────────────────────────────────────────────────────
+# Servidor: mail.clanship.cl — Puerto 465 (SSL implícito) — usuario: noreply@clanship.cl
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
-EMAIL_HOST     = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
-EMAIL_PORT     = int(os.environ.get('EMAIL_PORT', 587))
-EMAIL_USE_TLS  = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
-EMAIL_USE_SSL  = os.environ.get('EMAIL_USE_SSL', 'False') == 'True'
+EMAIL_HOST     = os.environ.get('EMAIL_HOST', 'mail.clanship.cl')
+EMAIL_PORT     = int(os.environ.get('EMAIL_PORT', 465))
+EMAIL_USE_TLS  = os.environ.get('EMAIL_USE_TLS', 'False') == 'True'   # No compatible con puerto 465
+EMAIL_USE_SSL  = os.environ.get('EMAIL_USE_SSL', 'True') == 'True'    # SSL implícito en puerto 465
 EMAIL_TIMEOUT  = int(os.environ.get('EMAIL_TIMEOUT', 20))
 
 # Credenciales de la cuenta remitente (configurar en .env o variables del servidor)
-NO_REPLY_EMAIL_USER     = os.environ.get('EMAIL_HOST_USER', '')
+NO_REPLY_EMAIL_USER     = os.environ.get('EMAIL_HOST_USER', 'noreply@clanship.cl')
 NO_REPLY_EMAIL_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-NO_REPLY_FROM_EMAIL     = os.environ.get('DEFAULT_FROM_EMAIL', f'Equipo Clanship <{os.environ.get("EMAIL_HOST_USER", "")}>')
+NO_REPLY_FROM_EMAIL     = os.environ.get(
+    'DEFAULT_FROM_EMAIL',
+    f'Equipo Clanship <{os.environ.get("EMAIL_HOST_USER", "noreply@clanship.cl")}>',
+)
 
 # También los exponemos con los nombres estándar de Django
 EMAIL_HOST_USER     = NO_REPLY_EMAIL_USER
@@ -312,5 +316,5 @@ EMAIL_HOST_PASSWORD = NO_REPLY_EMAIL_PASSWORD
 DEFAULT_FROM_EMAIL  = NO_REPLY_FROM_EMAIL
 
 # SendGrid API Key (producción — tiene prioridad sobre SMTP si está definido)
-# Obtén la tuya en: https://app.sendgrid.com/settings/api_keys
+# Configura esta variable en el servidor para usar SendGrid en lugar del SMTP propio.
 SENDGRID_API_KEY = os.environ.get('SENDGRID_API_KEY', '')
