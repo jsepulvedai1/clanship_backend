@@ -703,9 +703,8 @@ class RequestPasswordReset(graphene.Mutation):
                 expires_at=expires_at
             )
 
-            # Enviar correo vía SMTP — mail.clanship.cl
+            # Enviar correo vía Resend (https://resend.com)
             from django.conf import settings
-            from django.core.mail import EmailMessage, get_connection
             import logging
             import traceback
             logger = logging.getLogger(__name__)
@@ -723,24 +722,17 @@ class RequestPasswordReset(graphene.Mutation):
             )
 
             try:
-                connection = get_connection(
-                    host=settings.EMAIL_HOST,
-                    port=settings.EMAIL_PORT,
-                    username=settings.NO_REPLY_EMAIL_USER,
-                    password=settings.NO_REPLY_EMAIL_PASSWORD,
-                    use_ssl=settings.EMAIL_USE_SSL,
-                    use_tls=settings.EMAIL_USE_TLS,
-                    timeout=settings.EMAIL_TIMEOUT,
-                )
-                email_msg = EmailMessage(
-                    subject=subject,
-                    body=message_content,
-                    from_email=settings.NO_REPLY_FROM_EMAIL,
-                    to=[user.email],
-                    connection=connection,
-                )
-                email_msg.send(fail_silently=False)
-                logger.info(f"[SMTP] OTP enviado a '{user.email}'.")
+                import resend
+                resend.api_key = settings.RESEND_API_KEY
+
+                params: resend.Emails.SendParams = {
+                    "from": settings.NO_REPLY_FROM_EMAIL,
+                    "to": [user.email],
+                    "subject": subject,
+                    "text": message_content,
+                }
+                response = resend.Emails.send(params)
+                logger.info(f"[RESEND] OTP enviado a '{user.email}'. id={response.get('id')}")
 
             except Exception as mail_err:
                 err_type = type(mail_err).__name__
@@ -751,10 +743,9 @@ class RequestPasswordReset(graphene.Mutation):
                     f"  Mensaje       : {err_msg}\n"
                     f"  Traceback:\n{traceback.format_exc()}"
                 )
-                if 'Network is unreachable' in err_msg or 'Connection refused' in err_msg:
+                if 'api_key' in err_msg.lower() or 'unauthorized' in err_msg.lower():
                     logger.error(
-                        "[EMAIL HINT] Verifica que el puerto 465 no esté bloqueado "
-                        "por el proveedor de hosting y que EMAIL_HOST_PASSWORD esté configurado en .env"
+                        "[EMAIL HINT] Verifica que RESEND_API_KEY esté configurado correctamente en .env"
                     )
                 # Aún retornamos éxito para no revelar si el correo existe
             
