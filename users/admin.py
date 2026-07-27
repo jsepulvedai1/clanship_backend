@@ -82,9 +82,9 @@ class SubTagAdmin(ModelAdmin):
 
 @admin.register(SubscriptionPlan)
 class SubscriptionPlanAdmin(ModelAdmin):
-    list_display = ('name', 'price', 'duration_days')
+    list_display = ('name', 'price', 'duration_days', 'monthly_requests', 'urgent_requests', 'service_categories', 'search_position', 'featured_badge', 'support_level')
     search_fields = ('name',)
-    list_filter = ('price', 'duration_days')
+    list_filter = ('price', 'duration_days', 'search_position', 'support_level')
 
 @admin.register(ProfessionalPhoto)
 class ProfessionalPhotoAdmin(ModelAdmin):

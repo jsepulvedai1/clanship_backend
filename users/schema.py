@@ -142,7 +142,22 @@ class ProfessionalPhotoType(DjangoObjectType):
 class SubscriptionPlanType(DjangoObjectType):
     class Meta:
         model = SubscriptionPlan
-        fields = ("id", "name", "description", "price", "duration_days")
+        fields = (
+            "id",
+            "name",
+            "description",
+            "price",
+            "duration_days",
+            "monthly_requests",
+            "urgent_requests",
+            "service_categories",
+            "search_position",
+            "featured_badge",
+            "rrss_campaigns",
+            "radio_broadcast",
+            "profile_statistics",
+            "support_level",
+        )
 
 
 class ProfessionalDocumentType(DjangoObjectType):
@@ -227,13 +242,15 @@ class Query(graphene.ObjectType):
 
     def resolve_nearby_professionals(self, info, latitude, longitude, radius_km, specialty_id=None, query=None, tag_ids=None, subtag_ids=None):
         from math import cos, radians, sin, atan2, sqrt
-        
-        # Filtramos usuarios que sean profesionales, estén disponibles y tengan ubicación
+        from django.db.models import Q
+
+        # Filtramos usuarios que sean profesionales, estén disponibles y tengan ubicación (profesional o de usuario)
         queryset = User.objects.filter(
             user_type=User.UserType.PROFESSIONAL,
-            is_available=True,
-            latitude__isnull=False,
-            longitude__isnull=False
+            is_available=True
+        ).filter(
+            Q(professional_profile__latitude__isnull=False, professional_profile__longitude__isnull=False) |
+            Q(latitude__isnull=False, longitude__isnull=False)
         )
 
         if specialty_id:
@@ -243,7 +260,6 @@ class Query(graphene.ObjectType):
             queryset = queryset.filter(professional_profile__tags__id__in=tag_ids).distinct()
 
         if subtag_ids:
-            from django.db.models import Q
             from .models import SubTag
             parent_tag_ids = SubTag.objects.filter(id__in=subtag_ids).values_list('tag_id', flat=True)
             queryset = queryset.filter(
@@ -252,7 +268,7 @@ class Query(graphene.ObjectType):
             ).distinct()
 
         if query:
-            from django.db.models import Q
+            from .models import SubTag
             matching_subtags = SubTag.objects.filter(
                 Q(name__icontains=query)
             )
@@ -279,8 +295,10 @@ class Query(graphene.ObjectType):
         lon_range = radius_km / (111.0 * cos(radians(latitude)))
 
         filtered_queryset = queryset.filter(
-            latitude__range=(latitude - lat_range, latitude + lat_range),
-            longitude__range=(longitude - lon_range, longitude + lon_range)
+            Q(professional_profile__latitude__range=(latitude - lat_range, latitude + lat_range),
+              professional_profile__longitude__range=(longitude - lon_range, longitude + lon_range)) |
+            Q(latitude__range=(latitude - lat_range, latitude + lat_range),
+              longitude__range=(longitude - lon_range, longitude + lon_range))
         )
 
         # Convert to list and calculate Haversine distance for each
@@ -295,12 +313,16 @@ class Query(graphene.ObjectType):
             return R * c
 
         for user in results:
-            if user.latitude is not None and user.longitude is not None:
+            prof = getattr(user, 'professional_profile', None)
+            prof_lat = prof.latitude if prof and prof.latitude is not None else user.latitude
+            prof_lon = prof.longitude if prof and prof.longitude is not None else user.longitude
+
+            if prof_lat is not None and prof_lon is not None:
                 user.distance = calculate_haversine(
                     latitude,
                     longitude,
-                    float(user.latitude),
-                    float(user.longitude)
+                    float(prof_lat),
+                    float(prof_lon)
                 )
             else:
                 user.distance = 0.0
@@ -509,6 +531,9 @@ class UpdateProfessionalProfile(graphene.Mutation):
         facebook_url = graphene.String()
         instagram_url = graphene.String()
         tiktok_url = graphene.String()
+        address = graphene.String()
+        latitude = graphene.Float()
+        longitude = graphene.Float()
         tag_ids = graphene.List(graphene.ID)
         subtag_ids = graphene.List(graphene.ID)
         specialty_id = graphene.Int()
@@ -518,8 +543,9 @@ class UpdateProfessionalProfile(graphene.Mutation):
     user = graphene.Field(UserType)
 
     def mutate(self, info, bio=None, hourly_rate=None, service_radius=None, 
-               facebook_url=None, instagram_url=None, tiktok_url=None, tag_ids=None,
-               subtag_ids=None, specialty_id=None, specialty_ids=None):
+               facebook_url=None, instagram_url=None, tiktok_url=None, 
+               address=None, latitude=None, longitude=None,
+               tag_ids=None, subtag_ids=None, specialty_id=None, specialty_ids=None):
         user = info.context.user
         if user.is_anonymous:
             raise Exception('No autenticado')
@@ -541,11 +567,16 @@ class UpdateProfessionalProfile(graphene.Mutation):
             profile.instagram_url = instagram_url
         if tiktok_url is not None:
             profile.tiktok_url = tiktok_url
+        if address is not None:
+            profile.address = address
+        if latitude is not None:
+            profile.latitude = Decimal(str(latitude))
+        if longitude is not None:
+            profile.longitude = Decimal(str(longitude))
         if specialty_id is not None:
             profile.specialty_id = specialty_id
             
         if tag_ids is not None:
-            # Note: tags are auto-populated by the subtags signals, but we support setting them directly as fallback
             profile.tags.set(tag_ids)
 
         if subtag_ids is not None:
@@ -930,8 +961,39 @@ class DeleteUserAddress(graphene.Mutation):
             raise Exception("Dirección no encontrada.")
 
 
+class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
+    class Arguments(graphql_jwt.ObtainJSONWebToken.Arguments):
+        app_type = graphene.String(required=False, default_value="CLIENT")
+
+    @classmethod
+    def mutate(cls, root, info, **kwargs):
+        app_type = kwargs.get('app_type', 'CLIENT').upper()
+        session_key = str(uuid.uuid4())
+
+        response = super().mutate(root, info, **kwargs)
+
+        if response and getattr(response, 'token', None):
+            try:
+                username = kwargs.get(cls.username_field)
+                user = User.objects.get(**{cls.username_field: username})
+                if app_type == 'TRADESMAN':
+                    user.tradesman_session_key = session_key
+                else:
+                    user.client_session_key = session_key
+                user.save(update_fields=['tradesman_session_key', 'client_session_key'])
+
+                payload = graphql_jwt.utils.jwt_payload(user)
+                payload['app_type'] = app_type
+                payload['session_key'] = session_key
+                response.token = graphql_jwt.utils.jwt_encode(payload)
+            except Exception:
+                pass
+
+        return response
+
+
 class Mutation(graphene.ObjectType):
-    token_auth = graphql_jwt.ObtainJSONWebToken.Field()
+    token_auth = CustomObtainJSONWebToken.Field()
     verify_token = graphql_jwt.Verify.Field()
     refresh_token = graphql_jwt.Refresh.Field()
     update_profile = UpdateProfile.Field()

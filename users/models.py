@@ -76,6 +76,16 @@ class User(AbstractUser):
         related_name="favorited_by_users",
         verbose_name="Profesionales Favoritos"
     )
+    client_session_key = models.CharField(
+        max_length=255, 
+        null=True, blank=True, 
+        verbose_name="Clave de Sesión Cliente Activa"
+    )
+    tradesman_session_key = models.CharField(
+        max_length=255, 
+        null=True, blank=True, 
+        verbose_name="Clave de Sesión Maestro Activa"
+    )
 
     def __str__(self):
         return f"{self.username} ({self.get_user_type_display()})"
@@ -177,6 +187,17 @@ class SubscriptionPlan(models.Model):
     description = models.TextField(blank=True, null=True, verbose_name="Descripción")
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Precio")
     duration_days = models.IntegerField(default=30, verbose_name="Duración (días)")
+    
+    # Parámetros del plan
+    monthly_requests = models.IntegerField(blank=True, null=True, verbose_name="Solicitudes mensuales", help_text="Nulo/vacío para ilimitadas")
+    urgent_requests = models.IntegerField(blank=True, null=True, verbose_name="Solicitudes urgentes", help_text="Nulo/vacío para ilimitadas")
+    service_categories = models.IntegerField(blank=True, null=True, verbose_name="Categorías de servicio", help_text="Nulo/vacío para ilimitadas")
+    search_position = models.CharField(max_length=100, default="Estándar", verbose_name="Posición en búsquedas")
+    featured_badge = models.CharField(max_length=100, blank=True, null=True, default="—", verbose_name="Insignia destacada")
+    rrss_campaigns = models.CharField(max_length=100, blank=True, null=True, default="—", verbose_name="Aparición en campañas RRSS")
+    radio_broadcast = models.CharField(max_length=100, blank=True, null=True, default="—", verbose_name="Difusión radial")
+    profile_statistics = models.CharField(max_length=100, default="Básicas", verbose_name="Estadísticas del perfil")
+    support_level = models.CharField(max_length=100, default="Estándar", verbose_name="Soporte")
 
     class Meta:
         verbose_name = "Plan de Suscripción"
@@ -231,6 +252,25 @@ class ProfessionalProfile(models.Model):
     instagram_url = models.URLField(max_length=255, null=True, blank=True, verbose_name="Instagram URL")
     tiktok_url = models.URLField(max_length=255, null=True, blank=True, verbose_name="TikTok URL")
     
+    # Ubicación del taller / trabajo profesional
+    address = models.CharField(
+        max_length=255, 
+        null=True, blank=True, 
+        verbose_name="Dirección Profesional / Taller"
+    )
+    latitude = models.DecimalField(
+        max_digits=12, 
+        decimal_places=9, 
+        null=True, blank=True, 
+        verbose_name="Latitud Profesional"
+    )
+    longitude = models.DecimalField(
+        max_digits=12, 
+        decimal_places=9, 
+        null=True, blank=True, 
+        verbose_name="Longitud Profesional"
+    )
+
     # Radio de servicio y etiquetas asociadas
     service_radius = models.IntegerField(default=10, verbose_name="Radio de servicio (km)")
     tags = models.ManyToManyField(Tag, blank=True, related_name="professionals", verbose_name="Etiquetas")
@@ -390,6 +430,8 @@ def limit_subtags_and_sync_tags(sender, instance, action, **kwargs):
     if action in ["post_add", "post_remove", "post_clear"]:
         parent_tag_ids = list(instance.subtags.values_list('tag_id', flat=True).distinct())
         instance.tags.set(parent_tag_ids)
+        parent_specialty_ids = list(Tag.objects.filter(id__in=parent_tag_ids, specialty_id__isnull=False).values_list('specialty_id', flat=True).distinct())
+        instance.specialties.set(parent_specialty_ids)
 
 
 import uuid
