@@ -1,15 +1,28 @@
 import graphene
 from graphene_django import DjangoObjectType
-from .models import Job
+from .models import Job, JobReview
 from django.contrib.auth import get_user_model
 from graphql_jwt.decorators import login_required
 
 User = get_user_model()
 
+class JobReviewType(DjangoObjectType):
+    customer_name = graphene.String()
+
+    class Meta:
+        model = JobReview
+        fields = "__all__"
+
+    def resolve_customer_name(self, info):
+        return self.customer.get_full_name() or self.customer.username
+
+
 class JobType(DjangoObjectType):
     additional_photo_url = graphene.String()
     has_unread_messages = graphene.Boolean()
     cancelled_by_user_name = graphene.String()
+    has_been_reviewed = graphene.Boolean()
+    review = graphene.Field(JobReviewType)
 
     class Meta:
         model = Job
@@ -34,6 +47,18 @@ class JobType(DjangoObjectType):
         if self.cancelled_by:
             return self.cancelled_by.get_full_name() or self.cancelled_by.username
         return None
+
+    def resolve_has_been_reviewed(self, info):
+        try:
+            return hasattr(self, 'review') and self.review is not None
+        except Exception:
+            return False
+
+    def resolve_review(self, info):
+        try:
+            return getattr(self, 'review', None)
+        except Exception:
+            return None
 
 class CreateJob(graphene.Mutation):
     """
@@ -304,9 +329,58 @@ class ScheduleJobVisit(graphene.Mutation):
         return ScheduleJobVisit(success=True, job=job)
 
 
+class RateJob(graphene.Mutation):
+    """
+    Mutación para que el cliente califique y comente sobre un trabajo finalizado.
+    """
+    class Arguments:
+        job_id = graphene.Int(required=True)
+        rating = graphene.Int(required=True)
+        comment = graphene.String(required=False)
+
+    success = graphene.Boolean()
+    job = graphene.Field(JobType)
+    review = graphene.Field(JobReviewType)
+
+    @login_required
+    def mutate(self, info, job_id, rating, comment=None):
+        user = info.context.user
+        try:
+            job = Job.objects.get(pk=job_id)
+        except Job.DoesNotExist:
+            raise Exception("El trabajo no existe.")
+
+        if job.customer != user:
+            raise Exception("Sólo el cliente que solicitó el trabajo puede calificarlo.")
+
+        if job.status != Job.Status.FINISHED:
+            raise Exception("Sólo se pueden calificar trabajos que hayan sido finalizados.")
+
+        try:
+            if hasattr(job, 'review') and job.review is not None:
+                raise Exception("Este trabajo ya ha sido calificado anteriormente.")
+        except JobReview.DoesNotExist:
+            pass
+
+        if rating < 1 or rating > 5:
+            raise Exception("La calificación debe ser un valor entre 1 y 5 estrellas.")
+
+        review = JobReview.objects.create(
+            job=job,
+            customer=user,
+            professional=job.professional,
+            rating=rating,
+            comment=comment
+        )
+
+        return RateJob(success=True, job=job, review=review)
+
+
 class Mutation(graphene.ObjectType):
     create_job = CreateJob.Field()
     update_job_status = UpdateJobStatus.Field()
     mark_job_as_read = MarkJobAsRead.Field()
     enrich_job = EnrichJob.Field()
     schedule_job_visit = ScheduleJobVisit.Field()
+    rate_job = RateJob.Field()
+

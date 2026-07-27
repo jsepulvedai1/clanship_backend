@@ -122,3 +122,50 @@ def notify_job_saved(sender, instance, created, **kwargs):
                 )
     except Exception as e:
         print(f"Error al enviar notificacion por Firebase: {e}")
+
+
+class JobReview(models.Model):
+    """
+    Calificación y reseña asignada a un trabajo finalizado.
+    """
+    job = models.OneToOneField(
+        Job,
+        on_delete=models.CASCADE,
+        related_name="review",
+        verbose_name="Trabajo"
+    )
+    customer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="reviews_given",
+        verbose_name="Cliente"
+    )
+    professional = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="reviews_received",
+        verbose_name="Profesional"
+    )
+    rating = models.IntegerField(verbose_name="Calificación (1-5)")
+    comment = models.TextField(null=True, blank=True, verbose_name="Comentario")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Calificación de Trabajo"
+        verbose_name_plural = "Calificaciones de Trabajos"
+
+    def __str__(self):
+        return f"Reseña {self.rating}★ para {self.professional.username} (Trabajo #{self.job_id})"
+
+
+@receiver(post_save, sender=JobReview)
+def update_professional_rating(sender, instance, created, **kwargs):
+    from django.db.models import Avg
+    prof_user = instance.professional
+    prof_profile = getattr(prof_user, 'professional_profile', None)
+    if prof_profile:
+        reviews = JobReview.objects.filter(professional=prof_user)
+        avg_rating = reviews.aggregate(Avg('rating'))['rating__avg'] or 0.0
+        prof_profile.rating = round(float(avg_rating), 1)
+        prof_profile.save(update_fields=['rating'])
+
