@@ -1,3 +1,4 @@
+import uuid
 import graphene
 from graphene_django import DjangoObjectType
 from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP, UserDevice, SystemSetting
