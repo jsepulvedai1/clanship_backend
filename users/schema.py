@@ -327,8 +327,19 @@ class Query(graphene.ObjectType):
             else:
                 user.distance = 0.0
 
-        # Sort by distance
-        results.sort(key=lambda u: u.distance)
+        def get_plan_priority(u):
+            prof = getattr(u, 'professional_profile', None)
+            if not prof or not prof.plan:
+                return 0
+            pos = prof.plan.search_position
+            if pos == "Prioridad máxima":
+                return 2
+            elif pos == "Preferente":
+                return 1
+            return 0
+
+        # Sort by plan search priority (descending) then distance (ascending)
+        results.sort(key=lambda u: (-get_plan_priority(u), u.distance))
         return results
 
 import base64
@@ -962,7 +973,9 @@ class DeleteUserAddress(graphene.Mutation):
 
 
 class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
-    class Arguments(graphql_jwt.ObtainJSONWebToken.Arguments):
+    class Arguments:
+        username = graphene.String(required=True)
+        password = graphene.String(required=True)
         app_type = graphene.String(required=False, default_value="CLIENT")
 
     @classmethod
