@@ -444,20 +444,21 @@ class RegisterUser(graphene.Mutation):
     success = graphene.Boolean()
 
     def mutate(self, info, email, password, first_name, last_name, phone_number=None, user_type='CUSTOMER'):
+        email_clean = email.strip().lower()
         if len(first_name) > 30:
             raise Exception('El nombre no puede tener más de 30 caracteres')
         if len(last_name) > 30:
             raise Exception('El apellido no puede tener más de 30 caracteres')
 
-        if User.objects.filter(email=email).exists() or User.objects.filter(username=email).exists():
+        if User.objects.filter(email__iexact=email_clean).exists() or User.objects.filter(username__iexact=email_clean).exists():
             raise Exception('El usuario ya existe')
 
         user = User(
-            username=email,
-            email=email,
-            first_name=first_name,
-            last_name=last_name,
-            phone_number=phone_number,
+            username=email_clean,
+            email=email_clean,
+            first_name=first_name.strip(),
+            last_name=last_name.strip(),
+            phone_number=phone_number.strip() if phone_number else None,
             user_type=user_type
         )
         user.set_password(password)
@@ -1013,6 +1014,9 @@ class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
 
     @classmethod
     def mutate(cls, root, info, **kwargs):
+        if 'username' in kwargs and isinstance(kwargs['username'], str):
+            kwargs['username'] = kwargs['username'].strip().lower()
+
         app_type = kwargs.get('app_type', 'CLIENT').upper()
         session_key = str(uuid.uuid4())
 
@@ -1021,7 +1025,7 @@ class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
         if response and getattr(response, 'token', None):
             try:
                 username = kwargs.get(cls.username_field)
-                user = User.objects.get(**{cls.username_field: username})
+                user = User.objects.get(Q(username__iexact=username) | Q(email__iexact=username))
                 if app_type == 'TRADESMAN':
                     user.tradesman_session_key = session_key
                 else:
