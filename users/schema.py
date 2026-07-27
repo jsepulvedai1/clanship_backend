@@ -127,6 +127,10 @@ class TagType(DjangoObjectType):
         return self.subtags.all()
 
 
+class CheckUserExistenceType(graphene.ObjectType):
+    email_exists = graphene.Boolean()
+    phone_exists = graphene.Boolean()
+
 class ProfessionalPhotoType(DjangoObjectType):
     image_url = graphene.String()
 
@@ -198,6 +202,26 @@ class Query(graphene.ObjectType):
     def resolve_max_specialties_per_tradesman(self, info):
         return SystemSetting.get_max_specialties()
     
+    # Nueva query para verificar disponibilidad de correo o teléfono en tiempo real
+    check_user_existence = graphene.Field(
+        CheckUserExistenceType,
+        email=graphene.String(),
+        phone_number=graphene.String()
+    )
+
+    def resolve_check_user_existence(self, info, email=None, phone_number=None):
+        email_exists = False
+        phone_exists = False
+        if email and email.strip():
+            email_clean = email.strip().lower()
+            email_exists = User.objects.filter(
+                Q(email__iexact=email_clean) | Q(username__iexact=email_clean)
+            ).exists()
+        if phone_number and phone_number.strip():
+            phone_clean = phone_number.strip()
+            phone_exists = User.objects.filter(phone_number=phone_clean).exists()
+        return CheckUserExistenceType(email_exists=email_exists, phone_exists=phone_exists)
+
     # Nueva query para buscar maestros cercanos (soporta filtro de texto)
     nearby_professionals = graphene.List(
         UserType,
@@ -337,6 +361,15 @@ class Query(graphene.ObjectType):
             elif pos == "Preferente":
                 return 1
             return 0
+
+        # Filtrar profesionales según su propio radio de movilidad/servicio (service_radius)
+        in_radius_results = []
+        for user in results:
+            prof = getattr(user, 'professional_profile', None)
+            max_radius = prof.service_radius if (prof and prof.service_radius is not None) else 10
+            if user.distance <= max_radius:
+                in_radius_results.append(user)
+        results = in_radius_results
 
         # Sort by plan search priority (descending) then distance (ascending)
         results.sort(key=lambda u: (-get_plan_priority(u), u.distance))

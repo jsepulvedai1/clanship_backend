@@ -63,6 +63,27 @@ class CreateJob(graphene.Mutation):
             professional = User.objects.get(pk=professional_id, user_type='PROFESSIONAL')
         except User.DoesNotExist:
             raise Exception("El profesional no existe o no tiene un perfil válido.")
+        # Validar que la ubicación del cliente esté dentro del radio de cobertura del profesional
+        prof_profile = getattr(professional, 'professional_profile', None)
+        if prof_profile:
+            max_radius = prof_profile.service_radius or 10
+            cust_lat = user.latitude
+            cust_lon = user.longitude
+            prof_lat = prof_profile.latitude or professional.latitude
+            prof_lon = prof_profile.longitude or professional.longitude
+
+            if cust_lat is not None and cust_lon is not None and prof_lat is not None and prof_lon is not None:
+                from math import cos, radians, sin, atan2, sqrt
+                def calc_dist(lat1, lon1, lat2, lon2):
+                    R = 6371.0
+                    d_lat = radians(lat2 - lat1)
+                    d_lon = radians(lon2 - lon1)
+                    a = sin(d_lat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
+                    return R * (2 * atan2(sqrt(a), sqrt(1 - a)))
+
+                dist = calc_dist(float(cust_lat), float(cust_lon), float(prof_lat), float(prof_lon))
+                if dist > max_radius:
+                    raise Exception(f"El profesional sólo ofrece servicio dentro de su radio de cobertura ({max_radius} km).")
 
         # Check if an active job already exists between this customer and professional
         active_job = Job.objects.filter(
