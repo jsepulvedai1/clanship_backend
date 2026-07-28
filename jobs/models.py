@@ -221,6 +221,8 @@ class PublicJobRequest(models.Model):
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name="Latitud")
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name="Longitud")
     photo = models.ImageField(upload_to="public_job_photos/", null=True, blank=True, verbose_name="Fotografía del problema")
+    photos = models.JSONField(default=list, blank=True, verbose_name="Fotografías del problema (máximo 4)")
+    desired_date = models.DateField(null=True, blank=True, verbose_name="Fecha deseada del trabajo")
     budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Presupuesto estimado")
     is_urgent = models.BooleanField(default=False, verbose_name="Urgente")
     

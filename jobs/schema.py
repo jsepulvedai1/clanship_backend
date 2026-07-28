@@ -59,13 +59,8 @@ class JobProposalType(DjangoObjectType):
 
 
 class PublicJobRequestType(DjangoObjectType):
-    photo_url = graphene.String()
-    proposals_count = graphene.Int()
-    proposals = graphene.List(JobProposalType)
-    customer_name = graphene.String()
-    specialty_name = graphene.String()
-    has_submitted_proposal = graphene.Boolean()
-    my_proposal = graphene.Field(JobProposalType)
+    photos_urls = graphene.List(graphene.String)
+    desired_date = graphene.String()
 
     class Meta:
         model = PublicJobRequest
@@ -74,6 +69,29 @@ class PublicJobRequestType(DjangoObjectType):
     def resolve_photo_url(self, info):
         if self.photo:
             return info.context.build_absolute_uri(self.photo.url)
+        return None
+
+    def resolve_photos_urls(self, info):
+        urls = []
+        if self.photo:
+            try:
+                urls.append(info.context.build_absolute_uri(self.photo.url))
+            except Exception:
+                pass
+        if self.photos:
+            for p in self.photos:
+                if p.startswith('http://') or p.startswith('https://'):
+                    urls.append(p)
+                else:
+                    try:
+                        urls.append(info.context.build_absolute_uri(p))
+                    except Exception:
+                        urls.append(p)
+        return urls[:4]
+
+    def resolve_desired_date(self, info):
+        if self.desired_date:
+            return self.desired_date.strftime('%Y-%m-%d')
         return None
 
     def resolve_proposals_count(self, info):
@@ -543,12 +561,14 @@ class CreatePublicJobRequest(graphene.Mutation):
         longitude = graphene.Float(required=False)
         budget = graphene.Float(required=False)
         is_urgent = graphene.Boolean(required=False)
+        desired_date = graphene.String(required=False)
+        photos_base64 = graphene.List(graphene.String, required=False)
 
     success = graphene.Boolean()
     public_request = graphene.Field(PublicJobRequestType)
 
     @login_required
-    def mutate(self, info, title, description, address, specialty_id=None, custom_specialty=None, latitude=None, longitude=None, budget=None, is_urgent=False):
+    def mutate(self, info, title, description, address, specialty_id=None, custom_specialty=None, latitude=None, longitude=None, budget=None, is_urgent=False, desired_date=None, photos_base64=None):
         user = info.context.user
         specialty = None
         if specialty_id:
@@ -562,6 +582,33 @@ class CreatePublicJobRequest(graphene.Mutation):
 
         expires_at = timezone.now() + datetime.timedelta(hours=48)
 
+        desired_date_obj = None
+        if desired_date:
+            try:
+                desired_date_obj = datetime.datetime.strptime(desired_date.strip(), "%Y-%m-%d").date()
+            except Exception:
+                pass
+
+        saved_photos_urls = []
+        if photos_base64:
+            import base64
+            from django.core.files.base import ContentFile
+            from django.core.files.storage import default_storage
+
+            for idx, photo_b64 in enumerate(photos_base64[:4]):
+                try:
+                    if ';base64,' in photo_b64:
+                        header, imgstr = photo_b64.split(';base64,')
+                    else:
+                        imgstr = photo_b64
+                    file_name = f"public_job_{user.id}_{int(timezone.now().timestamp())}_{idx}.jpg"
+                    content = ContentFile(base64.b64decode(imgstr), name=file_name)
+                    saved_path = default_storage.save(f"public_job_photos/{file_name}", content)
+                    url = default_storage.url(saved_path)
+                    saved_photos_urls.append(url)
+                except Exception as e:
+                    print(f"Error saving public request photo: {e}")
+
         public_request = PublicJobRequest.objects.create(
             customer=user,
             specialty=specialty,
@@ -573,6 +620,8 @@ class CreatePublicJobRequest(graphene.Mutation):
             longitude=longitude,
             budget=budget,
             is_urgent=is_urgent,
+            desired_date=desired_date_obj,
+            photos=saved_photos_urls,
             expires_at=expires_at,
             status=PublicJobRequest.Status.OPEN
         )
