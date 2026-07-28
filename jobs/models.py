@@ -90,7 +90,28 @@ def notify_job_saved(sender, instance, created, **kwargs):
                         "type": "job_notification",
                         "event": "job_created" if created else "job_updated",
                         "job_id": instance.id,
+                        "status": instance.status,
                         "message": "Nuevo trabajo recibido" if created else "El estado del trabajo ha cambiado"
+                    }
+                )
+
+            # Si el trabajo tiene sala de chat asociada, emitir a la sala en tiempo real
+            chat_room = getattr(instance, 'chat_room', None)
+            if not chat_room:
+                from chat.models import ChatRoom
+                chat_room = ChatRoom.objects.filter(customer=instance.customer, professional=instance.professional).first()
+
+            if chat_room:
+                cancelled_by_str = instance.cancelled_by_user.get_full_name() if instance.cancelled_by_user else None
+                async_to_sync(channel_layer.group_send)(
+                    f"chat_{chat_room.id}",
+                    {
+                        "type": "job_status_changed",
+                        "event": "JOB_STATUS_CHANGED",
+                        "job_id": instance.id,
+                        "new_status": instance.status,
+                        "cancellation_reason": instance.cancellation_reason,
+                        "cancelled_by": cancelled_by_str
                     }
                 )
     except Exception as e:

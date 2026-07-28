@@ -122,6 +122,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'message_type': event.get('message_type', 'TEXT')
         }))
 
+    async def job_status_changed(self, event):
+        await self.send(text_data=json.dumps({
+            'event': 'JOB_STATUS_CHANGED',
+            'type': 'job_status_changed',
+            'job_id': event.get('job_id'),
+            'new_status': event.get('new_status'),
+            'cancellation_reason': event.get('cancellation_reason'),
+            'cancelled_by': event.get('cancelled_by')
+        }))
+
     @database_sync_to_async
     def get_user_avatar_url(self, user):
         if not user.avatar:

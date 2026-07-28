@@ -619,6 +619,7 @@ class UpdateProfessionalProfile(graphene.Mutation):
             profile.latitude = Decimal(str(latitude))
         if longitude is not None:
             profile.longitude = Decimal(str(longitude))
+
         if specialty_id is not None:
             profile.specialty_id = specialty_id
             
