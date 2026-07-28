@@ -522,9 +522,9 @@ class CreatePublicJobRequest(graphene.Mutation):
         title = graphene.String(required=True)
         description = graphene.String(required=True)
         address = graphene.String(required=True)
-        latitude = graphene.Decimal(required=False)
-        longitude = graphene.Decimal(required=False)
-        budget = graphene.Decimal(required=False)
+        latitude = graphene.Float(required=False)
+        longitude = graphene.Float(required=False)
+        budget = graphene.Float(required=False)
         is_urgent = graphene.Boolean(required=False)
 
     success = graphene.Boolean()
@@ -566,7 +566,7 @@ class CreatePublicJobRequest(graphene.Mutation):
 class SubmitJobProposal(graphene.Mutation):
     class Arguments:
         public_request_id = graphene.Int(required=True)
-        estimated_price = graphene.Decimal(required=True)
+        estimated_price = graphene.Float(required=True)
         scheduled_date = graphene.Date(required=True)
         scheduled_time = graphene.Time(required=True)
         message = graphene.String(required=False)
