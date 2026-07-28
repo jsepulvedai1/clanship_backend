@@ -41,7 +41,7 @@ class JobProposalType(DjangoObjectType):
 
     def resolve_professional_rating(self, info):
         prof_profile = getattr(self.professional, 'professional_profile', None)
-        return prof_profile.rating if prof_profile else 0.0
+        return float(prof_profile.rating) if (prof_profile and prof_profile.rating) else 0.0
 
 
 class PublicJobRequestType(DjangoObjectType):
