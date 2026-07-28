@@ -59,8 +59,15 @@ class JobProposalType(DjangoObjectType):
 
 
 class PublicJobRequestType(DjangoObjectType):
+    photo_url = graphene.String()
     photos_urls = graphene.List(graphene.String)
     desired_date = graphene.String()
+    proposals_count = graphene.Int()
+    proposals = graphene.List(JobProposalType)
+    customer_name = graphene.String()
+    specialty_name = graphene.String()
+    has_submitted_proposal = graphene.Boolean()
+    my_proposal = graphene.Field(JobProposalType)
 
     class Meta:
         model = PublicJobRequest
