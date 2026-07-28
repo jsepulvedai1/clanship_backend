@@ -50,6 +50,8 @@ class PublicJobRequestType(DjangoObjectType):
     proposals = graphene.List(JobProposalType)
     customer_name = graphene.String()
     specialty_name = graphene.String()
+    has_submitted_proposal = graphene.Boolean()
+    my_proposal = graphene.Field(JobProposalType)
 
     class Meta:
         model = PublicJobRequest
@@ -73,6 +75,18 @@ class PublicJobRequestType(DjangoObjectType):
         if self.custom_specialty:
             return self.custom_specialty
         return self.specialty.name if self.specialty else ""
+
+    def resolve_has_submitted_proposal(self, info):
+        user = info.context.user
+        if user.is_anonymous:
+            return False
+        return self.proposals.filter(professional=user).exists()
+
+    def resolve_my_proposal(self, info):
+        user = info.context.user
+        if user.is_anonymous:
+            return None
+        return self.proposals.filter(professional=user).first()
 
 User = get_user_model()
 
