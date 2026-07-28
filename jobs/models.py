@@ -209,10 +209,12 @@ class PublicJobRequest(models.Model):
     )
     specialty = models.ForeignKey(
         'users.Specialty',
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
         related_name="public_job_requests",
         verbose_name="Especialidad requerida"
     )
+    custom_specialty = models.CharField(max_length=150, null=True, blank=True, verbose_name="Especialidad personalizada")
     title = models.CharField(max_length=150, verbose_name="Título del servicio")
     description = models.TextField(verbose_name="Descripción detallada")
     address = models.CharField(max_length=255, verbose_name="Dirección de la visita")

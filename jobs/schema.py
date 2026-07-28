@@ -70,6 +70,8 @@ class PublicJobRequestType(DjangoObjectType):
         return self.customer.get_full_name() or self.customer.username
 
     def resolve_specialty_name(self, info):
+        if self.custom_specialty:
+            return self.custom_specialty
         return self.specialty.name if self.specialty else ""
 
 User = get_user_model()
@@ -490,7 +492,8 @@ class RateJob(graphene.Mutation):
 
 class CreatePublicJobRequest(graphene.Mutation):
     class Arguments:
-        specialty_id = graphene.Int(required=True)
+        specialty_id = graphene.Int(required=False)
+        custom_specialty = graphene.String(required=False)
         title = graphene.String(required=True)
         description = graphene.String(required=True)
         address = graphene.String(required=True)
@@ -503,18 +506,24 @@ class CreatePublicJobRequest(graphene.Mutation):
     public_request = graphene.Field(PublicJobRequestType)
 
     @login_required
-    def mutate(self, info, specialty_id, title, description, address, latitude=None, longitude=None, budget=None, is_urgent=False):
+    def mutate(self, info, title, description, address, specialty_id=None, custom_specialty=None, latitude=None, longitude=None, budget=None, is_urgent=False):
         user = info.context.user
-        try:
-            specialty = Specialty.objects.get(pk=specialty_id)
-        except Specialty.DoesNotExist:
-            raise Exception("La especialidad seleccionada no existe.")
+        specialty = None
+        if specialty_id:
+            try:
+                specialty = Specialty.objects.get(pk=specialty_id)
+            except Specialty.DoesNotExist:
+                pass
+
+        if not specialty and custom_specialty:
+            specialty, _ = Specialty.objects.get_or_create(name=custom_specialty.strip())
 
         expires_at = timezone.now() + datetime.timedelta(hours=48)
 
         public_request = PublicJobRequest.objects.create(
             customer=user,
             specialty=specialty,
+            custom_specialty=custom_specialty.strip() if custom_specialty else None,
             title=title,
             description=description,
             address=address,
