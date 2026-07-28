@@ -27,6 +27,7 @@ class UserType(DjangoObjectType):
     is_favorite = graphene.Boolean()
     saved_addresses = graphene.List(UserAddressType)
     distance = graphene.Float()
+    is_validated = graphene.Boolean()
 
     class Meta:
         model = User
@@ -35,8 +36,14 @@ class UserType(DjangoObjectType):
             "avatar", "latitude", "longitude", "address", 
             "is_available", "is_emergency", "professional_profile", "first_name", "last_name",
             "active_jobs", "completed_jobs", "scheduled_jobs", "rejected_jobs", "reviews_count",
-            "is_favorite", "fcm_token", "saved_addresses"
+            "is_favorite", "fcm_token", "saved_addresses", "is_validated"
         )
+
+    def resolve_is_validated(self, info):
+        prof = getattr(self, 'professional_profile', None)
+        if prof:
+            return prof.is_verified
+        return True
 
     def resolve_distance(self, info):
         return getattr(self, 'distance', 0.0)
@@ -483,6 +490,13 @@ class UpdateAvailability(graphene.Mutation):
         user = info.context.user
         if user.is_anonymous:
             raise Exception('No autenticado')
+
+        prof = getattr(user, 'professional_profile', None)
+        if user.user_type == 'PROFESSIONAL' and (not prof or not prof.is_verified):
+            user.is_available = False
+            user.is_emergency = False
+            user.save()
+            raise Exception('Tu perfil está en proceso de validación. No puedes activar tu disponibilidad aún.')
 
         user.is_available = is_available
         if is_emergency is not None:

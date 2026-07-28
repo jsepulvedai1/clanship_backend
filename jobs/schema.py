@@ -371,6 +371,8 @@ class Query(graphene.ObjectType):
         # Si es un profesional, filtrar por sus especialidades y radio de trabajo (service_radius)
         prof_profile = getattr(user, 'professional_profile', None)
         if prof_profile:
+            if not prof_profile.is_verified:
+                return PublicJobRequest.objects.none()
             if specialty_id:
                 queryset = queryset.filter(specialty_id=specialty_id)
             else:
