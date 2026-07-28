@@ -102,12 +102,16 @@ class ProfessionalProfileAdmin(ModelAdmin):
 
     @admin.action(description="Marcar perfiles seleccionados como VERIFICADOS")
     def make_verified(self, request, queryset):
-        queryset.update(is_verified=True)
+        for profile in queryset:
+            profile.is_verified = True
+            profile.save()
         self.message_user(request, "Los perfiles seleccionados han sido verificados con éxito.")
 
     @admin.action(description="Quitar verificación a los perfiles seleccionados")
     def make_unverified(self, request, queryset):
-        queryset.update(is_verified=False)
+        for profile in queryset:
+            profile.is_verified = False
+            profile.save()
         self.message_user(request, "Se ha retirado la verificación a los perfiles seleccionados.")
 
 
@@ -120,12 +124,20 @@ class ProfessionalDocumentAdmin(ModelAdmin):
 
     @admin.action(description="Aprobar documentos seleccionados")
     def approve_documents(self, request, queryset):
-        queryset.update(status='APPROVED')
+        for doc in queryset:
+            doc.status = 'APPROVED'
+            doc.save()
+            # Auto-verificar perfil si sus documentos son aprobados
+            if doc.profile:
+                doc.profile.is_verified = True
+                doc.profile.save()
         self.message_user(request, "Los documentos seleccionados han sido APROBADOS.")
 
     @admin.action(description="Rechazar documentos seleccionados")
     def reject_documents(self, request, queryset):
-        queryset.update(status='REJECTED')
+        for doc in queryset:
+            doc.status = 'REJECTED'
+            doc.save()
         self.message_user(request, "Los documentos seleccionados han sido RECHAZADOS.")
 
 

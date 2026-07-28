@@ -284,6 +284,14 @@ class ProfessionalProfile(models.Model):
         return f"Perfil de {self.user.username} - {self.specialty}"
 
     def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        old_is_verified = False
+        if not is_new:
+            try:
+                old_is_verified = ProfessionalProfile.objects.get(pk=self.pk).is_verified
+            except Exception:
+                pass
+
         if not self.plan_id:
             plan, _ = SubscriptionPlan.objects.get_or_create(
                 name="Plan Base",
@@ -295,6 +303,28 @@ class ProfessionalProfile(models.Model):
             )
             self.plan = plan
         super().save(*args, **kwargs)
+
+        if is_new or (old_is_verified != self.is_verified):
+            self.notify_validation_status()
+
+    def notify_validation_status(self):
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            if channel_layer and self.user_id:
+                async_to_sync(channel_layer.group_send)(
+                    f'user_{self.user_id}',
+                    {
+                        'type': 'job_notification',
+                        'event': 'profile_validated' if self.is_verified else 'profile_unvalidated',
+                        'job_id': 0,
+                        'message': '¡Tu perfil profesional ha sido validado! Ya puedes activarte.' if self.is_verified else 'Tu estado de validación ha cambiado.',
+                        'is_validated': self.is_verified,
+                    }
+                )
+        except Exception as e:
+            print(f"Error sending validation websocket notification: {e}")
 
 
 class ProfessionalPhoto(models.Model):
