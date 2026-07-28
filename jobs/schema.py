@@ -1,8 +1,76 @@
 import graphene
 from graphene_django import DjangoObjectType
-from .models import Job, JobReview
+from .models import Job, JobReview, PublicJobRequest, JobProposal
+from users.models import Specialty
 from django.contrib.auth import get_user_model
 from graphql_jwt.decorators import login_required
+import datetime
+from django.utils import timezone
+import math
+
+def haversine_km(lat1, lon1, lat2, lon2):
+    try:
+        lat1, lon1, lat2, lon2 = float(lat1), float(lon1), float(lat2), float(lon2)
+        R = 6371.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = math.sin(dlat / 2.0)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2.0)**2
+        c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+        return R * c
+    except (ValueError, TypeError):
+        return 0.0
+
+
+class JobProposalType(DjangoObjectType):
+    professional_name = graphene.String()
+    professional_avatar_url = graphene.String()
+    professional_rating = graphene.Float()
+
+    class Meta:
+        model = JobProposal
+        fields = "__all__"
+
+    def resolve_professional_name(self, info):
+        return self.professional.get_full_name() or self.professional.username
+
+    def resolve_professional_avatar_url(self, info):
+        prof_profile = getattr(self.professional, 'professional_profile', None)
+        if prof_profile and prof_profile.profile_photo:
+            return info.context.build_absolute_uri(prof_profile.profile_photo.url)
+        return None
+
+    def resolve_professional_rating(self, info):
+        prof_profile = getattr(self.professional, 'professional_profile', None)
+        return prof_profile.rating if prof_profile else 0.0
+
+
+class PublicJobRequestType(DjangoObjectType):
+    photo_url = graphene.String()
+    proposals_count = graphene.Int()
+    proposals = graphene.List(JobProposalType)
+    customer_name = graphene.String()
+    specialty_name = graphene.String()
+
+    class Meta:
+        model = PublicJobRequest
+        fields = "__all__"
+
+    def resolve_photo_url(self, info):
+        if self.photo:
+            return info.context.build_absolute_uri(self.photo.url)
+        return None
+
+    def resolve_proposals_count(self, info):
+        return self.proposals.count()
+
+    def resolve_proposals(self, info):
+        return self.proposals.all().order_by('-created_at')
+
+    def resolve_customer_name(self, info):
+        return self.customer.get_full_name() or self.customer.username
+
+    def resolve_specialty_name(self, info):
+        return self.specialty.name if self.specialty else ""
 
 User = get_user_model()
 
@@ -419,77 +487,6 @@ class RateJob(graphene.Mutation):
 
 
 # --- NUEVAS MUTACIONES Y TIPOS PARA SOLICITUDES ABIERTAS (MARKETPLACE) ---
-
-from .models import PublicJobRequest, JobProposal
-from users.models import Specialty
-import datetime
-from django.utils import timezone
-import math
-
-def haversine_km(lat1, lon1, lat2, lon2):
-    try:
-        lat1, lon1, lat2, lon2 = float(lat1), float(lon1), float(lat2), float(lon2)
-        R = 6371.0
-        dlat = math.radians(lat2 - lat1)
-        dlon = math.radians(lon2 - lon1)
-        a = math.sin(dlat / 2.0)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2.0)**2
-        c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
-        return R * c
-    except (ValueError, TypeError):
-        return 0.0
-
-
-class JobProposalType(DjangoObjectType):
-    professional_name = graphene.String()
-    professional_avatar_url = graphene.String()
-    professional_rating = graphene.Float()
-
-    class Meta:
-        model = JobProposal
-        fields = "__all__"
-
-    def resolve_professional_name(self, info):
-        return self.professional.get_full_name() or self.professional.username
-
-    def resolve_professional_avatar_url(self, info):
-        prof_profile = getattr(self.professional, 'professional_profile', None)
-        if prof_profile and prof_profile.profile_photo:
-            return info.context.build_absolute_uri(prof_profile.profile_photo.url)
-        return None
-
-    def resolve_professional_rating(self, info):
-        prof_profile = getattr(self.professional, 'professional_profile', None)
-        return prof_profile.rating if prof_profile else 0.0
-
-
-class PublicJobRequestType(DjangoObjectType):
-    photo_url = graphene.String()
-    proposals_count = graphene.Int()
-    proposals = graphene.List(JobProposalType)
-    customer_name = graphene.String()
-    specialty_name = graphene.String()
-
-    class Meta:
-        model = PublicJobRequest
-        fields = "__all__"
-
-    def resolve_photo_url(self, info):
-        if self.photo:
-            return info.context.build_absolute_uri(self.photo.url)
-        return None
-
-    def resolve_proposals_count(self, info):
-        return self.proposals.count()
-
-    def resolve_proposals(self, info):
-        return self.proposals.all().order_by('-created_at')
-
-    def resolve_customer_name(self, info):
-        return self.customer.get_full_name() or self.customer.username
-
-    def resolve_specialty_name(self, info):
-        return self.specialty.name if self.specialty else ""
-
 
 class CreatePublicJobRequest(graphene.Mutation):
     class Arguments:
