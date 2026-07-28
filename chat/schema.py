@@ -132,6 +132,11 @@ class GetOrCreateChatRoom(graphene.Mutation):
             customer=user,
             professional=professional,
         )
+        from jobs.models import Job
+        latest_job = Job.objects.filter(customer=user, professional=professional).order_by('-created_at').first()
+        if latest_job:
+            room.job = latest_job
+            room.save()
         return GetOrCreateChatRoom(room=room)
 
 class GetOrCreateChatRoomWithCustomer(graphene.Mutation):
@@ -170,6 +175,11 @@ class GetOrCreateChatRoomWithCustomer(graphene.Mutation):
             customer=customer,
             professional=user,
         )
+        from jobs.models import Job
+        latest_job = Job.objects.filter(customer=customer, professional=user).order_by('-created_at').first()
+        if latest_job:
+            room.job = latest_job
+            room.save()
         return GetOrCreateChatRoomWithCustomer(room=room)
 
 class Query(graphene.ObjectType):
