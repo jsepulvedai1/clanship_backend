@@ -34,14 +34,28 @@ class JobProposalType(DjangoObjectType):
         return self.professional.get_full_name() or self.professional.username
 
     def resolve_professional_avatar_url(self, info):
-        prof_profile = getattr(self.professional, 'professional_profile', None)
-        if prof_profile and prof_profile.profile_photo:
-            return info.context.build_absolute_uri(prof_profile.profile_photo.url)
+        user = self.professional
+        if user and hasattr(user, 'avatar') and user.avatar:
+            try:
+                return info.context.build_absolute_uri(user.avatar.url)
+            except Exception:
+                pass
+        prof_profile = getattr(user, 'professional_profile', None)
+        if prof_profile and hasattr(prof_profile, 'profile_photo') and prof_profile.profile_photo:
+            try:
+                return info.context.build_absolute_uri(prof_profile.profile_photo.url)
+            except Exception:
+                pass
         return None
 
     def resolve_professional_rating(self, info):
         prof_profile = getattr(self.professional, 'professional_profile', None)
-        return float(prof_profile.rating) if (prof_profile and prof_profile.rating) else 0.0
+        if prof_profile and hasattr(prof_profile, 'rating') and prof_profile.rating is not None:
+            try:
+                return float(prof_profile.rating)
+            except (ValueError, TypeError):
+                pass
+        return 0.0
 
 
 class PublicJobRequestType(DjangoObjectType):
