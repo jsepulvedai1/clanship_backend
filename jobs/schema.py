@@ -312,13 +312,23 @@ class Query(graphene.ObjectType):
         user = info.context.user
         queryset = PublicJobRequest.objects.filter(status=PublicJobRequest.Status.OPEN)
 
-        # Si es un profesional, filtrar por su radio de trabajo (service_radius) y especialidad
+        # Si es un profesional, filtrar por sus especialidades y radio de trabajo (service_radius)
         prof_profile = getattr(user, 'professional_profile', None)
         if prof_profile:
-            if not specialty_id and prof_profile.specialty:
-                queryset = queryset.filter(specialty=prof_profile.specialty)
-            elif specialty_id:
+            if specialty_id:
                 queryset = queryset.filter(specialty_id=specialty_id)
+            else:
+                from django.db.models import Q
+                prof_specialty_ids = set()
+                if prof_profile.specialty_id:
+                    prof_specialty_ids.add(prof_profile.specialty_id)
+                if hasattr(prof_profile, 'specialties'):
+                    prof_specialty_ids.update(prof_profile.specialties.values_list('id', flat=True))
+
+                if prof_specialty_ids:
+                    queryset = queryset.filter(
+                        Q(specialty_id__in=prof_specialty_ids) | Q(specialty__isnull=True) | Q(custom_specialty__isnull=False)
+                    )
 
             if prof_profile.latitude and prof_profile.longitude:
                 max_radius = float(prof_profile.service_radius or 30.0)
@@ -329,6 +339,7 @@ class Query(graphene.ObjectType):
                         if dist <= max_radius:
                             filtered_ids.append(req.id)
                     else:
+                        # Si la solicitud no tiene coordenadas explícitas, incluirla
                         filtered_ids.append(req.id)
                 queryset = queryset.filter(id__in=filtered_ids)
 
