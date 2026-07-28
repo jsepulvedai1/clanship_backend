@@ -270,6 +270,9 @@ class UpdateJobStatus(graphene.Mutation):
         if new_status not in Job.Status.values:
             raise Exception(f"Estado '{new_status}' no es válido.")
 
+        if user == job.customer or job.status != new_status:
+            job.is_read = False
+
         job.status = new_status
         if cancellation_reason or new_status == Job.Status.CANCELLED:
             job.cancellation_reason = cancellation_reason
@@ -376,7 +379,7 @@ class Query(graphene.ObjectType):
     @login_required
     def resolve_my_public_job_requests(self, info):
         user = info.context.user
-        return PublicJobRequest.objects.filter(customer=user).order_by('-created_at')
+        return PublicJobRequest.objects.filter(customer=user).exclude(status=PublicJobRequest.Status.CANCELLED).order_by('-created_at')
 
     @login_required
     def resolve_public_job_request_details(self, info, id):
@@ -709,8 +712,7 @@ class CancelPublicJobRequest(graphene.Mutation):
         except PublicJobRequest.DoesNotExist:
             raise Exception("Solicitud no encontrada.")
 
-        public_request.status = PublicJobRequest.Status.CANCELLED
-        public_request.save()
+        public_request.delete()
 
         return CancelPublicJobRequest(success=True)
 
