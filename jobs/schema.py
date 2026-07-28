@@ -213,6 +213,9 @@ class MarkJobAsRead(graphene.Mutation):
 class Query(graphene.ObjectType):
     job = graphene.Field(JobType, id=graphene.Int(required=True))
     my_jobs = graphene.List(JobType, status=graphene.String())
+    open_public_job_requests = graphene.List(PublicJobRequestType, specialty_id=graphene.Int(required=False))
+    my_public_job_requests = graphene.List(PublicJobRequestType)
+    public_job_request_details = graphene.Field(PublicJobRequestType, id=graphene.Int(required=True))
 
     @login_required
     def resolve_job(self, info, id):
@@ -233,6 +236,45 @@ class Query(graphene.ObjectType):
         if status:
             queryset = queryset.filter(status=status)
         return queryset
+
+    @login_required
+    def resolve_open_public_job_requests(self, info, specialty_id=None):
+        user = info.context.user
+        queryset = PublicJobRequest.objects.filter(status=PublicJobRequest.Status.OPEN)
+
+        # Si es un profesional, filtrar por su radio de trabajo (service_radius) y especialidad
+        prof_profile = getattr(user, 'professional_profile', None)
+        if prof_profile:
+            if not specialty_id and prof_profile.specialty:
+                queryset = queryset.filter(specialty=prof_profile.specialty)
+            elif specialty_id:
+                queryset = queryset.filter(specialty_id=specialty_id)
+
+            if prof_profile.latitude and prof_profile.longitude:
+                max_radius = float(prof_profile.service_radius or 30.0)
+                filtered_ids = []
+                for req in queryset:
+                    if req.latitude and req.longitude:
+                        dist = haversine_km(prof_profile.latitude, prof_profile.longitude, req.latitude, req.longitude)
+                        if dist <= max_radius:
+                            filtered_ids.append(req.id)
+                    else:
+                        filtered_ids.append(req.id)
+                queryset = queryset.filter(id__in=filtered_ids)
+
+        return queryset.order_by('-created_at')
+
+    @login_required
+    def resolve_my_public_job_requests(self, info):
+        user = info.context.user
+        return PublicJobRequest.objects.filter(customer=user).order_by('-created_at')
+
+    @login_required
+    def resolve_public_job_request_details(self, info, id):
+        try:
+            return PublicJobRequest.objects.get(pk=id)
+        except PublicJobRequest.DoesNotExist:
+            return None
 
 import base64
 from django.core.files.base import ContentFile
@@ -376,6 +418,258 @@ class RateJob(graphene.Mutation):
         return RateJob(success=True, job=job, review=review)
 
 
+# --- NUEVAS MUTACIONES Y TIPOS PARA SOLICITUDES ABIERTAS (MARKETPLACE) ---
+
+from .models import PublicJobRequest, JobProposal
+from users.models import Specialty
+import datetime
+from django.utils import timezone
+import math
+
+def haversine_km(lat1, lon1, lat2, lon2):
+    try:
+        lat1, lon1, lat2, lon2 = float(lat1), float(lon1), float(lat2), float(lon2)
+        R = 6371.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = math.sin(dlat / 2.0)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2.0)**2
+        c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+        return R * c
+    except (ValueError, TypeError):
+        return 0.0
+
+
+class JobProposalType(DjangoObjectType):
+    professional_name = graphene.String()
+    professional_avatar_url = graphene.String()
+    professional_rating = graphene.Float()
+
+    class Meta:
+        model = JobProposal
+        fields = "__all__"
+
+    def resolve_professional_name(self, info):
+        return self.professional.get_full_name() or self.professional.username
+
+    def resolve_professional_avatar_url(self, info):
+        prof_profile = getattr(self.professional, 'professional_profile', None)
+        if prof_profile and prof_profile.profile_photo:
+            return info.context.build_absolute_uri(prof_profile.profile_photo.url)
+        return None
+
+    def resolve_professional_rating(self, info):
+        prof_profile = getattr(self.professional, 'professional_profile', None)
+        return prof_profile.rating if prof_profile else 0.0
+
+
+class PublicJobRequestType(DjangoObjectType):
+    photo_url = graphene.String()
+    proposals_count = graphene.Int()
+    proposals = graphene.List(JobProposalType)
+    customer_name = graphene.String()
+    specialty_name = graphene.String()
+
+    class Meta:
+        model = PublicJobRequest
+        fields = "__all__"
+
+    def resolve_photo_url(self, info):
+        if self.photo:
+            return info.context.build_absolute_uri(self.photo.url)
+        return None
+
+    def resolve_proposals_count(self, info):
+        return self.proposals.count()
+
+    def resolve_proposals(self, info):
+        return self.proposals.all().order_by('-created_at')
+
+    def resolve_customer_name(self, info):
+        return self.customer.get_full_name() or self.customer.username
+
+    def resolve_specialty_name(self, info):
+        return self.specialty.name if self.specialty else ""
+
+
+class CreatePublicJobRequest(graphene.Mutation):
+    class Arguments:
+        specialty_id = graphene.Int(required=True)
+        title = graphene.String(required=True)
+        description = graphene.String(required=True)
+        address = graphene.String(required=True)
+        latitude = graphene.Decimal(required=False)
+        longitude = graphene.Decimal(required=False)
+        budget = graphene.Decimal(required=False)
+        is_urgent = graphene.Boolean(required=False)
+
+    success = graphene.Boolean()
+    public_request = graphene.Field(PublicJobRequestType)
+
+    @login_required
+    def mutate(self, info, specialty_id, title, description, address, latitude=None, longitude=None, budget=None, is_urgent=False):
+        user = info.context.user
+        try:
+            specialty = Specialty.objects.get(pk=specialty_id)
+        except Specialty.DoesNotExist:
+            raise Exception("La especialidad seleccionada no existe.")
+
+        expires_at = timezone.now() + datetime.timedelta(hours=48)
+
+        public_request = PublicJobRequest.objects.create(
+            customer=user,
+            specialty=specialty,
+            title=title,
+            description=description,
+            address=address,
+            latitude=latitude,
+            longitude=longitude,
+            budget=budget,
+            is_urgent=is_urgent,
+            expires_at=expires_at,
+            status=PublicJobRequest.Status.OPEN
+        )
+
+        return CreatePublicJobRequest(success=True, public_request=public_request)
+
+
+class SubmitJobProposal(graphene.Mutation):
+    class Arguments:
+        public_request_id = graphene.Int(required=True)
+        estimated_price = graphene.Decimal(required=True)
+        scheduled_date = graphene.Date(required=True)
+        scheduled_time = graphene.Time(required=True)
+        message = graphene.String(required=False)
+
+    success = graphene.Boolean()
+    proposal = graphene.Field(JobProposalType)
+
+    @login_required
+    def mutate(self, info, public_request_id, estimated_price, scheduled_date, scheduled_time, message=""):
+        user = info.context.user
+        if user.user_type != 'PROFESSIONAL':
+            raise Exception("Solo los profesionales pueden enviar propuestas.")
+
+        try:
+            public_request = PublicJobRequest.objects.get(pk=public_request_id, status=PublicJobRequest.Status.OPEN)
+        except PublicJobRequest.DoesNotExist:
+            raise Exception("La solicitud abierta no existe o ya no se encuentra activa.")
+
+        # Verificar límite de 5 propuestas por solicitud
+        if public_request.proposals.count() >= 5:
+            raise Exception("Esta solicitud ya ha alcanzado el límite máximo de 5 cotizaciones.")
+
+        # Crear o actualizar propuesta del profesional
+        proposal, created = JobProposal.objects.update_or_create(
+            public_request=public_request,
+            professional=user,
+            defaults={
+                'estimated_price': estimated_price,
+                'scheduled_date': scheduled_date,
+                'scheduled_time': scheduled_time,
+                'message': message or "",
+                'status': JobProposal.Status.PENDING
+            }
+        )
+
+        # Notificar al cliente por push
+        try:
+            cust = public_request.customer
+            if cust:
+                prof_name = user.get_full_name() or user.username
+                from core.firebase import send_user_push_notification
+                send_user_push_notification(
+                    user=cust,
+                    title="Nueva Cotización Recibida",
+                    body=f"El profesional {prof_name} ha enviado una propuesta de ${estimated_price} para '{public_request.title}'.",
+                    data={"event": "job_proposal_received", "public_request_id": public_request.id}
+                )
+        except Exception:
+            pass
+
+        return SubmitJobProposal(success=True, proposal=proposal)
+
+
+class AcceptJobProposal(graphene.Mutation):
+    class Arguments:
+        proposal_id = graphene.Int(required=True)
+
+    success = graphene.Boolean()
+    job = graphene.Field(JobType)
+
+    @login_required
+    def mutate(self, info, proposal_id):
+        user = info.context.user
+        try:
+            proposal = JobProposal.objects.select_related('public_request', 'professional').get(pk=proposal_id)
+        except JobProposal.DoesNotExist:
+            raise Exception("La propuesta no existe.")
+
+        public_request = proposal.public_request
+        if public_request.customer != user:
+            raise Exception("Solo el cliente dueño de la solicitud puede aceptar la cotización.")
+
+        if public_request.status != PublicJobRequest.Status.OPEN:
+            raise Exception("Esta solicitud ya fue asignada o no se encuentra activa.")
+
+        # Marcar propuesta como aceptada y las demás como rechazadas
+        proposal.status = JobProposal.Status.ACCEPTED
+        proposal.save()
+        public_request.proposals.exclude(pk=proposal.id).update(status=JobProposal.Status.REJECTED)
+        public_request.status = PublicJobRequest.Status.ASSIGNED
+        public_request.save()
+
+        # Crear la instancia Job oficial
+        job = Job.objects.create(
+            customer=user,
+            professional=proposal.professional,
+            status=Job.Status.AGREED,
+            agreed_price=proposal.estimated_price,
+            scheduled_date=proposal.scheduled_date,
+            scheduled_time=proposal.scheduled_time,
+            address=public_request.address,
+            description=f"SOLICITUD: {public_request.title}\n\n{public_request.description}"
+        )
+
+        # Crear o actualizar la sala de chat
+        from chat.models import ChatRoom
+        room, _ = ChatRoom.objects.get_or_create(
+            customer=user,
+            professional=proposal.professional
+        )
+        room.job = job
+        room.save()
+
+        # Enviar mensaje automático en la sala de chat con la propuesta aceptada
+        from chat.models import Message
+        Message.objects.create(
+            room=room,
+            sender=user,
+            text=f"¡Hola! He aceptado tu cotización de ${proposal.estimated_price} para la visita del {proposal.scheduled_date} a las {proposal.scheduled_time}."
+        )
+
+        return AcceptJobProposal(success=True, job=job)
+
+
+class CancelPublicJobRequest(graphene.Mutation):
+    class Arguments:
+        public_request_id = graphene.Int(required=True)
+
+    success = graphene.Boolean()
+
+    @login_required
+    def mutate(self, info, public_request_id):
+        user = info.context.user
+        try:
+            public_request = PublicJobRequest.objects.get(pk=public_request_id, customer=user)
+        except PublicJobRequest.DoesNotExist:
+            raise Exception("Solicitud no encontrada.")
+
+        public_request.status = PublicJobRequest.Status.CANCELLED
+        public_request.save()
+
+        return CancelPublicJobRequest(success=True)
+
+
 class Mutation(graphene.ObjectType):
     create_job = CreateJob.Field()
     update_job_status = UpdateJobStatus.Field()
@@ -383,4 +677,9 @@ class Mutation(graphene.ObjectType):
     enrich_job = EnrichJob.Field()
     schedule_job_visit = ScheduleJobVisit.Field()
     rate_job = RateJob.Field()
+    create_public_job_request = CreatePublicJobRequest.Field()
+    submit_job_proposal = SubmitJobProposal.Field()
+    accept_job_proposal = AcceptJobProposal.Field()
+    cancel_public_job_request = CancelPublicJobRequest.Field()
+
 

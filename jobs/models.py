@@ -190,3 +190,98 @@ def update_professional_rating(sender, instance, created, **kwargs):
         prof_profile.rating = round(float(avg_rating), 1)
         prof_profile.save(update_fields=['rating'])
 
+
+class PublicJobRequest(models.Model):
+    """
+    Solicitud abierta de trabajo / Oportunidad publicada por un cliente.
+    """
+    class Status(models.TextChoices):
+        OPEN = 'OPEN', 'Abierta'
+        ASSIGNED = 'ASSIGNED', 'Asignada'
+        CANCELLED = 'CANCELLED', 'Cancelada'
+        EXPIRED = 'EXPIRED', 'Expirada'
+
+    customer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="public_job_requests",
+        verbose_name="Cliente"
+    )
+    specialty = models.ForeignKey(
+        'users.Specialty',
+        on_delete=models.CASCADE,
+        related_name="public_job_requests",
+        verbose_name="Especialidad requerida"
+    )
+    title = models.CharField(max_length=150, verbose_name="Título del servicio")
+    description = models.TextField(verbose_name="Descripción detallada")
+    address = models.CharField(max_length=255, verbose_name="Dirección de la visita")
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name="Latitud")
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name="Longitud")
+    photo = models.ImageField(upload_to="public_job_photos/", null=True, blank=True, verbose_name="Fotografía del problema")
+    budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Presupuesto estimado")
+    is_urgent = models.BooleanField(default=False, verbose_name="Urgente")
+    
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.OPEN,
+        verbose_name="Estado"
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    expires_at = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de expiración")
+
+    class Meta:
+        verbose_name = "Solicitud Abierta"
+        verbose_name_plural = "Solicitudes Abiertas"
+
+    def __str__(self):
+        return f"Solicitud Abierta {self.id}: {self.title} ({self.customer.username})"
+
+
+class JobProposal(models.Model):
+    """
+    Postulación / Cotización enviada por un maestro a una solicitud abierta.
+    """
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', 'Pendiente'
+        ACCEPTED = 'ACCEPTED', 'Aceptada'
+        REJECTED = 'REJECTED', 'Rechazada'
+
+    public_request = models.ForeignKey(
+        PublicJobRequest,
+        on_delete=models.CASCADE,
+        related_name="proposals",
+        verbose_name="Solicitud Abierta"
+    )
+    professional = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="job_proposals",
+        verbose_name="Profesional"
+    )
+    estimated_price = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Precio cotizado")
+    scheduled_date = models.DateField(verbose_name="Fecha propuesta")
+    scheduled_time = models.TimeField(verbose_name="Hora propuesta")
+    message = models.TextField(blank=True, verbose_name="Mensaje para el cliente")
+    
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        verbose_name="Estado de la propuesta"
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Propuesta de Trabajo"
+        verbose_name_plural = "Propuestas de Trabajo"
+        unique_together = ('public_request', 'professional')
+
+    def __str__(self):
+        return f"Propuesta {self.id} de {self.professional.username} para Solicitud #{self.public_request_id}"
+
+
