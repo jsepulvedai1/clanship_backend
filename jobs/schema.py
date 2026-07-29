@@ -586,9 +586,6 @@ class CreatePublicJobRequest(graphene.Mutation):
             except Specialty.DoesNotExist:
                 pass
 
-        if not specialty and custom_specialty:
-            specialty, _ = Specialty.objects.get_or_create(name=custom_specialty.strip())
-
         expires_at = timezone.now() + datetime.timedelta(hours=48)
 
         desired_date_obj = None

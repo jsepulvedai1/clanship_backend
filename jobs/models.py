@@ -102,7 +102,7 @@ def notify_job_saved(sender, instance, created, **kwargs):
                 chat_room = ChatRoom.objects.filter(customer=instance.customer, professional=instance.professional).first()
 
             if chat_room:
-                cancelled_by_str = instance.cancelled_by_user.get_full_name() if instance.cancelled_by_user else None
+                cancelled_by_str = (instance.cancelled_by.get_full_name() or instance.cancelled_by.username) if instance.cancelled_by else None
                 async_to_sync(channel_layer.group_send)(
                     f"chat_{chat_room.id}",
                     {
