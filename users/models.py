@@ -143,6 +143,7 @@ class Tag(models.Model):
         verbose_name="Color hexadecimal",
         help_text="Color para la etiqueta en formato hexadecimal (ej: #FF5733)"
     )
+    icon = models.ImageField(upload_to="tag_icons/", null=True, blank=True, verbose_name="Icono")
 
     class Meta:
         verbose_name = "Etiqueta"

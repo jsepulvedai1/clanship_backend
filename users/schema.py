@@ -125,11 +125,17 @@ class SubTagType(DjangoObjectType):
         fields = ("id", "name", "color", "tag")
 
 class TagType(DjangoObjectType):
+    icon_url = graphene.String()
     subtags = graphene.List(lambda: SubTagType)
 
     class Meta:
         model = Tag
-        fields = ("id", "name", "synonyms", "color", "specialty", "subtags")
+        fields = ("id", "name", "synonyms", "color", "icon", "icon_url", "specialty", "subtags")
+
+    def resolve_icon_url(self, info):
+        if self.icon:
+            return info.context.build_absolute_uri(self.icon.url)
+        return None
 
     def resolve_subtags(self, info):
         return self.subtags.all()

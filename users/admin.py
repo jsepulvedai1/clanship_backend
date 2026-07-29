@@ -69,7 +69,7 @@ class SubTagInline(TabularInline):
 
 @admin.register(Tag)
 class TagAdmin(ModelAdmin):
-    list_display = ('name', 'specialty', 'color')
+    list_display = ('name', 'specialty', 'color', 'icon')
     list_filter = ('specialty',)
     search_fields = ('name', 'color', 'specialty__name')
     inlines = [SubTagInline]
