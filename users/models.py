@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.conf import settings
+from django.utils import timezone
 
 class User(AbstractUser):
     """
@@ -239,7 +240,7 @@ class ProfessionalProfile(models.Model):
         related_name="professionals",
         verbose_name="Plan de Suscripción"
     )
-    plan_start_date = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de inicio del plan")
+    plan_start_date = models.DateTimeField(default=timezone.now, verbose_name="Fecha de inicio del plan")
     bio = models.TextField(max_length=500, verbose_name="Biografía", null=True, blank=True)
     hourly_rate = models.DecimalField(
         max_digits=10, 
