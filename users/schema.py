@@ -229,6 +229,11 @@ class Query(graphene.ObjectType):
     max_specialties_per_tradesman = graphene.Int()
 
     def resolve_max_specialties_per_tradesman(self, info):
+        from .models import SubscriptionPlan
+        initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
+        if initial_plan and initial_plan.service_categories:
+            return initial_plan.service_categories
+        from .models import SystemSetting
         return SystemSetting.get_max_specialties()
     
     # Nueva query para verificar disponibilidad de correo o teléfono en tiempo real
