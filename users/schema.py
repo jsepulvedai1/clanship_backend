@@ -290,7 +290,7 @@ class Query(graphene.ObjectType):
         return user.favorite_professionals.all()
 
     def resolve_subscription_plans(self, info):
-        return SubscriptionPlan.objects.all()
+        return SubscriptionPlan.objects.exclude(name__iexact='Plan Inicial')
 
     def resolve_professionals(self, info, specialty_id=None):
         queryset = ProfessionalProfile.objects.filter(is_verified=True)
@@ -438,7 +438,8 @@ class UpdateProfile(graphene.Mutation):
 
         user.first_name = first_name
         user.last_name = last_name
-        user.email = email
+        user.email = email.strip().lower()
+        user.username = email.strip().lower()
         user.phone_number = phone_number
         
         if address is not None:
@@ -847,8 +848,9 @@ class RequestPasswordReset(graphene.Mutation):
 
     def mutate(self, info, email):
         generic_message = "Si el correo está registrado, recibirás un código en unos minutos."
+        email_clean = email.strip().lower()
         try:
-            user = User.objects.get(email=email)
+            user = User.objects.get(Q(email__iexact=email_clean) | Q(username__iexact=email_clean))
             
             # Generar OTP de 6 dígitos
             otp = f"{random.randint(100000, 999999)}"
@@ -856,7 +858,7 @@ class RequestPasswordReset(graphene.Mutation):
             
             # Guardar en base de datos
             PasswordResetOTP.objects.create(
-                email=email,
+                email=email_clean,
                 otp_code=otp,
                 expires_at=expires_at
             )
@@ -896,7 +898,7 @@ class RequestPasswordReset(graphene.Mutation):
                 err_type = type(mail_err).__name__
                 err_msg  = str(mail_err)
                 logger.error(
-                    f"[EMAIL ERROR] No se pudo enviar OTP a '{email}'.\n"
+                    f"[EMAIL ERROR] No se pudo enviar OTP a '{email_clean}'.\n"
                     f"  Tipo de error : {err_type}\n"
                     f"  Mensaje       : {err_msg}\n"
                     f"  Traceback:\n{traceback.format_exc()}"
@@ -909,7 +911,7 @@ class RequestPasswordReset(graphene.Mutation):
             
             return RequestPasswordReset(success=True, message=generic_message)
         except User.DoesNotExist:
-            return RequestPasswordReset(success=True, message=generic_message)
+          return RequestPasswordReset(success=True, message=generic_message)
 
 
 class VerifyPasswordResetOtp(graphene.Mutation):
@@ -922,9 +924,10 @@ class VerifyPasswordResetOtp(graphene.Mutation):
     reset_token = graphene.String()
 
     def mutate(self, info, email, otp_code):
+        email_clean = email.strip().lower()
         try:
             otp_record = PasswordResetOTP.objects.filter(
-                email=email,
+                email__iexact=email_clean,
                 otp_code=otp_code,
                 used=False,
                 expires_at__gt=timezone.now()
@@ -955,9 +958,10 @@ class ResetPasswordWithOtp(graphene.Mutation):
     message = graphene.String()
 
     def mutate(self, info, email, reset_token, new_password):
+        email_clean = email.strip().lower()
         try:
             otp_record = PasswordResetOTP.objects.filter(
-                email=email,
+                email__iexact=email_clean,
                 reset_token=reset_token,
                 verified=True,
                 used=False,
@@ -967,7 +971,7 @@ class ResetPasswordWithOtp(graphene.Mutation):
             if not otp_record:
                 return ResetPasswordWithOtp(success=False, message="Token de recuperación inválido o expirado.")
 
-            user = User.objects.get(email=email)
+            user = User.objects.get(Q(email__iexact=email_clean) | Q(username__iexact=email_clean))
             user.set_password(new_password)
             user.save()
 

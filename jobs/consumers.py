@@ -44,12 +44,12 @@ class JobConsumer(AsyncWebsocketConsumer):
                 self.channel_name
             )
 
-    # Recibir mensaje de notificación del grupo de canales
     async def job_notification(self, event):
         # Enviar la notificación al cliente
         await self.send(text_data=json.dumps({
             'event': event['event'],
             'job_id': event['job_id'],
+            'status': event.get('status', ''),
             'message': event.get('message', '')
         }))
 
