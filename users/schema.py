@@ -192,6 +192,7 @@ class ProfessionalDocumentType(DjangoObjectType):
 
 class ProfessionalProfileType(DjangoObjectType):
     documents = graphene.List(ProfessionalDocumentType)
+    requires_plan_upgrade = graphene.Boolean()
 
     class Meta:
         model = ProfessionalProfile
@@ -202,6 +203,20 @@ class ProfessionalProfileType(DjangoObjectType):
         if not user.is_anonymous and user == self.user:
             return self.documents.all()
         return self.documents.filter(is_visible=True)
+
+    def resolve_requires_plan_upgrade(self, info):
+        if not self.plan or self.plan.max_completed_jobs is None:
+            return False
+        
+        # Import local para evitar dependencias circulares
+        from jobs.models import Job
+        completed_jobs_count = Job.objects.filter(
+            professional=self.user,
+            status='FINISHED',
+            updated_at__gte=self.plan_start_date
+        ).count()
+        
+        return completed_jobs_count >= self.plan.max_completed_jobs
 
 class Query(graphene.ObjectType):
     me = graphene.Field(UserType)
@@ -479,8 +494,9 @@ class RegisterUser(graphene.Mutation):
         user.save()
 
         if user_type == 'PROFESSIONAL':
-            from users.models import ProfessionalProfile
-            ProfessionalProfile.objects.get_or_create(user=user)
+            from users.models import ProfessionalProfile, SubscriptionPlan
+            initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
+            ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
 
         return RegisterUser(user=user, success=True)
 
@@ -644,6 +660,10 @@ class UpdateProfessionalProfile(graphene.Mutation):
             profile.specialty_id = specialty_id
             
         if tag_ids is not None:
+            if profile.plan and profile.plan.service_categories is not None:
+                max_tags = profile.plan.service_categories
+                if len(tag_ids) > max_tags:
+                    raise Exception(f"Tu plan actual solo permite seleccionar hasta {max_tags} oficios/etiquetas.")
             profile.tags.set(tag_ids)
 
         if subtag_ids is not None:
@@ -980,7 +1000,14 @@ class SubscribeToPlan(graphene.Mutation):
         except SubscriptionPlan.DoesNotExist:
             raise Exception('El plan especificado no existe')
 
+        if plan.service_categories is not None:
+            current_tags = profile.tags.count()
+            if current_tags > plan.service_categories:
+                raise Exception(f'El plan {plan.name} solo permite {plan.service_categories} oficios, pero tienes {current_tags} seleccionados. Por favor, desmarca algunos antes de cambiar de plan.')
+
         profile.plan = plan
+        from django.utils import timezone
+        profile.plan_start_date = timezone.now()
         profile.save()
 
         return SubscribeToPlan(success=True, profile=profile)

@@ -193,6 +193,7 @@ class SubscriptionPlan(models.Model):
     monthly_requests = models.IntegerField(blank=True, null=True, verbose_name="Solicitudes mensuales", help_text="Nulo/vacío para ilimitadas")
     urgent_requests = models.IntegerField(blank=True, null=True, verbose_name="Solicitudes urgentes", help_text="Nulo/vacío para ilimitadas")
     service_categories = models.IntegerField(blank=True, null=True, verbose_name="Categorías de servicio", help_text="Nulo/vacío para ilimitadas")
+    max_completed_jobs = models.IntegerField(blank=True, null=True, verbose_name="Límite de trabajos terminados", help_text="Nulo para ilimitados. Usado principalmente para planes iniciales.")
     search_position = models.CharField(max_length=100, default="Estándar", verbose_name="Posición en búsquedas")
     featured_badge = models.CharField(max_length=100, blank=True, null=True, default="—", verbose_name="Insignia destacada")
     rrss_campaigns = models.CharField(max_length=100, blank=True, null=True, default="—", verbose_name="Aparición en campañas RRSS")
@@ -238,6 +239,7 @@ class ProfessionalProfile(models.Model):
         related_name="professionals",
         verbose_name="Plan de Suscripción"
     )
+    plan_start_date = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de inicio del plan")
     bio = models.TextField(max_length=500, verbose_name="Biografía", null=True, blank=True)
     hourly_rate = models.DecimalField(
         max_digits=10, 
