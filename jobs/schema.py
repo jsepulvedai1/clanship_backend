@@ -214,6 +214,8 @@ class CreateJob(graphene.Mutation):
         # Validar que la ubicación del cliente esté dentro del radio de cobertura del profesional
         prof_profile = getattr(professional, 'professional_profile', None)
         if prof_profile:
+            if prof_profile.requires_plan_upgrade:
+                raise Exception("Este profesional no puede recibir nuevas solicitudes en este momento ya que debe actualizar su plan de suscripción.")
             max_radius = prof_profile.service_radius or 10
             cust_lat = user.latitude
             cust_lon = user.longitude

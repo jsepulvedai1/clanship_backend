@@ -201,10 +201,13 @@ class SubscriptionPlan(models.Model):
     radio_broadcast = models.CharField(max_length=100, blank=True, null=True, default="—", verbose_name="Difusión radial")
     profile_statistics = models.CharField(max_length=100, default="Básicas", verbose_name="Estadísticas del perfil")
     support_level = models.CharField(max_length=100, default="Estándar", verbose_name="Soporte")
+    is_coming_soon = models.BooleanField(default=False, verbose_name="Próximamente", help_text="Si está activado, el plan se muestra pero no puede ser seleccionado.")
+    display_order = models.IntegerField(default=0, verbose_name="Orden de visualización", help_text="Menor número aparece primero (1, 2, 3...).")
 
     class Meta:
         verbose_name = "Plan de Suscripción"
         verbose_name_plural = "Planes de Suscripción"
+        ordering = ['display_order', 'id']
 
     def __str__(self):
         return f"{self.name} (${self.price})"

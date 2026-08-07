@@ -175,6 +175,8 @@ class SubscriptionPlanType(DjangoObjectType):
             "radio_broadcast",
             "profile_statistics",
             "support_level",
+            "is_coming_soon",
+            "display_order",
         )
 
 
@@ -290,7 +292,7 @@ class Query(graphene.ObjectType):
         return user.favorite_professionals.all()
 
     def resolve_subscription_plans(self, info):
-        return SubscriptionPlan.objects.exclude(name__iexact='Plan Inicial')
+        return SubscriptionPlan.objects.exclude(name__iexact='Plan Inicial').order_by('display_order', 'id')
 
     def resolve_professionals(self, info, specialty_id=None):
         queryset = ProfessionalProfile.objects.filter(is_verified=True)
@@ -1008,6 +1010,9 @@ class SubscribeToPlan(graphene.Mutation):
             plan = SubscriptionPlan.objects.get(pk=plan_id)
         except SubscriptionPlan.DoesNotExist:
             raise Exception('El plan especificado no existe')
+
+        if plan.is_coming_soon:
+            raise Exception('Este plan estará disponible próximamente.')
 
         if plan.service_categories is not None:
             current_tags = profile.tags.count()

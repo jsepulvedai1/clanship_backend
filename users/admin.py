@@ -82,9 +82,12 @@ class SubTagAdmin(ModelAdmin):
 
 @admin.register(SubscriptionPlan)
 class SubscriptionPlanAdmin(ModelAdmin):
-    list_display = ('name', 'price', 'duration_days', 'monthly_requests', 'urgent_requests', 'service_categories', 'search_position', 'featured_badge', 'support_level')
+    list_display = ('display_order', 'name', 'price', 'is_coming_soon', 'duration_days', 'monthly_requests', 'urgent_requests', 'service_categories', 'search_position', 'featured_badge', 'support_level')
+    list_display_links = ('name',)
+    list_editable = ('display_order', 'is_coming_soon')
     search_fields = ('name',)
-    list_filter = ('price', 'duration_days', 'search_position', 'support_level')
+    list_filter = ('is_coming_soon', 'price', 'duration_days', 'search_position', 'support_level')
+    ordering = ('display_order', 'id')
 
 @admin.register(ProfessionalPhoto)
 class ProfessionalPhotoAdmin(ModelAdmin):
