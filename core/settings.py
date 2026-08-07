@@ -215,6 +215,7 @@ UNFOLD = {
         "light": lambda request: "/static/app_icon.jpg",
         "dark": lambda request: "/static/app_icon.jpg",
     },
+    "THEME": "light",
     "STYLES": [
         lambda request: "/static/css/admin_theme.css",
     ],

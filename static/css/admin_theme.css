@@ -1,17 +1,14 @@
-/* Modern, Sober, and Premium Dark Theme (Inspired by Apex Dashboard) */
+/* ==========================================================================
+   Modern & Elegant Light Theme for Clanship Django Admin
+   ========================================================================== */
 
-/* ==========================================
-   1. CSS VARIABLE OVERRIDES (Tailwind Engine)
-   ========================================== */
-
-/* LIGHT MODE */
-:root {
-  /* Primary: Azul Profundo (#0D2B45) */
-  --color-primary-50: #f0f4f8 !important;
-  --color-primary-100: #d9e2ec !important;
-  --color-primary-200: #b9c5d9 !important;
-  --color-primary-300: #8ea6c1 !important;
-  --color-primary-400: #627fa1 !important;
+:root, html, body {
+  /* Primary Theme Colors: Deep Navy (#0D2B45) & Azure Accent (#0284C7) */
+  --color-primary-50: #f0f7ff !important;
+  --color-primary-100: #e0f0fe !important;
+  --color-primary-200: #bae0fd !important;
+  --color-primary-300: #7cc5fb !important;
+  --color-primary-400: #38bdf8 !important;
   --color-primary-500: #0D2B45 !important;
   --color-primary-600: #0a2135 !important;
   --color-primary-700: #081b2b !important;
@@ -19,201 +16,198 @@
   --color-primary-900: #030a10 !important;
   --color-primary-950: #010508 !important;
 
-  /* Base: Blanco humo (#F7F7F5) to Gris grafito (#2E3135) */
-  --color-base-50: #F7F7F5 !important;
-  --color-base-100: #ebebe6 !important;
-  --color-base-200: #dcdcda !important;
-  --color-base-300: #b4b4af !important;
-  --color-base-400: #82827d !important;
-  --color-base-500: #5a5a55 !important;
-  --color-base-600: #464953 !important;
-  --color-base-700: #2E3135 !important;
-  --color-base-800: #24272b !important;
-  --color-base-900: #1a1d21 !important;
-  --color-base-950: #101317 !important;
+  /* Base Light Colors: Crisp White (#FFFFFF) to Slate (#F8FAFC) */
+  --color-base-50: #ffffff !important;
+  --color-base-100: #f8fafc !important;
+  --color-base-200: #f1f5f9 !important;
+  --color-base-300: #e2e8f0 !important;
+  --color-base-400: #94a3b8 !important;
+  --color-base-500: #64748b !important;
+  --color-base-600: #475569 !important;
+  --color-base-700: #334155 !important;
+  --color-base-800: #1e293b !important;
+  --color-base-900: #0f172a !important;
+  --color-base-950: #020617 !important;
 
-  --color-font-subtle-light: #82827d !important;
-  --color-font-default-light: #2E3135 !important;
-  --color-font-important-light: #0D2B45 !important;
+  --color-font-subtle-light: #64748b !important;
+  --color-font-default-light: #1e293b !important;
+  --color-font-important-light: #0d2b45 !important;
 }
 
-/* DARK MODE */
-html.dark, [data-theme="dark"] {
-  /* Primary: Vibrant Emerald Green (#10B981) */
-  --color-primary-50: #ecfdf5 !important;
-  --color-primary-100: #d1fae5 !important;
-  --color-primary-200: #a7f3d0 !important;
-  --color-primary-300: #6ee7b7 !important;
-  --color-primary-400: #34d199 !important;
-  --color-primary-500: #10B981 !important;      /* #10B981 */
-  --color-primary-600: #059669 !important;
-  --color-primary-700: #047857 !important;
-  --color-primary-800: #065f46 !important;
-  --color-primary-900: #044e38 !important;
-  --color-primary-950: #022c22 !important;
-
-  /* Base shades - Charcoal Slate dark theme */
-  --color-base-50: #fafafa !important;
-  --color-base-100: #f4f4f5 !important;
-  --color-base-200: #e4e4e7 !important;
-  --color-base-300: #d4d4d8 !important;
-  --color-base-400: #a1a1aa !important;        /* Text muted */
-  --color-base-500: #71717a !important;
-  --color-base-600: #52525b !important;
-  --color-base-700: #18191b !important;          /* Card Background: #18191b */
-  --color-base-800: #0e0f10 !important;          /* Sidebar Background: #0e0f10 */
-  --color-base-900: #0c0d0e !important;          /* General Body Background: #0c0d0e */
-  --color-base-950: #000000 !important;          /* pure black */
-
-  --color-font-subtle-dark: #a1a1aa !important;
-  --color-font-default-dark: #e4e4e7 !important; /* light grey text #E4E4E7 */
-  --color-font-important-dark: #ffffff !important; /* white */
+/* Force light background across body and main content */
+body, #content, main, .main-content {
+  background-color: #f8fafc !important;
+  color: #1e293b !important;
 }
 
-/* ==========================================
-   2. APEX CUSTOM STYLE INJECTIONS
-   ========================================== */
+/* Sidebar styling - Clean White with crisp borders */
+#nav-sidebar, aside {
+  background-color: #ffffff !important;
+  border-right: 1px solid #e2e8f0 !important;
+  box-shadow: 1px 0 6px rgba(0, 0, 0, 0.02) !important;
+}
 
-html.dark, [data-theme="dark"] {
-  /* General body background override */
-  body, #content {
-    background-color: #0c0d0e !important;
-  }
+#nav-sidebar a {
+  color: #334155 !important;
+  font-weight: 500 !important;
+  transition: all 0.15s ease-in-out;
+}
 
-  /* Sidebar styling - Pure Black with sleek layout */
-  #nav-sidebar {
-    background-color: #000000 !important;
-    border-right: 1px solid #1f2023 !important;
-  }
+#nav-sidebar a:hover {
+  background-color: #f1f5f9 !important;
+  color: #0d2b45 !important;
+  border-radius: 8px !important;
+}
 
-  #nav-sidebar-inner {
-    background-color: transparent !important;
-  }
+#nav-sidebar a.active, 
+#nav-sidebar a.current,
+#nav-sidebar a[class*="bg-primary"] {
+  background-color: #0d2b45 !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+}
 
-  /* Navigation links defaults */
-  #nav-sidebar a {
-    color: #a1a1aa !important;
-    background-color: transparent !important;
-    border-left: none !important;
-    transition: all 0.15s ease-in-out;
-  }
+/* Header Navbar */
+header, #header, .header-container {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  color: #0d2b45 !important;
+}
 
-  /* Sidebar Active Navigation Item (Charcoal capsule + Green icon) */
-  #nav-sidebar a.bg-primary-500\/10,
-  #nav-sidebar a.bg-primary-600\/10,
-  #nav-sidebar a[class*="bg-primary"],
-  #nav-sidebar a[class*="text-primary-600"],
-  #nav-sidebar a[class*="text-primary-500"],
-  #nav-sidebar a:focus {
-    background-color: #1c1c1f !important;
-    color: #ffffff !important;
-    border-radius: 8px !important;
-  }
+/* Cards & Content Containers */
+.bg-white, .bg-slate-900, .bg-slate-800, .dark\:bg-base-900, .dark\:bg-base-800 {
+  background-color: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02) !important;
+}
 
-  #nav-sidebar a.bg-primary-500\/10 span.material-symbols-outlined,
-  #nav-sidebar a[class*="bg-primary"] span.material-symbols-outlined,
-  #nav-sidebar a[class*="text-primary-500"] span.material-symbols-outlined {
-    color: #10b981 !important; /* green icon for active item */
-  }
+/* Tables styling */
+table th {
+  background-color: #f1f5f9 !important;
+  color: #475569 !important;
+  font-weight: 600 !important;
+  font-size: 0.78rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  padding: 12px 16px !important;
+}
 
-  /* Hover state on nav links */
-  #nav-sidebar a:hover {
-    background-color: #18181b !important;
-    color: #ffffff !important;
-    border-radius: 8px !important;
-  }
+table td {
+  padding: 14px 16px !important;
+  border-bottom: 1px solid #f1f5f9 !important;
+  color: #1e293b !important;
+  background-color: #ffffff !important;
+}
 
-  /* Main header top-bar adjustments */
-  header, #header, .header-container {
-    background-color: #0c0d0e !important;
-    border-bottom: 1px solid #1f2023 !important;
-  }
+table tr:hover td {
+  background-color: #f8fafc !important;
+}
 
-  /* Primary action buttons ("Add professional profile" / "New User") */
-  a.bg-primary-600, 
-  button.bg-primary-600,
-  a[class*="bg-primary-600"],
-  button[class*="bg-primary-600"],
-  .btn-primary {
-    background-color: #10b981 !important;
-    color: #000000 !important;
-    font-weight: 600 !important;
-    border-radius: 8px !important;
-    border: none !important;
-    padding: 0.5rem 1rem !important;
-    transition: all 0.15s ease-in-out;
-  }
+/* Custom UI Components for Professional Profiles */
+.profile-avatar-img {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #e2e8f0;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+}
 
-  a.bg-primary-600:hover, 
-  button.bg-primary-600:hover {
-    background-color: #059669 !important; /* darker green */
-    color: #ffffff !important;
-  }
+.profile-avatar-placeholder {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background-color: #e0f0fe;
+  color: #0284c7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+}
 
-  /* Accent focus rings in orange */
-  input:focus, select:focus, textarea:focus, button:focus {
-    --tw-ring-color: #F28C28 !important;
-    border-color: #F28C28 !important;
-  }
+.badge-status-verified {
+  background-color: #d1fae5 !important;
+  color: #065f46 !important;
+  border: 1px solid #a7f3d0 !important;
+  padding: 5px 12px !important;
+  border-radius: 9999px !important;
+  font-weight: 700 !important;
+  font-size: 0.75rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+}
 
-  /* Cards, tables and wrapper styling */
-  .bg-white, .dark\:bg-base-900, .dark\:bg-base-800 {
-    background-color: #111214 !important;
-    border: 1px solid #1f2023 !important;
-    border-radius: 12px !important;
-  }
+.badge-status-pending {
+  background-color: #fef3c7 !important;
+  color: #92400e !important;
+  border: 1px solid #fde68a !important;
+  padding: 5px 12px !important;
+  border-radius: 9999px !important;
+  font-weight: 700 !important;
+  font-size: 0.75rem !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+}
 
-  /* Table layout adjustments */
-  table {
-    border-collapse: separate !important;
-    border-spacing: 0 !important;
-    width: 100% !important;
-  }
+.btn-verify-action {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 14px !important;
+  border-radius: 8px !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  text-decoration: none !important;
+  transition: all 0.15s ease-in-out !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05) !important;
+}
 
-  table th {
-    background-color: #16171a !important;
-    color: #a1a1aa !important;
-    font-weight: 600 !important;
-    font-size: 0.75rem !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.05em !important;
-    border-bottom: 1px solid #1f2023 !important;
-    padding: 12px 16px !important;
-  }
+.btn-verify-action.verify {
+  background-color: #10b981 !important;
+  color: #ffffff !important;
+}
 
-  table td {
-    padding: 14px 16px !important;
-    border-bottom: 1px solid #1f2023 !important;
-    color: #e4e4e7 !important;
-    background-color: transparent !important;
-  }
+.btn-verify-action.verify:hover {
+  background-color: #059669 !important;
+}
 
-  table tr:last-child td {
-    border-bottom: none !important;
-  }
+.btn-verify-action.unverify {
+  background-color: #f1f5f9 !important;
+  color: #475569 !important;
+  border: 1px solid #cbd5e1 !important;
+}
 
-  table tr:hover td {
-    background-color: rgba(255, 255, 255, 0.02) !important;
-  }
+.btn-verify-action.unverify:hover {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
 
-  /* Green alerts style (Sober layout) */
-  .bg-green-500\/10, .bg-emerald-500\/10, [class*="bg-green"] {
-    background-color: rgba(16, 185, 129, 0.1) !important;
-    border: 1px solid rgba(16, 185, 129, 0.2) !important;
-    color: #10b981 !important;
-    border-radius: 8px !important;
-  }
+.doc-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+  padding: 12px 0;
+}
 
-  /* Inputs inside table search and filters */
-  input[type="text"], input[type="search"], select {
-    background-color: #16171a !important;
-    border: 1px solid #1f2023 !important;
-    border-radius: 8px !important;
-    color: #e4e4e7 !important;
-  }
+.doc-card-item {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
 
-  /* Badge indicator for verification */
-  .bg-green-500, .bg-emerald-500 {
-    background-color: #10b981 !important;
-  }
+.doc-card-item img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 8px;
 }
