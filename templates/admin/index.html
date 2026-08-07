@@ -7,15 +7,15 @@
     <div class="grid grid-cols-1 gap-6 mb-8 sm:grid-cols-2 lg:grid-cols-4">
         
         <!-- Tarjeta: Total Usuarios -->
-        <div class="p-6 transition-all border rounded-xl bg-white/5 border-white/10 hover:border-emerald-500/30">
+        <div class="p-6 transition-all bg-white border border-slate-200 shadow-sm rounded-xl hover:border-emerald-500/50">
             <div class="flex items-center justify-between mb-4">
-                <span class="text-sm font-medium text-zinc-400">Total Usuarios</span>
-                <span class="p-2 text-emerald-400 rounded-lg bg-emerald-500/10">
-                    <span class="material-symbols-outlined text-lg">people</span>
+                <span class="text-sm font-semibold text-slate-600">Total Usuarios</span>
+                <span class="p-2.5 text-emerald-600 rounded-xl bg-emerald-50">
+                    <span class="material-symbols-outlined text-xl">people</span>
                 </span>
             </div>
-            <div class="text-3xl font-bold text-white">{{ total_users }}</div>
-            <div class="flex items-center gap-2 mt-2 text-xs text-zinc-500">
+            <div class="text-3xl font-bold text-slate-900">{{ total_users }}</div>
+            <div class="flex items-center gap-2 mt-2 text-xs font-medium text-slate-500">
                 <span>{{ total_customers }} Clientes</span>
                 <span>•</span>
                 <span>{{ total_professionals }} Maestros</span>
@@ -23,43 +23,43 @@
         </div>
 
         <!-- Tarjeta: Maestros Verificados -->
-        <div class="p-6 transition-all border rounded-xl bg-white/5 border-white/10 hover:border-emerald-500/30">
+        <div class="p-6 transition-all bg-white border border-slate-200 shadow-sm rounded-xl hover:border-blue-500/50">
             <div class="flex items-center justify-between mb-4">
-                <span class="text-sm font-medium text-zinc-400">Maestros Verificados</span>
-                <span class="p-2 text-blue-400 rounded-lg bg-blue-500/10">
-                    <span class="material-symbols-outlined text-lg">verified</span>
+                <span class="text-sm font-semibold text-slate-600">Maestros Verificados</span>
+                <span class="p-2.5 text-blue-600 rounded-xl bg-blue-50">
+                    <span class="material-symbols-outlined text-xl">verified</span>
                 </span>
             </div>
-            <div class="text-3xl font-bold text-white">{{ verified_professionals }}</div>
-            <div class="flex items-center gap-2 mt-2 text-xs text-zinc-500">
+            <div class="text-3xl font-bold text-slate-900">{{ verified_professionals }}</div>
+            <div class="flex items-center gap-2 mt-2 text-xs font-medium text-slate-500">
                 <span>{{ unverified_professionals }} Pendientes</span>
             </div>
         </div>
 
         <!-- Tarjeta: Trabajos Activos -->
-        <div class="p-6 transition-all border rounded-xl bg-white/5 border-white/10 hover:border-emerald-500/30">
+        <div class="p-6 transition-all bg-white border border-slate-200 shadow-sm rounded-xl hover:border-amber-500/50">
             <div class="flex items-center justify-between mb-4">
-                <span class="text-sm font-medium text-zinc-400">Trabajos Activos</span>
-                <span class="p-2 text-amber-400 rounded-lg bg-amber-500/10">
-                    <span class="material-symbols-outlined text-lg">handyman</span>
+                <span class="text-sm font-semibold text-slate-600">Trabajos Activos</span>
+                <span class="p-2.5 text-amber-600 rounded-xl bg-amber-50">
+                    <span class="material-symbols-outlined text-xl">handyman</span>
                 </span>
             </div>
-            <div class="text-3xl font-bold text-white">{{ active_jobs }}</div>
-            <div class="flex items-center gap-2 mt-2 text-xs text-zinc-500">
+            <div class="text-3xl font-bold text-slate-900">{{ active_jobs }}</div>
+            <div class="flex items-center gap-2 mt-2 text-xs font-medium text-slate-500">
                 <span>Total históricos: {{ total_jobs }}</span>
             </div>
         </div>
 
         <!-- Tarjeta: Volumen de Transacciones -->
-        <div class="p-6 transition-all border rounded-xl bg-white/5 border-white/10 hover:border-emerald-500/30">
+        <div class="p-6 transition-all bg-white border border-slate-200 shadow-sm rounded-xl hover:border-indigo-500/50">
             <div class="flex items-center justify-between mb-4">
-                <span class="text-sm font-medium text-zinc-400">Volumen Transaccionado</span>
-                <span class="p-2 text-indigo-400 rounded-lg bg-indigo-500/10">
-                    <span class="material-symbols-outlined text-lg">payments</span>
+                <span class="text-sm font-semibold text-slate-600">Volumen Transaccionado</span>
+                <span class="p-2.5 text-indigo-600 rounded-xl bg-indigo-50">
+                    <span class="material-symbols-outlined text-xl">payments</span>
                 </span>
             </div>
-            <div class="text-3xl font-bold text-white">${{ total_revenue|floatformat:0 }}</div>
-            <div class="flex items-center gap-2 mt-2 text-xs text-zinc-500">
+            <div class="text-3xl font-bold text-slate-900">${{ total_revenue|floatformat:0 }}</div>
+            <div class="flex items-center gap-2 mt-2 text-xs font-medium text-slate-500">
                 <span>{{ completed_jobs }} Completados</span>
             </div>
         </div>
@@ -70,29 +70,29 @@
     <div class="grid grid-cols-1 gap-8 lg:grid-cols-2">
         
         <!-- Últimos 5 Trabajos -->
-        <div class="p-6 border rounded-xl bg-white/5 border-white/10">
-            <div class="flex items-center justify-between mb-6 pb-4 border-b border-white/5">
-                <h3 class="text-lg font-semibold text-white flex items-center gap-2">
-                    <span class="material-symbols-outlined text-emerald-400">schedule</span>
+        <div class="p-6 bg-white border border-slate-200 shadow-sm rounded-xl">
+            <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+                <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-emerald-600">schedule</span>
                     Últimas Solicitudes de Trabajo
                 </h3>
-                <a href="/admin/jobs/job/" class="text-xs font-semibold text-emerald-400 hover:underline">Ver Todos</a>
+                <a href="/admin/jobs/job/" class="text-xs font-bold text-emerald-600 hover:underline">Ver Todos</a>
             </div>
             {% if recent_jobs %}
-            <div class="divide-y divide-white/5">
+            <div class="divide-y divide-slate-100">
                 {% for job in recent_jobs %}
-                <div class="py-3 flex items-center justify-between first:pt-0 last:pb-0">
+                <div class="py-3.5 flex items-center justify-between first:pt-0 last:pb-0">
                     <div>
-                        <div class="text-sm font-medium text-white">{{ job.customer.first_name }} {{ job.customer.last_name }} &rarr; {{ job.professional.first_name }} {{ job.professional.last_name }}</div>
-                        <div class="text-xs text-zinc-500 mt-1">{{ job.scheduled_date }} • ${{ job.agreed_price|floatformat:0 }}</div>
+                        <div class="text-sm font-bold text-slate-900">{{ job.customer.first_name }} {{ job.customer.last_name }} &rarr; {{ job.professional.first_name }} {{ job.professional.last_name }}</div>
+                        <div class="text-xs text-slate-500 mt-1">{{ job.scheduled_date }} • ${{ job.agreed_price|floatformat:0 }}</div>
                     </div>
                     <div>
-                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border 
-                        {% if job.status == 'REQUESTED' %} bg-amber-500/10 text-amber-400 border-amber-500/20
-                        {% elif job.status == 'AGREED' %} bg-blue-500/10 text-blue-400 border-blue-500/20
-                        {% elif job.status == 'IN_VISIT' %} bg-purple-500/10 text-purple-400 border-purple-500/20
-                        {% elif job.status == 'FINISHED' %} bg-emerald-500/10 text-emerald-400 border-emerald-500/20
-                        {% else %} bg-rose-500/10 text-rose-400 border-rose-500/20
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border 
+                        {% if job.status == 'REQUESTED' %} bg-amber-50 text-amber-700 border-amber-200
+                        {% elif job.status == 'AGREED' %} bg-blue-50 text-blue-700 border-blue-200
+                        {% elif job.status == 'IN_VISIT' %} bg-purple-50 text-purple-700 border-purple-200
+                        {% elif job.status == 'FINISHED' %} bg-emerald-50 text-emerald-700 border-emerald-200
+                        {% else %} bg-rose-50 text-rose-700 border-rose-200
                         {% endif %}">
                             {{ job.get_status_display }}
                         </span>
@@ -101,34 +101,34 @@
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-sm text-zinc-500 py-4 text-center">No hay solicitudes recientes.</p>
+            <p class="text-sm text-slate-500 py-4 text-center">No hay solicitudes recientes.</p>
             {% endif %}
         </div>
 
         <!-- Últimos Mensajes de Chat -->
-        <div class="p-6 border rounded-xl bg-white/5 border-white/10">
-            <div class="flex items-center justify-between mb-6 pb-4 border-b border-white/5">
-                <h3 class="text-lg font-semibold text-white flex items-center gap-2">
-                    <span class="material-symbols-outlined text-emerald-400">forum</span>
+        <div class="p-6 bg-white border border-slate-200 shadow-sm rounded-xl">
+            <div class="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+                <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <span class="material-symbols-outlined text-emerald-600">forum</span>
                     Mensajes Recientes
                 </h3>
-                <a href="/admin/chat/chatroom/" class="text-xs font-semibold text-emerald-400 hover:underline">Ver Salas</a>
+                <a href="/admin/chat/chatroom/" class="text-xs font-bold text-emerald-600 hover:underline">Ver Salas</a>
             </div>
             {% if recent_messages %}
             <div class="space-y-4">
                 {% for msg in recent_messages %}
-                <div class="p-3 rounded-lg bg-white/5 border border-white/5">
-                    <div class="flex justify-between items-center mb-1">
-                        <span class="text-xs font-semibold text-emerald-400">{{ msg.sender.first_name }} {{ msg.sender.last_name }} ({{ msg.sender.username }})</span>
-                        <span class="text-[10px] text-zinc-500">{{ msg.created_at|date:"d M, H:i" }}</span>
+                <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                    <div class="flex justify-between items-center mb-1.5">
+                        <span class="text-xs font-bold text-emerald-700">{{ msg.sender.first_name }} {{ msg.sender.last_name }} ({{ msg.sender.username }})</span>
+                        <span class="text-[11px] font-medium text-slate-400">{{ msg.created_at|date:"d M, H:i" }}</span>
                     </div>
-                    <p class="text-sm text-white leading-relaxed">{{ msg.text }}</p>
-                    <div class="text-[10px] text-zinc-500 mt-2">Sala: {{ msg.room.customer.username }} &amp; {{ msg.room.professional.username }}</div>
+                    <p class="text-sm font-medium text-slate-800 leading-relaxed">{{ msg.text }}</p>
+                    <div class="text-[11px] text-slate-400 mt-2 font-mono">Sala: {{ msg.room.customer.username }} &amp; {{ msg.room.professional.username }}</div>
                 </div>
                 {% endfor %}
             </div>
             {% else %}
-            <p class="text-sm text-zinc-500 py-4 text-center">No hay mensajes recientes.</p>
+            <p class="text-sm text-slate-500 py-4 text-center">No hay mensajes recientes.</p>
             {% endif %}
         </div>
 

@@ -1,9 +1,10 @@
 /* ==========================================================================
-   Modern & Elegant Light Theme for Clanship Django Admin
+   FORCE LIGHT THEME OVERRIDES FOR CLANSHIP DJANGO ADMIN (UNFOLD FRAMEWORK)
    ========================================================================== */
 
-:root, html, body {
-  /* Primary Theme Colors: Deep Navy (#0D2B45) & Azure Accent (#0284C7) */
+/* 1. Force Root & HTML color scheme to Light Mode */
+:root, html, html.dark, body, [data-theme="dark"], .dark {
+  color-scheme: light !important;
   --color-primary-50: #f0f7ff !important;
   --color-primary-100: #e0f0fe !important;
   --color-primary-200: #bae0fd !important;
@@ -16,7 +17,6 @@
   --color-primary-900: #030a10 !important;
   --color-primary-950: #010508 !important;
 
-  /* Base Light Colors: Crisp White (#FFFFFF) to Slate (#F8FAFC) */
   --color-base-50: #ffffff !important;
   --color-base-100: #f8fafc !important;
   --color-base-200: #f1f5f9 !important;
@@ -32,25 +32,27 @@
   --color-font-subtle-light: #64748b !important;
   --color-font-default-light: #1e293b !important;
   --color-font-important-light: #0d2b45 !important;
+  --color-font-subtle-dark: #64748b !important;
+  --color-font-default-dark: #1e293b !important;
+  --color-font-important-dark: #0d2b45 !important;
 }
 
-/* Force light background across body and main content */
-body, #content, main, .main-content {
+/* 2. Global Background & Text Overrides */
+html, html.dark, body, #content, main, .main-content, div[id="content"] {
   background-color: #f8fafc !important;
   color: #1e293b !important;
 }
 
-/* Sidebar styling - Clean White with crisp borders */
-#nav-sidebar, aside {
+/* 3. Sidebar Override (White background, Slate links, Navy active pill) */
+#nav-sidebar, aside, div[id="nav-sidebar"] {
   background-color: #ffffff !important;
   border-right: 1px solid #e2e8f0 !important;
-  box-shadow: 1px 0 6px rgba(0, 0, 0, 0.02) !important;
+  box-shadow: 1px 0 8px rgba(0, 0, 0, 0.03) !important;
 }
 
 #nav-sidebar a {
   color: #334155 !important;
   font-weight: 500 !important;
-  transition: all 0.15s ease-in-out;
 }
 
 #nav-sidebar a:hover {
@@ -61,33 +63,56 @@ body, #content, main, .main-content {
 
 #nav-sidebar a.active, 
 #nav-sidebar a.current,
-#nav-sidebar a[class*="bg-primary"] {
+#nav-sidebar a[class*="bg-primary"],
+#nav-sidebar a[class*="bg-"] {
   background-color: #0d2b45 !important;
   color: #ffffff !important;
   font-weight: 600 !important;
   border-radius: 8px !important;
 }
 
-/* Header Navbar */
-header, #header, .header-container {
+#nav-sidebar span.material-symbols-outlined {
+  color: inherit !important;
+}
+
+/* 4. Top Navigation Bar & Header */
+header, #header, .header-container, nav {
   background-color: #ffffff !important;
   border-bottom: 1px solid #e2e8f0 !important;
   color: #0d2b45 !important;
 }
 
-/* Cards & Content Containers */
-.bg-white, .bg-slate-900, .bg-slate-800, .dark\:bg-base-900, .dark\:bg-base-800 {
+/* 5. Force Light Background on Containers, Cards & Modals */
+.bg-gray-900, .bg-gray-800, .bg-gray-700,
+.bg-base-900, .bg-base-800, .bg-base-700,
+.bg-zinc-900, .bg-zinc-800, .bg-slate-900, .bg-slate-800,
+.dark\:bg-gray-900, .dark\:bg-gray-800, .dark\:bg-base-900, .dark\:bg-base-800, .dark\:bg-slate-900, .dark\:bg-slate-800, .dark\:bg-black {
   background-color: #ffffff !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 12px !important;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.02) !important;
+  border-color: #e2e8f0 !important;
+  color: #1e293b !important;
 }
 
-/* Tables styling */
-table th {
+/* 6. Text Color Overrides */
+.dark\:text-white, .dark\:text-zinc-100, .dark\:text-zinc-200, .dark\:text-zinc-300, .dark\:text-slate-100, .dark\:text-slate-200 {
+  color: #0f172a !important;
+}
+
+.dark\:text-zinc-400, .dark\:text-zinc-500, .dark\:text-slate-400, .dark\:text-slate-500 {
+  color: #64748b !important;
+}
+
+/* 7. Table Styling Overrides */
+table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  width: 100% !important;
+  background-color: #ffffff !important;
+}
+
+table th, .dark\:bg-base-800 th {
   background-color: #f1f5f9 !important;
   color: #475569 !important;
-  font-weight: 600 !important;
+  font-weight: 700 !important;
   font-size: 0.78rem !important;
   text-transform: uppercase !important;
   letter-spacing: 0.04em !important;
@@ -95,7 +120,7 @@ table th {
   padding: 12px 16px !important;
 }
 
-table td {
+table td, .dark\:bg-base-800 td {
   padding: 14px 16px !important;
   border-bottom: 1px solid #f1f5f9 !important;
   color: #1e293b !important;
@@ -106,7 +131,31 @@ table tr:hover td {
   background-color: #f8fafc !important;
 }
 
-/* Custom UI Components for Professional Profiles */
+/* 8. Input & Form Fields */
+input[type="text"], input[type="search"], input[type="email"], input[type="password"], select, textarea {
+  background-color: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #0f172a !important;
+  border-radius: 8px !important;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: #0d2b45 !important;
+  box-shadow: 0 0 0 2px rgba(13, 43, 69, 0.15) !important;
+}
+
+/* 9. Buttons */
+a.bg-primary-600, button.bg-primary-600, .btn-primary {
+  background-color: #0d2b45 !important;
+  color: #ffffff !important;
+  border-radius: 8px !important;
+}
+
+a.bg-primary-600:hover, button.bg-primary-600:hover {
+  background-color: #0a2135 !important;
+}
+
+/* 10. Custom Badges & Action Buttons for Professional Profiles */
 .profile-avatar-img {
   width: 42px;
   height: 42px;

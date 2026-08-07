@@ -207,18 +207,7 @@ class ProfessionalProfileType(DjangoObjectType):
         return self.documents.filter(is_visible=True)
 
     def resolve_requires_plan_upgrade(self, info):
-        if not self.plan or self.plan.max_completed_jobs is None:
-            return False
-        
-        # Import local para evitar dependencias circulares
-        from jobs.models import Job
-        completed_jobs_count = Job.objects.filter(
-            professional=self.user,
-            status='FINISHED',
-            updated_at__gte=self.plan_start_date
-        ).count()
-        
-        return completed_jobs_count >= self.plan.max_completed_jobs
+        return self.requires_plan_upgrade
 
 class Query(graphene.ObjectType):
     me = graphene.Field(UserType)

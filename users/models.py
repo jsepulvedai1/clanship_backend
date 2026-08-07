@@ -290,6 +290,20 @@ class ProfessionalProfile(models.Model):
     def __str__(self):
         return f"Perfil de {self.user.username} - {self.specialty}"
 
+    @property
+    def requires_plan_upgrade(self):
+        if not self.plan or self.plan.max_completed_jobs is None:
+            return False
+        
+        from jobs.models import Job
+        completed_jobs_count = Job.objects.filter(
+            professional=self.user,
+            status='FINISHED',
+            updated_at__gte=self.plan_start_date
+        ).count()
+        
+        return completed_jobs_count >= self.plan.max_completed_jobs
+
     def save(self, *args, **kwargs):
         is_new = self.pk is None
         old_is_verified = False
