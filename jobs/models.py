@@ -131,16 +131,30 @@ def notify_job_saved(sender, instance, created, **kwargs):
                     data={"event": "job_created", "job_id": instance.id}
                 )
         elif instance.status == Job.Status.CANCELLED:
-            # Notificar al cliente que su solicitud fue rechazada/cancelada
-            cust = instance.customer
-            if cust:
-                prof_name = instance.professional.get_full_name() or instance.professional.username
-                send_user_push_notification(
-                    user=cust,
-                    title="Solicitud Rechazada",
-                    body=f"Tu solicitud con {prof_name} ha sido cancelada o rechazada.",
-                    data={"event": "job_cancelled", "job_id": instance.id}
-                )
+            # Determinar quién canceló y notificar al otro
+            if instance.cancelled_by == instance.customer:
+                # Cliente canceló → notificar al profesional
+                prof = instance.professional
+                if prof:
+                    client_name = instance.customer.get_full_name() or instance.customer.username
+                    reason_text = f" Motivo: {instance.cancellation_reason}" if instance.cancellation_reason else ""
+                    send_user_push_notification(
+                        user=prof,
+                        title="Solicitud Cancelada por el Cliente",
+                        body=f"{client_name} ha cancelado la solicitud.{reason_text}",
+                        data={"event": "job_cancelled", "job_id": instance.id}
+                    )
+            else:
+                # Profesional canceló → notificar al cliente
+                cust = instance.customer
+                if cust:
+                    prof_name = instance.professional.get_full_name() or instance.professional.username
+                    send_user_push_notification(
+                        user=cust,
+                        title="Solicitud Rechazada",
+                        body=f"Tu solicitud con {prof_name} ha sido cancelada o rechazada.",
+                        data={"event": "job_cancelled", "job_id": instance.id}
+                    )
     except Exception as e:
         print(f"Error al enviar notificacion por Firebase: {e}")
 
