@@ -10,12 +10,6 @@ _firebase_initialized = False
 
 def initialize_firebase():
     global _firebase_initialized
-    if _firebase_initialized:
-        return True
-
-    if firebase_admin._apps:
-        _firebase_initialized = True
-        return True
 
     cred = None
 
@@ -25,6 +19,13 @@ def initialize_firebase():
 
     if os.path.exists(cred_path):
         try:
+            import json
+            with open(cred_path, 'r') as f:
+                cred_info = json.load(f)
+                logger.info(
+                    f"Loading Certificate from {cred_path}: client_email={cred_info.get('client_email')}, "
+                    f"project_id={cred_info.get('project_id')}, private_key_id={cred_info.get('private_key_id')}"
+                )
             cred = credentials.Certificate(cred_path)
             logger.info(f"Loaded Firebase credentials from file at {cred_path}.")
         except Exception as e:
@@ -44,6 +45,14 @@ def initialize_firebase():
 
     if cred:
         try:
+            # Delete any previously initialized app instance (e.g. unauthenticated)
+            if firebase_admin._apps:
+                for app_name, app_instance in list(firebase_admin._apps.items()):
+                    try:
+                        firebase_admin.delete_app(app_instance)
+                    except Exception:
+                        pass
+
             firebase_admin.initialize_app(cred)
             _firebase_initialized = True
             logger.info("Firebase Admin initialized successfully with Certificate.")
