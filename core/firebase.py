@@ -85,6 +85,14 @@ def send_push_notification(fcm_token, title, body, data=None):
             ),
             data=str_data,
             token=fcm_token,
+            apns=messaging.APNSConfig(
+                payload=messaging.APNSPayload(
+                    aps=messaging.Aps(
+                        sound="default",
+                        badge=1,
+                    ),
+                ),
+            ),
         )
         response = messaging.send(message)
         logger.info(f"Successfully sent Firebase message: {response}")
