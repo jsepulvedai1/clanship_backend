@@ -116,15 +116,15 @@ def send_push_notification(fcm_token, title, body, data=None):
 def send_user_push_notification(user, title, body, data=None):
     """
     Sends a push notification to all active devices of the given user.
+    Purges stale/failed tokens automatically.
     """
     if not user:
         return False
 
-    # Get all active tokens from UserDevice
     from users.models import UserDevice
-    tokens = list(UserDevice.objects.filter(user=user).values_list('fcm_token', flat=True))
+    user_devices = list(UserDevice.objects.filter(user=user))
 
-    # Add legacy token for backwards compatibility if not already present
+    tokens = [ud.fcm_token for ud in user_devices if ud.fcm_token]
     if user.fcm_token and user.fcm_token not in tokens:
         tokens.append(user.fcm_token)
 
@@ -137,6 +137,15 @@ def send_user_push_notification(user, title, body, data=None):
         res = send_push_notification(token, title, body, data)
         if res:
             success = True
+        else:
+            try:
+                UserDevice.objects.filter(fcm_token=token).delete()
+                if user.fcm_token == token:
+                    user.fcm_token = None
+                    user.save(update_fields=['fcm_token'])
+                logger.info(f"Purged stale FCM token for user {user.username}: {token[:15]}...")
+            except Exception as delete_err:
+                logger.error(f"Error purging stale FCM token: {delete_err}")
 
     return success
 
