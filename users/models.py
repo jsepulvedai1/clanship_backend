@@ -470,14 +470,6 @@ from django.dispatch import receiver
 
 @receiver(m2m_changed, sender=ProfessionalProfile.subtags.through)
 def limit_subtags_and_sync_tags(sender, instance, action, **kwargs):
-    if action == "pre_add":
-        pk_set = kwargs.get("pk_set", set())
-        current_subtags = set(instance.subtags.values_list('id', flat=True))
-        new_subtags = current_subtags.union(pk_set)
-        max_limit = SystemSetting.get_max_specialties()
-        if len(new_subtags) > max_limit:
-            raise ValidationError(f"No puedes seleccionar más de {max_limit} especializaciones.")
-
     if action in ["post_add", "post_remove", "post_clear"]:
         parent_tag_ids = list(instance.subtags.values_list('tag_id', flat=True).distinct())
         if parent_tag_ids:

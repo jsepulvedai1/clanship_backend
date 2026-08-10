@@ -220,10 +220,13 @@ class Query(graphene.ObjectType):
     max_specialties_per_tradesman = graphene.Int()
 
     def resolve_max_specialties_per_tradesman(self, info):
-        from .models import SubscriptionPlan
-        initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
-        if initial_plan and initial_plan.service_categories:
-            return initial_plan.service_categories
+        user = info.context.user
+        if not user.is_anonymous and hasattr(user, 'professional_profile'):
+            profile = user.professional_profile
+            if profile and profile.plan:
+                if profile.plan.service_categories is None:
+                    return 9999  # Unlimited plan
+                return profile.plan.service_categories
         from .models import SystemSetting
         return SystemSetting.get_max_specialties()
     
@@ -658,15 +661,26 @@ class UpdateProfessionalProfile(graphene.Mutation):
 
         if subtag_ids is not None:
             max_limit = SystemSetting.get_max_specialties()
-            if len(subtag_ids) > max_limit:
-                raise Exception(f"No puedes seleccionar más de {max_limit} especializaciones.")
+            if profile.plan:
+                if profile.plan.service_categories is None:
+                    max_limit = None  # Unlimited plan
+                else:
+                    max_limit = profile.plan.service_categories
+
+            if max_limit is not None and len(subtag_ids) > max_limit:
+                raise Exception(f"Tu plan actual solo permite seleccionar hasta {max_limit} especializaciones.")
             profile.subtags.set(subtag_ids)
 
         if tag_ids is not None:
-            if profile.plan and profile.plan.service_categories is not None:
-                max_tags = profile.plan.service_categories
-                if len(tag_ids) > max_tags:
-                    raise Exception(f"Tu plan actual solo permite seleccionar hasta {max_tags} oficios/etiquetas.")
+            max_tags = None
+            if profile.plan:
+                if profile.plan.service_categories is None:
+                    max_tags = None  # Unlimited plan
+                else:
+                    max_tags = profile.plan.service_categories
+
+            if max_tags is not None and len(tag_ids) > max_tags:
+                raise Exception(f"Tu plan actual solo permite seleccionar hasta {max_tags} oficios/etiquetas.")
             profile.tags.set(tag_ids)
 
         if specialty_ids is not None:
