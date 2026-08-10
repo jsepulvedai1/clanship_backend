@@ -655,7 +655,13 @@ class UpdateProfessionalProfile(graphene.Mutation):
 
         if specialty_id is not None:
             profile.specialty_id = specialty_id
-            
+
+        if subtag_ids is not None:
+            max_limit = SystemSetting.get_max_specialties()
+            if len(subtag_ids) > max_limit:
+                raise Exception(f"No puedes seleccionar más de {max_limit} especializaciones.")
+            profile.subtags.set(subtag_ids)
+
         if tag_ids is not None:
             if profile.plan and profile.plan.service_categories is not None:
                 max_tags = profile.plan.service_categories
@@ -663,12 +669,6 @@ class UpdateProfessionalProfile(graphene.Mutation):
                     raise Exception(f"Tu plan actual solo permite seleccionar hasta {max_tags} oficios/etiquetas.")
             profile.tags.set(tag_ids)
 
-        if subtag_ids is not None:
-            max_limit = SystemSetting.get_max_specialties()
-            if len(subtag_ids) > max_limit:
-                raise Exception(f"No puedes seleccionar más de {max_limit} especializaciones.")
-            profile.subtags.set(subtag_ids)
-            
         if specialty_ids is not None:
             profile.specialties.set(specialty_ids)
             

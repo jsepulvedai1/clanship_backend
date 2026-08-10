@@ -480,9 +480,11 @@ def limit_subtags_and_sync_tags(sender, instance, action, **kwargs):
 
     if action in ["post_add", "post_remove", "post_clear"]:
         parent_tag_ids = list(instance.subtags.values_list('tag_id', flat=True).distinct())
-        instance.tags.set(parent_tag_ids)
-        parent_specialty_ids = list(Tag.objects.filter(id__in=parent_tag_ids, specialty_id__isnull=False).values_list('specialty_id', flat=True).distinct())
-        instance.specialties.set(parent_specialty_ids)
+        if parent_tag_ids:
+            instance.tags.add(*parent_tag_ids)
+            parent_specialty_ids = list(Tag.objects.filter(id__in=parent_tag_ids, specialty_id__isnull=False).values_list('specialty_id', flat=True).distinct())
+            if parent_specialty_ids:
+                instance.specialties.add(*parent_specialty_ids)
 
 
 import uuid
