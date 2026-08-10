@@ -10,6 +10,8 @@ _firebase_initialized = False
 
 def initialize_firebase():
     global _firebase_initialized
+    if _firebase_initialized and firebase_admin._apps:
+        return True
 
     cred = None
 
@@ -24,17 +26,9 @@ def initialize_firebase():
                 cred_info = json.load(f)
                 logger.info(
                     f"Loading Certificate from {cred_path}: client_email={cred_info.get('client_email')}, "
-                    f"project_id={cred_info.get('project_id')}, private_key_id={cred_info.get('private_key_id')}"
+                    f"project_id={cred_info.get('project_id')}"
                 )
             cred = credentials.Certificate(cred_path)
-            try:
-                google_cred = cred.get_credential()
-                import google.auth.transport.requests
-                req = google.auth.transport.requests.Request()
-                google_cred.refresh(req)
-                logger.info(f"Successfully obtained Google OAuth2 Access Token! Token starts with: {google_cred.token[:15]}...")
-            except Exception as auth_err:
-                logger.error(f"Failed to fetch Google OAuth2 Access Token: {auth_err}", exc_info=True)
             logger.info(f"Loaded Firebase credentials from file at {cred_path}.")
         except Exception as e:
             logger.error(f"Error loading Firebase credentials file at {cred_path}: {e}")
@@ -53,15 +47,8 @@ def initialize_firebase():
 
     if cred:
         try:
-            # Delete any previously initialized app instance (e.g. unauthenticated)
-            if firebase_admin._apps:
-                for app_name, app_instance in list(firebase_admin._apps.items()):
-                    try:
-                        firebase_admin.delete_app(app_instance)
-                    except Exception:
-                        pass
-
-            firebase_admin.initialize_app(cred)
+            if not firebase_admin._apps:
+                firebase_admin.initialize_app(cred)
             _firebase_initialized = True
             logger.info("Firebase Admin initialized successfully with Certificate.")
             return True
