@@ -96,35 +96,6 @@ def send_push_notification(fcm_token, title, body, data=None):
                 ),
             ),
         )
-        # Test raw HTTP POST to FCM v1 endpoint to capture exact Google response body
-        try:
-            import requests as req_lib
-            import google.auth.transport.requests
-            app_inst = firebase_admin.get_app()
-            g_cred = app_inst.credential.get_credential()
-            g_cred.refresh(google.auth.transport.requests.Request())
-            headers = {
-                'Authorization': f'Bearer {g_cred.token}',
-                'Content-Type': 'application/json',
-            }
-            body_payload = {
-                "message": {
-                    "token": fcm_token,
-                    "notification": {
-                        "title": title,
-                        "body": body
-                    }
-                }
-            }
-            raw_res = req_lib.post(
-                'https://fcm.googleapis.com/v1/projects/clan-be918/messages:send',
-                headers=headers,
-                json=body_payload
-            )
-            logger.info(f"RAW FCM HTTP POST Status: {raw_res.status_code} | Body: {raw_res.text}")
-        except Exception as raw_err:
-            logger.error(f"RAW FCM HTTP POST Exception: {raw_err}")
-
         response = messaging.send(message)
         logger.info(f"Successfully sent Firebase message: {response}")
         return True
@@ -132,7 +103,7 @@ def send_push_notification(fcm_token, title, body, data=None):
         logger.exception(f"Error sending Firebase notification: {e}")
         # Clean up unregistered or invalid tokens
         err_msg = str(e).lower()
-        if "unregistered" in err_msg or "registration-token-not-registered" in err_msg or "invalid-argument" in err_msg:
+        if "unregistered" in err_msg or "registration-token-not-registered" in err_msg or "invalid-argument" in err_msg or "third_party_auth_error" in err_msg or "invalidprovidertoken" in err_msg:
             try:
                 from users.models import UserDevice
                 UserDevice.objects.filter(fcm_token=fcm_token).delete()
