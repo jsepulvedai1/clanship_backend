@@ -132,10 +132,22 @@ def send_push_notification(fcm_token, title, body, data=None):
 def send_user_push_notification(user, title, body, data=None):
     """
     Sends a push notification to all active devices of the given user.
-    Purges stale/failed tokens automatically.
+    Purges stale/failed tokens automatically and sets correct APNs topic based on user type.
     """
     if not user:
         return False
+
+    if data is None:
+        data = {}
+    else:
+        data = dict(data)
+
+    # Automatically determine target APNs topic/Bundle ID based on recipient user_type
+    if 'apns_topic' not in data and 'bundle_id' not in data:
+        if getattr(user, 'user_type', None) == 'PROFESSIONAL':
+            data['apns_topic'] = 'com.clanship.clanshipMobileTradesman'
+        else:
+            data['apns_topic'] = 'com.clanship'
 
     from users.models import UserDevice
     user_devices = list(UserDevice.objects.filter(user=user))
