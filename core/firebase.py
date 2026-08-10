@@ -80,6 +80,17 @@ def send_push_notification(fcm_token, title, body, data=None):
             for k, v in data.items():
                 str_data[str[k] if not isinstance(k, str) else k] = str(v)
 
+        # Extract topic/bundle_id from data if available, or default to Tradesman app bundle ID
+        topic = 'com.clanship.clanshipMobileTradesman'
+        if data and isinstance(data, dict):
+            topic = data.get('apns_topic') or data.get('bundle_id') or topic
+
+        apns_headers = {
+            'apns-push-type': 'alert',
+            'apns-priority': '10',
+            'apns-topic': str(topic),
+        }
+
         message = messaging.Message(
             notification=messaging.Notification(
                 title=title,
@@ -88,10 +99,7 @@ def send_push_notification(fcm_token, title, body, data=None):
             data=str_data,
             token=fcm_token,
             apns=messaging.APNSConfig(
-                headers={
-                    'apns-push-type': 'alert',
-                    'apns-priority': '10',
-                },
+                headers=apns_headers,
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(
                         alert=messaging.ApsAlert(
