@@ -27,6 +27,14 @@ def initialize_firebase():
                     f"project_id={cred_info.get('project_id')}, private_key_id={cred_info.get('private_key_id')}"
                 )
             cred = credentials.Certificate(cred_path)
+            try:
+                google_cred = cred.get_credential()
+                import google.auth.transport.requests
+                req = google.auth.transport.requests.Request()
+                google_cred.refresh(req)
+                logger.info(f"Successfully obtained Google OAuth2 Access Token! Token starts with: {google_cred.token[:15]}...")
+            except Exception as auth_err:
+                logger.error(f"Failed to fetch Google OAuth2 Access Token: {auth_err}", exc_info=True)
             logger.info(f"Loaded Firebase credentials from file at {cred_path}.")
         except Exception as e:
             logger.error(f"Error loading Firebase credentials file at {cred_path}: {e}")
