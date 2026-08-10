@@ -88,6 +88,10 @@ def send_push_notification(fcm_token, title, body, data=None):
             data=str_data,
             token=fcm_token,
             apns=messaging.APNSConfig(
+                headers={
+                    'apns-push-type': 'alert',
+                    'apns-priority': '10',
+                },
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(
                         sound="default",
