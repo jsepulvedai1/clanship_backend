@@ -94,6 +94,10 @@ def send_push_notification(fcm_token, title, body, data=None):
                 },
                 payload=messaging.APNSPayload(
                     aps=messaging.Aps(
+                        alert=messaging.ApsAlert(
+                            title=title,
+                            body=body,
+                        ),
                         sound="default",
                         badge=1,
                     ),
