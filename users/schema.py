@@ -701,11 +701,14 @@ class UpdateProfessionalProfile(graphene.Mutation):
 
         if specialty_ids is not None:
             profile.specialties.set(specialty_ids)
-            if specialty_ids and not profile.specialty_id:
-                try:
-                    profile.specialty_id = int(specialty_ids[0])
-                except Exception:
-                    pass
+            if specialty_ids:
+                if not profile.specialty_id or profile.specialty_id not in [int(sid) for sid in specialty_ids if str(sid).isdigit()]:
+                    try:
+                        profile.specialty_id = int(specialty_ids[0])
+                    except Exception:
+                        pass
+            else:
+                profile.specialty_id = None
 
         if not profile.specialty_id and profile.specialties.exists():
             profile.specialty = profile.specialties.first()
