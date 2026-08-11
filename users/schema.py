@@ -195,10 +195,26 @@ class ProfessionalDocumentType(DjangoObjectType):
 class ProfessionalProfileType(DjangoObjectType):
     documents = graphene.List(ProfessionalDocumentType)
     requires_plan_upgrade = graphene.Boolean()
+    specialties = graphene.List(SpecialtyType)
+    tags = graphene.List(TagType)
 
     class Meta:
         model = ProfessionalProfile
         fields = "__all__"
+
+    def resolve_specialties(self, info):
+        specs = list(self.specialties.all())
+        if not specs and self.specialty:
+            specs = [self.specialty]
+        return specs
+
+    def resolve_tags(self, info):
+        tag_list = list(self.tags.all())
+        if not tag_list and self.subtags.exists():
+            from .models import Tag
+            tag_ids = list(self.subtags.values_list('tag_id', flat=True).distinct())
+            tag_list = list(Tag.objects.filter(id__in=tag_ids))
+        return tag_list
 
     def resolve_documents(self, info):
         user = info.context.user
@@ -685,6 +701,14 @@ class UpdateProfessionalProfile(graphene.Mutation):
 
         if specialty_ids is not None:
             profile.specialties.set(specialty_ids)
+            if specialty_ids and not profile.specialty_id:
+                try:
+                    profile.specialty_id = int(specialty_ids[0])
+                except Exception:
+                    pass
+
+        if not profile.specialty_id and profile.specialties.exists():
+            profile.specialty = profile.specialties.first()
             
         profile.save()
         return UpdateProfessionalProfile(success=True, user=user)

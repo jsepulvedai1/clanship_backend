@@ -477,6 +477,21 @@ def limit_subtags_and_sync_tags(sender, instance, action, **kwargs):
             parent_specialty_ids = list(Tag.objects.filter(id__in=parent_tag_ids, specialty_id__isnull=False).values_list('specialty_id', flat=True).distinct())
             if parent_specialty_ids:
                 instance.specialties.add(*parent_specialty_ids)
+                if not instance.specialty_id:
+                    instance.specialty_id = parent_specialty_ids[0]
+                    instance.save(update_fields=['specialty'])
+
+@receiver(m2m_changed, sender=ProfessionalProfile.tags.through)
+def sync_specialties_from_tags(sender, instance, action, **kwargs):
+    if action in ["post_add", "post_remove", "post_clear"]:
+        tag_ids = list(instance.tags.values_list('id', flat=True).distinct())
+        if tag_ids:
+            parent_specialty_ids = list(Tag.objects.filter(id__in=tag_ids, specialty_id__isnull=False).values_list('specialty_id', flat=True).distinct())
+            if parent_specialty_ids:
+                instance.specialties.add(*parent_specialty_ids)
+                if not instance.specialty_id:
+                    instance.specialty_id = parent_specialty_ids[0]
+                    instance.save(update_fields=['specialty'])
 
 
 import uuid
