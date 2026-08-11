@@ -243,6 +243,15 @@ class Query(graphene.ObjectType):
                 if profile.plan.service_categories is None:
                     return 9999  # Unlimited plan
                 return profile.plan.service_categories
+        
+        # For new/anonymous users during registration: use Plan Inicial limit!
+        from .models import SubscriptionPlan
+        initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
+        if initial_plan:
+            if initial_plan.service_categories is None:
+                return 9999
+            return initial_plan.service_categories
+
         from .models import SystemSetting
         return SystemSetting.get_max_specialties()
     
