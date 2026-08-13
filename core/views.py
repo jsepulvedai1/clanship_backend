@@ -1,7 +1,18 @@
+import json
+import logging
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
+import resend
+
 from users.models import User, ProfessionalProfile
 from jobs.models import Job
 from chat.models import Message
 from django.db.models import Sum
+
+logger = logging.getLogger(__name__)
 
 def dashboard_callback(request, context):
     """
@@ -41,3 +52,90 @@ def dashboard_callback(request, context):
         "recent_messages": recent_messages,
     })
     return context
+
+
+@csrf_exempt
+@require_POST
+def contact_api_view(request):
+    """
+    API Endpoint para recibir solicitudes de contacto desde la página web de Clanship.
+    Envía una notificación por correo a soporte@clanship.cl.
+    """
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return JsonResponse({'success': False, 'message': 'Formato JSON inválido.'}, status=400)
+
+    name = data.get('name', '').strip()
+    email = data.get('email', '').strip()
+    phone = data.get('phone', '').strip()
+    message = data.get('message', '').strip()
+    source_page = data.get('source_page', '/contacto')
+    utm_source = data.get('utm_source')
+    utm_medium = data.get('utm_medium')
+    utm_campaign = data.get('utm_campaign')
+
+    if not name or not email or not message:
+        return JsonResponse({'success': False, 'message': 'Faltan campos requeridos (nombre, correo o mensaje).'}, status=400)
+
+    recipient_email = getattr(settings, 'SUPPORT_EMAIL', 'soporte@clanship.cl')
+    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'Equipo Clanship <noreply@clanship.cl>')
+
+    subject = f"[Nuevo Contacto Web Clanship] Mensaje de {name}"
+    
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
+        <h2 style="color: #091C36; border-bottom: 2px solid #11784A; padding-bottom: 10px;">Nuevo Mensaje desde Clanship Web</h2>
+        <p><strong>Nombre:</strong> {name}</p>
+        <p><strong>Correo electrónico:</strong> <a href="mailto:{email}">{email}</a></p>
+        <p><strong>Teléfono:</strong> {phone if phone else 'No especificado'}</p>
+        <p><strong>Origen:</strong> {source_page}</p>
+        <p><strong>Campañas (UTM):</strong> Source: {utm_source | default('N/A')}, Medium: {utm_medium | default('N/A')}, Campaign: {utm_campaign | default('N/A')}</p>
+        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+        <h3 style="color: #091C36;">Mensaje:</h3>
+        <p style="background: #f8fafc; padding: 15px; border-radius: 8px; font-size: 14px; white-space: pre-wrap;">{message}</p>
+        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+        <p style="font-size: 12px; color: #64748B;">Este mensaje fue enviado automáticamente desde el formulario de contacto de clanship.cl.</p>
+    </div>
+    """
+
+    resend_api_key = getattr(settings, 'RESEND_API_KEY', None)
+
+    email_sent = False
+
+    if resend_api_key:
+        try:
+            resend.api_key = resend_api_key
+            resend.Emails.send({
+                "from": from_email,
+                "to": [recipient_email],
+                "reply_to": email,
+                "subject": subject,
+                "html": html_content,
+            })
+            email_sent = True
+            logger.info(f"Correo de contacto de {email} enviado exitosamente vía Resend a {recipient_email}")
+        except Exception as e:
+            logger.error(f"Error al enviar correo vía Resend: {str(e)}")
+
+    if not email_sent:
+        try:
+            msg = EmailMultiAlternatives(
+                subject=subject,
+                body=f"Nombre: {name}\nCorreo: {email}\nTeléfono: {phone}\nMensaje:\n{message}",
+                from_email=from_email,
+                to=[recipient_email],
+                reply_to=[email],
+            )
+            msg.attach_alternative(html_content, "text/html")
+            msg.send(fail_silently=False)
+            email_sent = True
+            logger.info(f"Correo de contacto de {email} enviado vía Django send_mail a {recipient_email}")
+        except Exception as e:
+            logger.error(f"Error al enviar correo vía Django SMTP fallback: {str(e)}")
+
+    return JsonResponse({
+        'success': True,
+        'message': '¡Gracias! Tu mensaje ha sido recibido por nuestro equipo.',
+        'email_sent': email_sent
+    })
