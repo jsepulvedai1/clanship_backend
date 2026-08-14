@@ -170,3 +170,67 @@ def contact_api_view(request):
         'message': '¡Gracias! Tu mensaje ha sido recibido por nuestro equipo.',
         'email_sent': email_sent
     })
+
+
+@csrf_exempt
+def app_version_check_view(request):
+    """
+    Endpoint para verificar la versión mínima requerida de las aplicaciones móviles.
+    Permite realizar bloqueo de versiones antiguas (Force Update).
+    Lee la configuración desde Django Admin (AppVersionConfig) con fallback a settings.py.
+    """
+    app_type = request.GET.get('app_type', 'CLIENT').upper()
+    platform = request.GET.get('platform', 'android').lower()
+    current_version = request.GET.get('version', '1.0.0')
+
+    # Intentar obtener la configuración desde la BD (Django Admin)
+    db_config = AppVersionConfig.objects.filter(app_type=app_type, is_active=True).first()
+
+    if db_config:
+        min_v = db_config.min_version
+        latest_v = db_config.latest_version
+        store_url = db_config.store_url_ios if platform == 'ios' else db_config.store_url_android
+        store_url = store_url or ''
+        title_custom = db_config.title
+        message_custom = db_config.message
+    else:
+        # Fallback a settings si no hay registro creado en BD aún
+        if app_type == 'TRADESMAN':
+            min_v = getattr(settings, 'MIN_TRADESMAN_VERSION', '1.0.0')
+            latest_v = getattr(settings, 'LATEST_TRADESMAN_VERSION', '1.0.0')
+            store_url = getattr(settings, 'TRADESMAN_STORE_URL_IOS' if platform == 'ios' else 'TRADESMAN_STORE_URL_ANDROID', '')
+        else:
+            min_v = getattr(settings, 'MIN_CLIENT_VERSION', '1.0.0')
+            latest_v = getattr(settings, 'LATEST_CLIENT_VERSION', '1.0.0')
+            store_url = getattr(settings, 'CLIENT_STORE_URL_IOS' if platform == 'ios' else 'CLIENT_STORE_URL_ANDROID', '')
+        title_custom = None
+        message_custom = None
+
+    def parse_version(v_str):
+        try:
+            return [int(x) for x in v_str.split('.')]
+        except Exception:
+            return [1, 0, 0]
+
+    cur_parts = parse_version(current_version)
+    min_parts = parse_version(min_v)
+    latest_parts = parse_version(latest_v)
+
+    update_required = cur_parts < min_parts
+    update_recommended = cur_parts < latest_parts and not update_required
+
+    default_title = 'Actualización Requerida' if update_required else 'Actualización Disponible'
+    default_message = 'Para continuar usando Clanship de manera segura, por favor actualiza la aplicación a la última versión disponible.' if update_required else 'Hay una nueva versión disponible con mejoras y correcciones.'
+
+    return JsonResponse({
+        'success': True,
+        'app_type': app_type,
+        'current_version': current_version,
+        'min_version': min_v,
+        'latest_version': latest_v,
+        'update_required': update_required,
+        'update_recommended': update_recommended,
+        'store_url': store_url,
+        'title': title_custom or default_title,
+        'message': message_custom or default_message
+    })

@@ -5,7 +5,24 @@ from django.urls import path, reverse
 from django.shortcuts import get_object_or_404, redirect
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display, action
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig
+
+@admin.register(AppVersionConfig)
+class AppVersionConfigAdmin(ModelAdmin):
+    list_display = ('app_type', 'min_version', 'latest_version', 'is_active', 'updated_at')
+    list_filter = ('app_type', 'is_active')
+    search_fields = ('app_type', 'min_version', 'latest_version')
+    fieldsets = (
+        ('Información Principal', {
+            'fields': ('app_type', 'is_active', 'min_version', 'latest_version')
+        }),
+        ('Enlaces de Tiendas', {
+            'fields': ('store_url_android', 'store_url_ios')
+        }),
+        ('Mensaje de Bloqueo', {
+            'fields': ('title', 'message')
+        }),
+    )
 
 @admin.register(SystemSetting)
 class SystemSettingAdmin(ModelAdmin):

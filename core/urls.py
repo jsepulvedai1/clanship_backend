@@ -6,7 +6,7 @@ from django.contrib.auth import views as auth_views
 
 from django.conf import settings
 from django.conf.urls.static import static
-from core.views import contact_api_view
+from core.views import contact_api_view, app_version_check_view
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -14,6 +14,9 @@ urlpatterns = [
     
     # Contact Form API Endpoint
     path('api/v1/contact/', contact_api_view, name='contact_api'),
+    
+    # App Version Enforcement Check API Endpoint
+    path('api/v1/app-version/', app_version_check_view, name='app_version_check'),
     
     # Restablecimiento de contraseña
     path(

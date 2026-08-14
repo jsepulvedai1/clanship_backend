@@ -468,6 +468,62 @@ class SystemSetting(models.Model):
         return setting.max_specialties_per_tradesman if setting else 6
 
 
+class AppVersionConfig(models.Model):
+    class AppType(models.TextChoices):
+        CLIENT = 'CLIENT', 'Cliente'
+        TRADESMAN = 'TRADESMAN', 'Especialista / Maestro'
+
+    app_type = models.CharField(
+        max_length=20, 
+        choices=AppType.choices, 
+        unique=True, 
+        verbose_name="Aplicación"
+    )
+    min_version = models.CharField(
+        max_length=20, 
+        default='1.0.0', 
+        verbose_name="Versión Mínima Obligatoria",
+        help_text="Versiones inferiores a esta serán bloqueadas en el inicio de la app."
+    )
+    latest_version = models.CharField(
+        max_length=20, 
+        default='1.0.0', 
+        verbose_name="Última Versión Disponible",
+        help_text="Versión recomendada en las tiendas."
+    )
+    store_url_android = models.URLField(
+        verbose_name="URL Play Store (Android)",
+        blank=True, null=True
+    )
+    store_url_ios = models.URLField(
+        verbose_name="URL App Store (iOS)",
+        blank=True, null=True
+    )
+    title = models.CharField(
+        max_length=100, 
+        default='Actualización Requerida', 
+        verbose_name="Título del Diálogo"
+    )
+    message = models.TextField(
+        default='Para continuar usando Clanship de manera segura, por favor actualiza la aplicación a la última versión disponible.',
+        verbose_name="Mensaje de Bloqueo"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Control de Versión Activo"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuración de Versión de App"
+        verbose_name_plural = "Configuración de Versiones de Apps"
+
+    def __str__(self):
+        return f"{self.get_app_type_display()} - Mínima: {self.min_version} | Última: {self.latest_version}"
+
+
 from django.db.models.signals import m2m_changed
 from django.core.exceptions import ValidationError
 from django.dispatch import receiver
