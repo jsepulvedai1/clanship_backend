@@ -33,7 +33,8 @@ class User(AbstractUser):
         max_length=20,
         choices=UserType.choices,
         default=UserType.CUSTOMER,
-        verbose_name="Tipo de Usuario"
+        verbose_name="Tipo de Usuario",
+        db_index=True
     )
     avatar = models.ImageField(
         upload_to='avatars/', 
@@ -59,7 +60,8 @@ class User(AbstractUser):
     )
     is_available = models.BooleanField(
         default=False, 
-        verbose_name="Disponible para trabajos"
+        verbose_name="Disponible para trabajos",
+        db_index=True
     )
     is_emergency = models.BooleanField(
         default=False, 
@@ -80,12 +82,14 @@ class User(AbstractUser):
     client_session_key = models.CharField(
         max_length=255, 
         null=True, blank=True, 
-        verbose_name="Clave de Sesión Cliente Activa"
+        verbose_name="Clave de Sesión Cliente Activa",
+        db_index=True
     )
     tradesman_session_key = models.CharField(
         max_length=255, 
         null=True, blank=True, 
-        verbose_name="Clave de Sesión Maestro Activa"
+        verbose_name="Clave de Sesión Maestro Activa",
+        db_index=True
     )
 
     def __str__(self):

@@ -56,12 +56,15 @@ class Message(models.Model):
         verbose_name="Tipo de mensaje"
     )
     is_read = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
         verbose_name = "Mensaje"
         verbose_name_plural = "Mensajes"
         ordering = ['created_at']
+        indexes = [
+            models.Index(fields=['room', 'created_at']),
+        ]
 
     def __str__(self):
         return f"De {self.sender.username} en {self.room}"

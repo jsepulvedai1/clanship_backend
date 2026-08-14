@@ -32,7 +32,8 @@ class Job(models.Model):
         max_length=20,
         choices=Status.choices,
         default=Status.REQUESTED,
-        verbose_name="Estado"
+        verbose_name="Estado",
+        db_index=True
     )
     
     description = models.TextField(verbose_name="Descripción del trabajo", blank=True)
@@ -60,12 +61,17 @@ class Job(models.Model):
     # Podríamos añadir PointField aquí cuando GDAL esté disponible
     # location = models.PointField(null=True, blank=True)
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Trabajo"
         verbose_name_plural = "Trabajos"
+        indexes = [
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['customer', 'status']),
+            models.Index(fields=['professional', 'status']),
+        ]
 
     def __str__(self):
         return f"Trabajo {self.id}: {self.customer.username} - {self.professional.username}"
