@@ -1122,24 +1122,30 @@ class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
         app_type = kwargs.get('app_type', 'CLIENT').upper()
         session_key = str(uuid.uuid4())
 
+        if hasattr(info, 'context'):
+            setattr(info.context, '_app_type', app_type)
+
         response = super().mutate(root, info, **kwargs)
 
         if response and getattr(response, 'token', None):
             try:
                 username = kwargs.get(cls.username_field)
-                user = User.objects.get(Q(username__iexact=username) | Q(email__iexact=username))
-                if app_type == 'TRADESMAN':
-                    user.tradesman_session_key = session_key
-                else:
-                    user.client_session_key = session_key
-                user.save(update_fields=['tradesman_session_key', 'client_session_key'])
+                user = User.objects.filter(Q(username__iexact=username) | Q(email__iexact=username)).first()
+                if user:
+                    if app_type == 'TRADESMAN':
+                        user.tradesman_session_key = session_key
+                        user.save(update_fields=['tradesman_session_key'])
+                    else:
+                        user.client_session_key = session_key
+                        user.save(update_fields=['client_session_key'])
 
-                payload = graphql_jwt.utils.jwt_payload(user)
-                payload['app_type'] = app_type
-                payload['session_key'] = session_key
-                response.token = graphql_jwt.utils.jwt_encode(payload)
-            except Exception:
-                pass
+                    payload = graphql_jwt.utils.jwt_payload(user, info.context)
+                    payload['app_type'] = app_type
+                    payload['session_key'] = session_key
+                    response.token = graphql_jwt.utils.jwt_encode(payload)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Error en CustomObtainJSONWebToken: {str(e)}")
 
         return response
 

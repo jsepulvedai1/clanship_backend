@@ -4,9 +4,10 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
-from django.core.cache import cache
-import resend
+try:
+    import resend
+except ImportError:
+    resend = None
 
 from users.models import User, ProfessionalProfile
 from jobs.models import Job
@@ -133,7 +134,7 @@ def contact_api_view(request):
     resend_api_key = getattr(settings, 'RESEND_API_KEY', None)
     email_sent = False
 
-    if resend_api_key:
+    if resend_api_key and resend:
         try:
             resend.api_key = resend_api_key
             resend.Emails.send({
