@@ -9,7 +9,7 @@ try:
 except ImportError:
     resend = None
 
-from users.models import User, ProfessionalProfile
+from users.models import User, ProfessionalProfile, AppVersionConfig
 from jobs.models import Job
 from chat.models import Message
 from django.db.models import Sum
