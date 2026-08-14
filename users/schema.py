@@ -1129,7 +1129,7 @@ class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
 
         if response and getattr(response, 'token', None):
             try:
-                username = kwargs.get(cls.username_field)
+                username = kwargs.get('username')
                 user = User.objects.filter(Q(username__iexact=username) | Q(email__iexact=username)).first()
                 if user:
                     if app_type == 'TRADESMAN':
