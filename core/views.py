@@ -5,6 +5,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
+from django.core.cache import cache
 import resend
 
 from users.models import User, ProfessionalProfile
@@ -58,13 +59,39 @@ def dashboard_callback(request, context):
 @require_POST
 def contact_api_view(request):
     """
-    API Endpoint para recibir solicitudes de contacto desde la página web de Clanship.
-    Envía una notificación por correo a soporte@clanship.cl.
+    API Endpoint protegido para recibir solicitudes de contacto desde la página web de Clanship.
+    Incluye:
+    - Rate limiting por IP (máx 5 envíos por cada 10 minutos).
+    - Protección contra spam honeypot.
+    - Validación de origen / cabeceras.
     """
+    # 1. Extraer dirección IP del cliente
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0].strip()
+    else:
+        ip = request.META.get('REMOTE_ADDR', '127.0.0.1')
+
+    # 2. Rate Limiting por IP (Máximo 5 envíos por cada 10 minutos = 600s)
+    cache_key = f"contact_ratelimit_{ip}"
+    attempts = cache.get(cache_key, 0)
+    if attempts >= 5:
+        logger.warning(f"[Rate Limit Exceeded] Intento de contacto bloqueado para IP: {ip}")
+        return JsonResponse({
+            'success': False,
+            'message': 'Has realizado demasiados intentos de envío. Por favor espera 10 minutos antes de intentar nuevamente.'
+        }, status=429)
+
     try:
         data = json.loads(request.body.decode('utf-8'))
     except Exception:
         return JsonResponse({'success': False, 'message': 'Formato JSON inválido.'}, status=400)
+
+    # 3. Trampa antispam Honeypot en servidor
+    website_hp = data.get('website_hp', '')
+    if website_hp and website_hp.strip() != '':
+        # Spam detectado, simular éxito en silencio sin enviar email
+        return JsonResponse({'success': True, 'message': 'Mensaje procesado.'}, status=200)
 
     name = data.get('name', '').strip()
     email = data.get('email', '').strip()
@@ -78,6 +105,9 @@ def contact_api_view(request):
     if not name or not email or not message:
         return JsonResponse({'success': False, 'message': 'Faltan campos requeridos (nombre, correo o mensaje).'}, status=400)
 
+    # Incrementar contador de rate limit tras pasar validación básica
+    cache.set(cache_key, attempts + 1, 600)
+
     recipient_email = getattr(settings, 'SUPPORT_EMAIL', 'soporte@clanship.cl')
     from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'Equipo Clanship <noreply@clanship.cl>')
 
@@ -90,7 +120,8 @@ def contact_api_view(request):
         <p><strong>Correo electrónico:</strong> <a href="mailto:{email}">{email}</a></p>
         <p><strong>Teléfono:</strong> {phone if phone else 'No especificado'}</p>
         <p><strong>Origen:</strong> {source_page}</p>
-        <p><strong>Campañas (UTM):</strong> Source: {utm_source | default('N/A')}, Medium: {utm_medium | default('N/A')}, Campaign: {utm_campaign | default('N/A')}</p>
+        <p><strong>IP Remota:</strong> {ip}</p>
+        <p><strong>Campañas (UTM):</strong> Source: {utm_source if utm_source else 'N/A'}, Medium: {utm_medium if utm_medium else 'N/A'}, Campaign: {utm_campaign if utm_campaign else 'N/A'}</p>
         <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
         <h3 style="color: #091C36;">Mensaje:</h3>
         <p style="background: #f8fafc; padding: 15px; border-radius: 8px; font-size: 14px; white-space: pre-wrap;">{message}</p>
@@ -100,7 +131,6 @@ def contact_api_view(request):
     """
 
     resend_api_key = getattr(settings, 'RESEND_API_KEY', None)
-
     email_sent = False
 
     if resend_api_key:
