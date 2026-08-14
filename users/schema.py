@@ -1129,6 +1129,7 @@ class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
 
         if response and getattr(response, 'token', None):
             try:
+                from django.db.models import Q
                 username = kwargs.get('username')
                 user = User.objects.filter(Q(username__iexact=username) | Q(email__iexact=username)).first()
                 if user:
