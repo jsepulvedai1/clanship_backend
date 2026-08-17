@@ -1130,8 +1130,9 @@ class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
         app_type = kwargs.get('app_type', 'CLIENT').upper()
         session_key = str(uuid.uuid4())
 
-        if hasattr(info, 'context'):
+        if hasattr(info, 'context') and info.context is not None:
             setattr(info.context, '_app_type', app_type)
+
 
         response = super().mutate(root, info, **kwargs)
 
