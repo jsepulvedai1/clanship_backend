@@ -63,6 +63,7 @@ class ProfessionalPhotoInline(TabularInline):
 class ProfessionalDocumentInline(TabularInline):
     model = ProfessionalDocument
     extra = 0
+    fields = ('name', 'document_preview', 'file', 'status', 'rejection_reason', 'is_visible')
     readonly_fields = ('document_preview',)
 
     def document_preview(self, obj):
@@ -73,6 +74,7 @@ class ProfessionalDocumentInline(TabularInline):
             return format_html('<a href="{}" target="_blank" class="button">📄 Ver Documento</a>', url)
         return "Sin archivo"
     document_preview.short_description = "Vista Previa"
+
 
 @admin.register(User)
 class CustomUserAdmin(ModelAdmin, BaseUserAdmin):
@@ -294,27 +296,42 @@ class ProfessionalProfileAdmin(ModelAdmin):
 
         # Documentos
         docs = obj.documents.all()
-        html.append('<h4 style="font-weight: 700; color: #0d2b45; margin-bottom: 10px;">Documentos y Certificados Registrados:</h4>')
+        html.append('<h4 style="font-weight: 700; color: #0d2b45; margin-bottom: 10px;">Documentos de Identidad y Certificados Registrados:</h4>')
         if docs.exists():
-            html.append('<div class="doc-gallery-grid">')
+            html.append('<div class="doc-gallery-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px;">')
             for doc in docs:
                 file_url = doc.file.url if doc.file else '#'
                 is_img = file_url.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))
                 status_color = '#10b981' if doc.status == 'APPROVED' else ('#ef4444' if doc.status == 'REJECTED' else '#f59e0b')
+                status_bg = '#d1fae5' if doc.status == 'APPROVED' else ('#fee2e2' if doc.status == 'REJECTED' else '#fef3c7')
+                edit_url = reverse('admin:users_professionaldocument_change', args=[doc.pk])
+                is_cedula = 'cédula' in doc.name.lower() or 'cedula' in doc.name.lower()
                 
-                html.append('<div class="doc-card-item">')
+                html.append(f'<div class="doc-card-item" style="border: 2px solid {"#3b82f6" if is_cedula else "#e2e8f0"}; padding: 12px; border-radius: 10px; background: {"#eff6ff" if is_cedula else "#f8fafc"}; display: flex; flex-direction: column;">')
                 if is_img:
-                    html.append(f'<a href="{file_url}" target="_blank"><img src="{file_url}" /></a>')
+                    html.append(f'<a href="{file_url}" target="_blank"><img src="{file_url}" style="width: 100%; height: 120px; object-fit: cover; border-radius: 8px; border: 1px solid #cbd5e1;" /></a>')
                 else:
-                    html.append(f'<div style="height: 100px; display: flex; align-items: center; justify-content: center; background: #f1f5f9; border-radius: 8px; font-size: 32px;">📄</div>')
+                    html.append(f'<div style="height: 120px; display: flex; align-items: center; justify-content: center; background: #e2e8f0; border-radius: 8px; font-size: 36px;">📄</div>')
                 
-                html.append(f'<div style="font-weight: 600; font-size: 0.85rem; color: #1e293b; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{doc.name}</div>')
-                html.append(f'<div style="font-size: 0.75rem; color: {status_color}; font-weight: 700; margin-top: 4px;">{doc.get_status_display()}</div>')
-                html.append(f'<a href="{file_url}" target="_blank" style="font-size: 0.75rem; color: #0284c7; text-decoration: underline; display: block; margin-top: 4px;">Ver Archivo</a>')
+                html.append(f'<div style="font-weight: 700; font-size: 0.9rem; color: #0f172a; margin-top: 8px;" title="{doc.name}">')
+                if is_cedula:
+                    html.append('🪪 ')
+                html.append(f'{doc.name}</div>')
+                
+                html.append(f'<div style="display: inline-block; margin-top: 4px; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; color: {status_color}; background-color: {status_bg}; font-weight: 700; align-self: flex-start;">{doc.get_status_display()}</div>')
+                
+                if doc.status == 'REJECTED' and doc.rejection_reason:
+                    html.append(f'<div style="font-size: 0.72rem; color: #b91c1c; margin-top: 4px; font-weight: 500; background: #fff; padding: 4px; border-radius: 4px; border: 1px solid #fca5a5;"><strong>Motivo:</strong> {doc.rejection_reason}</div>')
+                
+                html.append('<div style="margin-top: auto; padding-top: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem;">')
+                html.append(f'<a href="{file_url}" target="_blank" style="color: #0284c7; font-weight: 600; text-decoration: underline;">🔍 Ver original</a>')
+                html.append(f'<a href="{edit_url}" style="background-color: #0d2b45; color: #ffffff; padding: 4px 8px; border-radius: 6px; font-weight: 600; text-decoration: none;">⚙️ Estado / Motivo</a>')
+                html.append('</div>')
                 html.append('</div>')
             html.append('</div>')
         else:
             html.append('<p style="color: #94a3b8; font-size: 0.9rem; margin-bottom: 20px;">Sin documentos adjuntos.</p>')
+
 
         # Fotos de Portafolio
         photos = obj.photos.all()

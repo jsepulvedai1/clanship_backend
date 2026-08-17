@@ -475,6 +475,17 @@ class ProfessionalDocument(models.Model):
     def __str__(self):
         return f"{self.name} ({self.get_status_display()}) - {self.profile.user.username}"
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Si este documento se rechaza, sincronizar el estado REJECTED en el perfil profesional
+        if self.status == self.Status.REJECTED and self.profile:
+            if self.profile.verification_status != ProfessionalProfile.VerificationStatus.REJECTED or not self.profile.rejection_reason:
+                self.profile.is_verified = False
+                self.profile.verification_status = ProfessionalProfile.VerificationStatus.REJECTED
+                reason = self.rejection_reason or f"El documento '{self.name}' no cumple con los requisitos."
+                self.profile.rejection_reason = reason
+                self.profile.save()
+
 
 class UserAddress(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="saved_addresses", verbose_name="Usuario")
