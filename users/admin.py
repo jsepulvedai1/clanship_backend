@@ -145,10 +145,10 @@ class ProfessionalProfileAdmin(ModelAdmin):
         'verification_badge', 
         'quick_action'
     )
-    list_filter = ('is_verified', 'specialty', 'plan')
+    list_filter = ('is_verified', 'verification_status', 'specialty', 'plan')
     filter_horizontal = ('tags', 'subtags', 'specialties')
     search_fields = ('user__username', 'user__email', 'user__first_name', 'user__last_name', 'user__phone_number')
-    actions = ['make_verified', 'make_unverified']
+    actions = ['make_verified', 'make_unverified', 'make_rejected']
     readonly_fields = ('verification_banner', 'documents_and_photos_gallery')
 
     fieldsets = (
@@ -156,7 +156,7 @@ class ProfessionalProfileAdmin(ModelAdmin):
             'fields': ('user', 'specialty', 'specialties', 'plan', 'bio', 'hourly_rate', 'rating', 'service_radius')
         }),
         ('Estado de Habilitación y Verificación', {
-            'fields': ('is_verified', 'verification_banner')
+            'fields': ('verification_status', 'is_verified', 'rejection_reason', 'verification_banner')
         }),
         ('Galería de Fotos y Documentos', {
             'fields': ('documents_and_photos_gallery',)
@@ -182,7 +182,13 @@ class ProfessionalProfileAdmin(ModelAdmin):
 
     def toggle_verification_view(self, request, profile_id):
         profile = get_object_or_404(ProfessionalProfile, pk=profile_id)
-        profile.is_verified = not profile.is_verified
+        if profile.is_verified:
+            profile.is_verified = False
+            profile.verification_status = ProfessionalProfile.VerificationStatus.PENDING
+        else:
+            profile.is_verified = True
+            profile.verification_status = ProfessionalProfile.VerificationStatus.APPROVED
+            profile.rejection_reason = None
         profile.save()
         status_str = "HABILITADO Y VERIFICADO" if profile.is_verified else "DESHABILITADO"
         user_name = profile.user.get_full_name() or profile.user.username
@@ -220,9 +226,10 @@ class ProfessionalProfileAdmin(ModelAdmin):
             return format_html('<span style="color: #94a3b8; font-size: 0.8rem;">Sin documentos</span>')
         approved = docs.filter(status='APPROVED').count()
         pending = docs.filter(status='PENDING').count()
+        rejected = docs.filter(status='REJECTED').count()
         return format_html(
-            '<div style="font-size: 0.8rem;"><strong>{} doc(s)</strong><br/><span style="color: #059669;">✓ {} aprobados</span> | <span style="color: #d97706;">⏳ {} pendientes</span></div>',
-            count, approved, pending
+            '<div style="font-size: 0.8rem;"><strong>{} doc(s)</strong><br/><span style="color: #059669;">✓ {} aprobados</span> | <span style="color: #d97706;">⏳ {} pendientes</span> | <span style="color: #ef4444;">❌ {} rechazados</span></div>',
+            count, approved, pending, rejected
         )
 
     @display(description="Fotos Portafolio")
@@ -233,8 +240,10 @@ class ProfessionalProfileAdmin(ModelAdmin):
     @display(description="Estado")
     def verification_badge(self, obj):
         if obj.is_verified:
-            return format_html('<span class="badge-status-verified">✓ Habilitado</span>')
-        return format_html('<span class="badge-status-pending">⏳ Pendiente</span>')
+            return format_html('<span class="badge-status-verified" style="background: #dcfce7; color: #15803d; padding: 4px 8px; border-radius: 6px; font-weight: 700;">✓ Habilitado</span>')
+        if obj.verification_status == 'REJECTED' or obj.rejection_reason:
+            return format_html('<span class="badge-status-rejected" style="background: #fee2e2; color: #b91c1c; padding: 4px 8px; border-radius: 6px; font-weight: 700;">❌ Rechazado</span>')
+        return format_html('<span class="badge-status-pending" style="background: #fef3c7; color: #b45309; padding: 4px 8px; border-radius: 6px; font-weight: 700;">⏳ Pendiente</span>')
 
     @display(description="Acción Rápida")
     def quick_action(self, obj):
@@ -252,12 +261,23 @@ class ProfessionalProfileAdmin(ModelAdmin):
                 '✓ Este perfil profesional está VERIFICADO y HABILITADO para recibir trabajos.'
                 '</div>'
             )
+        if obj.verification_status == 'REJECTED' or obj.rejection_reason:
+            reason_text = obj.rejection_reason or "Sin motivo especificado"
+            return format_html(
+                '<div style="background-color: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; padding: 12px 16px; border-radius: 8px; font-weight: 600;">'
+                '❌ Este perfil profesional ha sido RECHAZADO / OBSERVADO.<br/>'
+                '<span style="font-size: 0.85rem; font-weight: normal; margin-top: 4px; display: block;">'
+                '<strong>Motivo del Rechazo visible en la app del maestro:</strong> {}</span>'
+                '</div>',
+                reason_text
+            )
         return format_html(
             '<div style="background-color: #fef3c7; border: 1px solid #fde68a; color: #92400e; padding: 12px 16px; border-radius: 8px; font-weight: 600;">'
             '⏳ Este perfil está PENDIENTE DE REVISIÓN y deshabilitado para recibir trabajos en la app.'
             '</div>'
         )
     verification_banner.short_description = "Estado de Verificación Actual"
+
 
     def documents_and_photos_gallery(self, obj):
         if not obj or not obj.pk:
@@ -316,36 +336,62 @@ class ProfessionalProfileAdmin(ModelAdmin):
     def make_verified(self, request, queryset):
         for profile in queryset:
             profile.is_verified = True
+            profile.verification_status = ProfessionalProfile.VerificationStatus.APPROVED
+            profile.rejection_reason = None
             profile.save()
         self.message_user(request, "Los perfiles seleccionados han sido verificados y habilitados con éxito.", level=messages.SUCCESS)
 
-    @admin.action(description="Quitar habilitación / verificación a los perfiles seleccionados")
+    @admin.action(description="Poner perfiles seleccionados en PENDIENTE DE REVISIÓN")
     def make_unverified(self, request, queryset):
         for profile in queryset:
             profile.is_verified = False
+            profile.verification_status = ProfessionalProfile.VerificationStatus.PENDING
             profile.save()
-        self.message_user(request, "Se ha deshabilitado la verificación a los perfiles seleccionados.", level=messages.SUCCESS)
+        self.message_user(request, "Los perfiles seleccionados han sido puestos en estado Pendiente de Revisión.", level=messages.SUCCESS)
+
+    @admin.action(description="Marcar perfiles seleccionados como RECHAZADOS / OBSERVADOS")
+    def make_rejected(self, request, queryset):
+        for profile in queryset:
+            profile.is_verified = False
+            profile.verification_status = ProfessionalProfile.VerificationStatus.REJECTED
+            if not profile.rejection_reason:
+                profile.rejection_reason = "Antecedentes o documentos no cumplen con los estándares requeridos. Por favor vuelve a subir fotos legibles de tu carnet o certificados."
+            profile.save()
+        self.message_user(request, "Los perfiles seleccionados han sido marcados como RECHAZADOS y notificados.", level=messages.WARNING)
 
 @admin.register(ProfessionalDocument)
 class ProfessionalDocumentAdmin(ModelAdmin):
-    list_display = ('name', 'profile', 'status', 'is_visible', 'uploaded_at')
+    list_display = ('name', 'profile', 'status', 'rejection_reason', 'is_visible', 'uploaded_at')
     list_filter = ('status', 'is_visible', 'uploaded_at')
-    search_fields = ('name', 'profile__user__username', 'profile__user__email')
+    search_fields = ('name', 'profile__user__username', 'profile__user__email', 'rejection_reason')
     actions = ['approve_documents', 'reject_documents']
 
     @admin.action(description="Aprobar documentos seleccionados")
     def approve_documents(self, request, queryset):
         for doc in queryset:
             doc.status = 'APPROVED'
+            doc.rejection_reason = None
             doc.save()
             if doc.profile:
-                doc.profile.is_verified = True
-                doc.profile.save()
-        self.message_user(request, "Los documentos seleccionados han sido APROBADOS y el perfil ha sido habilitado.", level=messages.SUCCESS)
+                # If all docs are approved, mark profile as verified
+                if not doc.profile.documents.filter(status__in=['PENDING', 'REJECTED']).exists():
+                    doc.profile.is_verified = True
+                    doc.profile.verification_status = ProfessionalProfile.VerificationStatus.APPROVED
+                    doc.profile.rejection_reason = None
+                    doc.profile.save()
+        self.message_user(request, "Los documentos seleccionados han sido APROBADOS.", level=messages.SUCCESS)
 
     @admin.action(description="Rechazar documentos seleccionados")
     def reject_documents(self, request, queryset):
         for doc in queryset:
             doc.status = 'REJECTED'
+            if not doc.rejection_reason:
+                doc.rejection_reason = f"El documento '{doc.name}' fue rechazado por el administrador. Por favor vuelve a subirlo con mejor calidad."
             doc.save()
-        self.message_user(request, "Los documentos seleccionados han sido RECHAZADOS.", level=messages.SUCCESS)
+            if doc.profile:
+                doc.profile.is_verified = False
+                doc.profile.verification_status = ProfessionalProfile.VerificationStatus.REJECTED
+                doc.profile.rejection_reason = doc.rejection_reason
+                doc.profile.save()
+        self.message_user(request, "Los documentos seleccionados han sido RECHAZADOS y el perfil notificado.", level=messages.WARNING)
+

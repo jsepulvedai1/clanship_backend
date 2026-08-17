@@ -824,10 +824,18 @@ class AddProfessionalDocument(graphene.Mutation):
         import time
         file_name = f"doc_{user.id}_{int(time.time())}.{ext}"
         
-        doc = ProfessionalDocument(profile=profile, name=name)
+        doc = ProfessionalDocument(profile=profile, name=name, status=ProfessionalDocument.Status.PENDING)
         doc.file.save(file_name, ContentFile(base64.b64decode(file_str)), save=True)
+
+        # Si el perfil estaba previamente rechazado u observado, resetear a pendiente para nueva revisión
+        if profile.verification_status == ProfessionalProfile.VerificationStatus.REJECTED or profile.rejection_reason:
+            profile.verification_status = ProfessionalProfile.VerificationStatus.PENDING
+            profile.rejection_reason = None
+            profile.is_verified = False
+            profile.save()
         
         return AddProfessionalDocument(success=True, document=doc, user=user)
+
 
 class ToggleDocumentVisibility(graphene.Mutation):
     class Arguments:

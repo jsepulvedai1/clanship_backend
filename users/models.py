@@ -257,6 +257,24 @@ class ProfessionalProfile(models.Model):
     )
     rating = models.FloatField(default=0.0, verbose_name="Calificación")
     is_verified = models.BooleanField(default=False, verbose_name="Verificado")
+
+    class VerificationStatus(models.TextChoices):
+        PENDING = 'PENDING', 'Pendiente de Revisión'
+        APPROVED = 'APPROVED', 'Aprobado / Habilitado'
+        REJECTED = 'REJECTED', 'Rechazado / Observado'
+
+    verification_status = models.CharField(
+        max_length=20,
+        choices=VerificationStatus.choices,
+        default=VerificationStatus.PENDING,
+        verbose_name="Estado de Verificación"
+    )
+    rejection_reason = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="Motivo de Rechazo",
+        help_text="Motivo por el cual se rechazó o se observaron los documentos/perfil."
+    )
     
     # Redes sociales
     facebook_url = models.URLField(max_length=255, null=True, blank=True, verbose_name="Facebook URL")
@@ -311,11 +329,24 @@ class ProfessionalProfile(models.Model):
     def save(self, *args, **kwargs):
         is_new = self.pk is None
         old_is_verified = False
+        old_status = None
+        old_rejection_reason = None
         if not is_new:
             try:
-                old_is_verified = ProfessionalProfile.objects.get(pk=self.pk).is_verified
+                old_obj = ProfessionalProfile.objects.get(pk=self.pk)
+                old_is_verified = old_obj.is_verified
+                old_status = old_obj.verification_status
+                old_rejection_reason = old_obj.rejection_reason
             except Exception:
                 pass
+
+        # Sync is_verified and verification_status
+        if self.is_verified:
+            self.verification_status = self.VerificationStatus.APPROVED
+            self.rejection_reason = None
+        elif self.verification_status == self.VerificationStatus.APPROVED:
+            self.is_verified = True
+            self.rejection_reason = None
 
         if not self.plan_id:
             plan, _ = SubscriptionPlan.objects.get_or_create(
@@ -329,7 +360,8 @@ class ProfessionalProfile(models.Model):
             self.plan = plan
         super().save(*args, **kwargs)
 
-        if is_new or (old_is_verified != self.is_verified):
+        status_changed = (old_is_verified != self.is_verified) or (old_status != self.verification_status) or (old_rejection_reason != self.rejection_reason)
+        if is_new or status_changed:
             self.notify_validation_status()
 
     def notify_validation_status(self):
@@ -338,18 +370,32 @@ class ProfessionalProfile(models.Model):
             from asgiref.sync import async_to_sync
             channel_layer = get_channel_layer()
             if channel_layer and self.user_id:
+                is_rejected = self.verification_status == self.VerificationStatus.REJECTED or bool(self.rejection_reason)
+                if self.is_verified:
+                    event = 'profile_validated'
+                    message = '¡Tu perfil profesional ha sido validado! Ya puedes activarte.'
+                elif is_rejected:
+                    event = 'profile_rejected'
+                    message = f'Tu registro ha sido observado: {self.rejection_reason}' if self.rejection_reason else 'Tu registro ha sido observado por el equipo de revisión.'
+                else:
+                    event = 'profile_unvalidated'
+                    message = 'Tu estado de validación está en revisión.'
+
                 async_to_sync(channel_layer.group_send)(
                     f'user_{self.user_id}',
                     {
                         'type': 'job_notification',
-                        'event': 'profile_validated' if self.is_verified else 'profile_unvalidated',
+                        'event': event,
                         'job_id': 0,
-                        'message': '¡Tu perfil profesional ha sido validado! Ya puedes activarte.' if self.is_verified else 'Tu estado de validación ha cambiado.',
+                        'message': message,
                         'is_validated': self.is_verified,
+                        'verification_status': self.verification_status,
+                        'rejection_reason': self.rejection_reason or '',
                     }
                 )
         except Exception as e:
             print(f"Error sending validation websocket notification: {e}")
+
 
 
 class ProfessionalPhoto(models.Model):
