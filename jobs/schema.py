@@ -349,7 +349,7 @@ class Query(graphene.ObjectType):
     def resolve_job(self, info, id):
         user = info.context.user
         try:
-            job = Job.objects.get(pk=id)
+            job = Job.objects.select_related('customer', 'professional__professional_profile', 'review', 'cancelled_by').get(pk=id)
             if job.customer == user or job.professional == user:
                 return job
             raise Exception("No tienes permiso para ver este trabajo.")
@@ -360,7 +360,11 @@ class Query(graphene.ObjectType):
     def resolve_my_jobs(self, info, status=None):
         user = info.context.user
         from django.db.models import Q
-        queryset = Job.objects.filter(Q(customer=user) | Q(professional=user))
+        queryset = Job.objects.filter(
+            Q(customer=user) | Q(professional=user)
+        ).select_related(
+            'customer', 'professional__professional_profile', 'review', 'cancelled_by'
+        )
         if status:
             queryset = queryset.filter(status=status)
         return queryset
@@ -368,7 +372,11 @@ class Query(graphene.ObjectType):
     @login_required
     def resolve_open_public_job_requests(self, info, specialty_id=None):
         user = info.context.user
-        queryset = PublicJobRequest.objects.filter(status=PublicJobRequest.Status.OPEN)
+        queryset = PublicJobRequest.objects.filter(
+            status=PublicJobRequest.Status.OPEN
+        ).select_related('customer', 'specialty').prefetch_related(
+            'proposals__professional__professional_profile'
+        )
 
         # Si es un profesional, filtrar por sus especialidades y radio de trabajo (service_radius)
         prof_profile = getattr(user, 'professional_profile', None)
@@ -408,12 +416,22 @@ class Query(graphene.ObjectType):
     @login_required
     def resolve_my_public_job_requests(self, info):
         user = info.context.user
-        return PublicJobRequest.objects.filter(customer=user).exclude(status=PublicJobRequest.Status.CANCELLED).order_by('-created_at')
+        return PublicJobRequest.objects.filter(
+            customer=user
+        ).exclude(
+            status=PublicJobRequest.Status.CANCELLED
+        ).select_related('specialty').prefetch_related(
+            'proposals__professional__professional_profile'
+        ).order_by('-created_at')
 
     @login_required
     def resolve_public_job_request_details(self, info, id):
         try:
-            return PublicJobRequest.objects.get(pk=id)
+            return PublicJobRequest.objects.select_related(
+                'customer', 'specialty'
+            ).prefetch_related(
+                'proposals__professional__professional_profile'
+            ).get(pk=id)
         except PublicJobRequest.DoesNotExist:
             return None
 

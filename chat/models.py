@@ -72,55 +72,18 @@ class Message(models.Model):
 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from core.firebase import send_user_push_notification
 
 @receiver(post_save, sender=Message)
 def notify_message_saved(sender, instance, created, **kwargs):
+    """
+    Despacha la tarea asíncrona de Celery para enviar notificaciones WebSocket y FCM.
+    No bloquea la transacción del mensaje ni la respuesta HTTP.
+    """
     if created:
         try:
-            room = instance.room
-            recipient = room.professional if instance.sender == room.customer else room.customer
-            if recipient:
-                sender_name = instance.sender.get_full_name() or instance.sender.username
-                body_text = instance.text or ""
-                if instance.message_type == 'IMAGE':
-                    body_text = "📷 Foto"
-                elif instance.message_type == 'AUDIO':
-                    body_text = "🎤 Mensaje de voz"
-                
-                # 1. Send push notification to all active devices
-                try:
-                    send_user_push_notification(
-                        user=recipient,
-                        title=f"Mensaje de {sender_name}",
-                        body=body_text,
-                        data={
-                            "event": "chat_message",
-                            "room_id": str(room.id),
-                            "job_id": str(room.job.id) if room.job else ""
-                        }
-                    )
-                except Exception as e:
-                    print(f"Error sending push notification: {e}")
-
-
-                # 2. Send WebSocket notification to the recipient user group
-                try:
-                    from asgiref.sync import async_to_sync
-                    from channels.layers import get_channel_layer
-                    channel_layer = get_channel_layer()
-                    if channel_layer:
-                        async_to_sync(channel_layer.group_send)(
-                            f'user_{recipient.id}',
-                            {
-                                'type': 'job_notification',
-                                'event': 'new_message',
-                                'job_id': str(room.job.id) if room.job else "",
-                                'message': f"Mensaje de {sender_name}: {body_text}"
-                            }
-                        )
-                except Exception as e:
-                    print(f"Error sending WS notification: {e}")
+            from core.tasks import process_chat_message_notifications
+            process_chat_message_notifications.delay(instance.id)
         except Exception as e:
-            print(f"Error in notify_message_saved signal: {e}")
+            import logging
+            logging.getLogger(__name__).warning(f"Could not enqueue chat notification task to Celery: {e}")
 

@@ -78,91 +78,20 @@ class Job(models.Model):
 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
-from core.firebase import send_user_push_notification
 
 @receiver(post_save, sender=Job)
 def notify_job_saved(sender, instance, created, **kwargs):
-    # 1. Notificación en tiempo real por WebSockets (para la UI activa)
+    """
+    Despacha la tarea asíncrona de Celery para enviar notificaciones WebSocket y FCM.
+    No bloquea la transacción de base de datos ni la respuesta HTTP.
+    """
     try:
-        channel_layer = get_channel_layer()
-        if channel_layer:
-            # Enviar a ambos (cliente y profesional)
-            for user in [instance.customer, instance.professional]:
-                async_to_sync(channel_layer.group_send)(
-                    f"user_{user.id}",
-                    {
-                        "type": "job_notification",
-                        "event": "job_created" if created else "job_updated",
-                        "job_id": instance.id,
-                        "status": instance.status,
-                        "message": "Nuevo trabajo recibido" if created else "El estado del trabajo ha cambiado"
-                    }
-                )
-
-            # Si el trabajo tiene sala de chat asociada, emitir a la sala en tiempo real
-            chat_room = getattr(instance, 'chat_room', None)
-            if not chat_room:
-                from chat.models import ChatRoom
-                chat_room = ChatRoom.objects.filter(customer=instance.customer, professional=instance.professional).first()
-
-            if chat_room:
-                cancelled_by_str = (instance.cancelled_by.get_full_name() or instance.cancelled_by.username) if instance.cancelled_by else None
-                async_to_sync(channel_layer.group_send)(
-                    f"chat_{chat_room.id}",
-                    {
-                        "type": "job_status_changed",
-                        "event": "JOB_STATUS_CHANGED",
-                        "job_id": instance.id,
-                        "new_status": instance.status,
-                        "cancellation_reason": instance.cancellation_reason,
-                        "cancelled_by": cancelled_by_str
-                    }
-                )
+        from core.tasks import process_job_saved_notifications
+        process_job_saved_notifications.delay(instance.id, created)
     except Exception as e:
-        print(f"Error al enviar notificacion por WS: {e}")
-
-    # 2. Notificaciones push por Firebase Messaging (FCM)
-    try:
-        if created:
-            # Notificar al profesional de una nueva solicitud
-            prof = instance.professional
-            if prof:
-                client_name = instance.customer.get_full_name() or instance.customer.username
-                send_user_push_notification(
-                    user=prof,
-                    title="Nueva solicitud de trabajo",
-                    body=f"Tienes una nueva solicitud de {client_name}.",
-                    data={"event": "job_created", "job_id": instance.id}
-                )
-        elif instance.status == Job.Status.CANCELLED:
-            # Determinar quién canceló y notificar al otro
-            if instance.cancelled_by == instance.customer:
-                # Cliente canceló → notificar al profesional
-                prof = instance.professional
-                if prof:
-                    client_name = instance.customer.get_full_name() or instance.customer.username
-                    reason_text = f" Motivo: {instance.cancellation_reason}" if instance.cancellation_reason else ""
-                    send_user_push_notification(
-                        user=prof,
-                        title="Solicitud Cancelada por el Cliente",
-                        body=f"{client_name} ha cancelado la solicitud.{reason_text}",
-                        data={"event": "job_cancelled", "job_id": instance.id}
-                    )
-            else:
-                # Profesional canceló → notificar al cliente
-                cust = instance.customer
-                if cust:
-                    prof_name = instance.professional.get_full_name() or instance.professional.username
-                    send_user_push_notification(
-                        user=cust,
-                        title="Solicitud Rechazada",
-                        body=f"Tu solicitud con {prof_name} ha sido cancelada o rechazada.",
-                        data={"event": "job_cancelled", "job_id": instance.id}
-                    )
-    except Exception as e:
-        print(f"Error al enviar notificacion por Firebase: {e}")
+        # Fallback de seguridad en caso de que Celery/Redis no esté disponible temporalmente
+        import logging
+        logging.getLogger(__name__).warning(f"Could not enqueue job notification task to Celery: {e}")
 
 
 class JobReview(models.Model):

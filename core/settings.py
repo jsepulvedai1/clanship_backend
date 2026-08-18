@@ -173,13 +173,15 @@ GRAPHQL_JWT = {
 }
 
 # Channels / Redis Configuration
-if os.environ.get('REDIS_URL'):
+REDIS_URL = os.environ.get('REDIS_URL', '')
+
+if REDIS_URL:
     CHANNEL_LAYERS = {
         'default': {
             'BACKEND': 'channels_redis.core.RedisChannelLayer',
             'CONFIG': {
                 "hosts": [{
-                    "address": os.environ.get('REDIS_URL'),
+                    "address": REDIS_URL,
                     "socket_timeout": 30,
                     "socket_connect_timeout": 30,
                     "retry_on_timeout": True,
@@ -187,12 +189,41 @@ if os.environ.get('REDIS_URL'):
             },
         },
     }
+    # Caching con Redis
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": REDIS_URL,
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+                "IGNORE_EXCEPTIONS": True,  # Si Redis cae temporalmente, no rompe la app
+            },
+            "KEY_PREFIX": "clanship_cache",
+            "TIMEOUT": 300,  # 5 minutos por defecto
+        }
+    }
 else:
     CHANNEL_LAYERS = {
         'default': {
             'BACKEND': 'channels.layers.InMemoryChannelLayer',
         },
     }
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'clanship-locmem',
+        }
+    }
+
+# Celery Configuration
+CELERY_BROKER_URL = REDIS_URL if REDIS_URL else 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = REDIS_URL if REDIS_URL else 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutos
 
 # GIS Library Paths
 # Se definen solo para macOS local. En Linux/Docker, Django autodetecta las librerías instaladas en el sistema.

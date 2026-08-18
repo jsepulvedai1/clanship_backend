@@ -5,6 +5,7 @@ from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, Professio
 import graphql_jwt
 from graphql_jwt.decorators import login_required
 from decimal import Decimal
+from django.core.cache import cache
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
@@ -294,25 +295,62 @@ class Query(graphene.ObjectType):
         return user
 
     def resolve_specialties(self, info):
-        return Specialty.objects.all()
+        try:
+            cached = cache.get('catalog_specialties')
+            if cached is not None:
+                return cached
+            qs = list(Specialty.objects.prefetch_related('tags__subtags').all())
+            cache.set('catalog_specialties', qs, timeout=1800)
+            return qs
+        except Exception:
+            return Specialty.objects.prefetch_related('tags__subtags').all()
 
     def resolve_tags(self, info):
-        return Tag.objects.all()
+        try:
+            cached = cache.get('catalog_tags')
+            if cached is not None:
+                return cached
+            qs = list(Tag.objects.prefetch_related('subtags').all())
+            cache.set('catalog_tags', qs, timeout=1800)
+            return qs
+        except Exception:
+            return Tag.objects.prefetch_related('subtags').all()
 
     def resolve_subtags(self, info):
-        return SubTag.objects.all()
+        try:
+            cached = cache.get('catalog_subtags')
+            if cached is not None:
+                return cached
+            qs = list(SubTag.objects.select_related('tag').all())
+            cache.set('catalog_subtags', qs, timeout=1800)
+            return qs
+        except Exception:
+            return SubTag.objects.select_related('tag').all()
 
     def resolve_my_favorites(self, info):
         user = info.context.user
         if user.is_anonymous:
             raise Exception('No autenticado')
-        return user.favorite_professionals.all()
+        return user.favorite_professionals.select_related(
+            'professional_profile__plan',
+            'professional_profile__specialty'
+        ).prefetch_related('saved_addresses').all()
 
     def resolve_subscription_plans(self, info):
-        return SubscriptionPlan.objects.exclude(name__iexact='Plan Inicial').order_by('display_order', 'id')
+        try:
+            cached = cache.get('catalog_subscription_plans')
+            if cached is not None:
+                return cached
+            qs = list(SubscriptionPlan.objects.exclude(name__iexact='Plan Inicial').order_by('display_order', 'id'))
+            cache.set('catalog_subscription_plans', qs, timeout=3600)
+            return qs
+        except Exception:
+            return SubscriptionPlan.objects.exclude(name__iexact='Plan Inicial').order_by('display_order', 'id')
 
     def resolve_professionals(self, info, specialty_id=None):
-        queryset = ProfessionalProfile.objects.filter(is_verified=True)
+        queryset = ProfessionalProfile.objects.filter(is_verified=True).select_related(
+            'user', 'specialty', 'plan'
+        ).prefetch_related('tags', 'subtags', 'photos')
         if specialty_id:
             queryset = queryset.filter(specialty_id=specialty_id)
         return queryset
@@ -376,6 +414,13 @@ class Query(graphene.ObjectType):
               professional_profile__longitude__range=(longitude - lon_range, longitude + lon_range)) |
             Q(latitude__range=(latitude - lat_range, latitude + lat_range),
               longitude__range=(longitude - lon_range, longitude + lon_range))
+        ).select_related(
+            'professional_profile__plan',
+            'professional_profile__specialty'
+        ).prefetch_related(
+            'saved_addresses',
+            'professional_profile__tags',
+            'professional_profile__subtags'
         )
 
         # Convert to list and calculate Haversine distance for each

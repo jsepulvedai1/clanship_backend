@@ -256,7 +256,7 @@ class ProfessionalProfile(models.Model):
         null=True, blank=True
     )
     rating = models.FloatField(default=0.0, verbose_name="Calificación")
-    is_verified = models.BooleanField(default=False, verbose_name="Verificado")
+    is_verified = models.BooleanField(default=False, verbose_name="Verificado", db_index=True)
 
     class VerificationStatus(models.TextChoices):
         PENDING = 'PENDING', 'Pendiente de Revisión'
@@ -267,7 +267,8 @@ class ProfessionalProfile(models.Model):
         max_length=20,
         choices=VerificationStatus.choices,
         default=VerificationStatus.PENDING,
-        verbose_name="Estado de Verificación"
+        verbose_name="Estado de Verificación",
+        db_index=True
     )
     rejection_reason = models.TextField(
         null=True,
