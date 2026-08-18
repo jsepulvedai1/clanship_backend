@@ -45,14 +45,16 @@ def process_job_saved_notifications(self, job_id, created, previous_status=None)
                 for user in [job.customer, job.professional]:
                     if user:
                         cancelled_by_name = (job.cancelled_by.get_full_name() or job.cancelled_by.username) if job.cancelled_by else None
+                        event_name = "job_created" if created else ("job_cancelled" if job.status == Job.Status.CANCELLED else "job_updated")
+                        msg = "Nuevo trabajo recibido" if created else ("El trabajo ha sido cancelado" if job.status == Job.Status.CANCELLED else "El estado del trabajo ha cambiado")
                         async_to_sync(channel_layer.group_send)(
                             f"user_{user.id}",
                             {
                                 "type": "job_notification",
-                                "event": "job_created" if created else "job_updated",
-                                "job_id": job.id,
+                                "event": event_name,
+                                "job_id": str(job.id),
                                 "status": job.status,
-                                "message": "Nuevo trabajo recibido" if created else "El estado del trabajo ha cambiado",
+                                "message": msg,
                                 "cancellation_reason": job.cancellation_reason or "",
                                 "cancelled_by": cancelled_by_name or "",
                             }

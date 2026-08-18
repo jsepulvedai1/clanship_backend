@@ -89,9 +89,14 @@ def notify_job_saved(sender, instance, created, **kwargs):
         from core.tasks import process_job_saved_notifications
         process_job_saved_notifications.delay(instance.id, created)
     except Exception as e:
-        # Fallback de seguridad en caso de que Celery/Redis no esté disponible temporalmente
+        # Fallback de seguridad si Celery no está disponible
         import logging
         logging.getLogger(__name__).warning(f"Could not enqueue job notification task to Celery: {e}")
+        try:
+            from core.tasks import process_job_saved_notifications
+            process_job_saved_notifications(instance.id, created)
+        except Exception as fallback_err:
+            logging.getLogger(__name__).error(f"Fallback notification failed: {fallback_err}")
 
 
 class JobReview(models.Model):

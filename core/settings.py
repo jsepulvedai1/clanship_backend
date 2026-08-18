@@ -180,12 +180,7 @@ if REDIS_URL:
         'default': {
             'BACKEND': 'channels_redis.core.RedisChannelLayer',
             'CONFIG': {
-                "hosts": [{
-                    "address": REDIS_URL,
-                    "socket_timeout": 30,
-                    "socket_connect_timeout": 30,
-                    "retry_on_timeout": True,
-                }],
+                "hosts": [REDIS_URL],
             },
         },
     }
