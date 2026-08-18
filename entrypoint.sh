@@ -23,5 +23,10 @@ python manage.py collectstatic --no-input
 echo "==> Ejecutando script de creación de superusuario..."
 python create_admin.py
 
-echo "==> Iniciando Daphne (ASGI) en el puerto 8000 con ping-interval..."
-exec daphne -b 0.0.0.0 -p 8000 --ping-interval 20 --ping-timeout 30 core.asgi:application
+if [ $# -eq 0 ]; then
+  echo "==> Iniciando Daphne (ASGI) en el puerto 8000 con ping-interval..."
+  exec daphne -b 0.0.0.0 -p 8000 --ping-interval 20 --ping-timeout 30 core.asgi:application
+else
+  echo "==> Ejecutando comando personalizado: $@"
+  exec "$@"
+fi
