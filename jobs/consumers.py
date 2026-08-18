@@ -45,15 +45,10 @@ class JobConsumer(AsyncWebsocketConsumer):
             )
 
     async def job_notification(self, event):
-        # Enviar la notificación al cliente
-        payload = {
-            'event': event.get('event', ''),
-            'job_id': str(event.get('job_id', '')),
-            'status': event.get('status', ''),
-            'message': event.get('message', ''),
-            'cancellation_reason': event.get('cancellation_reason', ''),
-            'cancelled_by': event.get('cancelled_by', ''),
-        }
+        # Enviar la notificación completa al cliente (excluyendo la clave interna 'type')
+        payload = {k: v for k, v in event.items() if k != 'type'}
+        if 'job_id' in payload and payload['job_id'] is not None:
+            payload['job_id'] = str(payload['job_id'])
         await self.send(text_data=json.dumps(payload))
 
     @database_sync_to_async
