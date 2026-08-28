@@ -14,12 +14,17 @@ except ImportError:
     pass
 
 # SECURITY WARNING: keep the secret key used in production secret!
+# Fallback local, en producción DEBE estar la variable de entorno
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-clanship-backend-secret-key')
+if not os.environ.get('DJANGO_DEBUG') == 'True' and SECRET_KEY == 'django-insecure-clanship-backend-secret-key':
+    raise ValueError("¡Peligro! SECRET_KEY no está configurada para producción.")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+if not DEBUG and ('*' in ALLOWED_HOSTS):
+    raise ValueError("¡Peligro! ALLOWED_HOSTS='*' no está permitido en producción.")
 
 # Application definition
 INSTALLED_APPS = [
@@ -144,9 +149,16 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'users.User'
 
 # CORS Configuration
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS_ALLOW_ALL_ORIGINS = True  # Eliminado por seguridad (OWASP Top 10)
+CORS_ALLOWED_ORIGINS = [
+    "https://clanship.cl",
+    "https://www.clanship.cl",
+    "https://admin.clanship.cl",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
 
-CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')
+CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,https://clanship.cl,https://admin.clanship.cl').split(',')
 
 # Graphene Configuration
 GRAPHENE = {

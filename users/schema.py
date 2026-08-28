@@ -1,7 +1,7 @@
 import uuid
 import graphene
 from graphene_django import DjangoObjectType
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP, UserDevice, SystemSetting
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP, UserDevice, SystemSetting, UserReport
 import graphql_jwt
 from graphql_jwt.decorators import login_required
 from decimal import Decimal
@@ -226,6 +226,13 @@ class ProfessionalProfileType(DjangoObjectType):
     def resolve_requires_plan_upgrade(self, info):
         return self.requires_plan_upgrade
 
+class AppConfigType(graphene.ObjectType):
+    subscriptions_enabled_ios = graphene.Boolean()
+    subscriptions_enabled_android = graphene.Boolean()
+    subscription_ios_link = graphene.String()
+    subscription_ios_message = graphene.String()
+    max_specialties_per_tradesman = graphene.Int()
+
 class Query(graphene.ObjectType):
     me = graphene.Field(UserType)
     specialties = graphene.List(SpecialtyType)
@@ -235,6 +242,18 @@ class Query(graphene.ObjectType):
     my_favorites = graphene.List(UserType)
     subscription_plans = graphene.List(SubscriptionPlanType)
     max_specialties_per_tradesman = graphene.Int()
+    app_config = graphene.Field(AppConfigType)
+
+    def resolve_app_config(self, info):
+        from .models import SystemSetting
+        setting = SystemSetting.get_settings()
+        return AppConfigType(
+            subscriptions_enabled_ios=setting.subscriptions_enabled_ios,
+            subscriptions_enabled_android=setting.subscriptions_enabled_android,
+            subscription_ios_link=setting.subscription_ios_link,
+            subscription_ios_message=setting.subscription_ios_message,
+            max_specialties_per_tradesman=setting.max_specialties_per_tradesman,
+        )
 
     def resolve_max_specialties_per_tradesman(self, info):
         user = info.context.user
@@ -1205,6 +1224,43 @@ class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
         return response
 
 
+class BlockUser(graphene.Mutation):
+    class Arguments:
+        blocked_id = graphene.Int(required=True)
+
+    success = graphene.Boolean()
+
+    @login_required
+    def mutate(self, info, blocked_id):
+        user = info.context.user
+        try:
+            target_user = User.objects.get(pk=blocked_id)
+            user.blocked_users.add(target_user)
+            return BlockUser(success=True)
+        except User.DoesNotExist:
+            raise Exception("Usuario no encontrado.")
+
+
+class ReportUser(graphene.Mutation):
+    class Arguments:
+        reported_id = graphene.Int(required=True)
+        reason = graphene.String(required=True)
+
+    success = graphene.Boolean()
+
+    @login_required
+    def mutate(self, info, reported_id, reason):
+        user = info.context.user
+        try:
+            target_user = User.objects.get(pk=reported_id)
+            UserReport.objects.create(reporter=user, reported_user=target_user, reason=reason)
+            # Automáticamente bloquear también al usuario al reportarlo
+            user.blocked_users.add(target_user)
+            return ReportUser(success=True)
+        except User.DoesNotExist:
+            raise Exception("Usuario no encontrado.")
+
+
 class Mutation(graphene.ObjectType):
     token_auth = CustomObtainJSONWebToken.Field()
     verify_token = graphql_jwt.Verify.Field()
@@ -1227,4 +1283,6 @@ class Mutation(graphene.ObjectType):
     subscribe_to_plan = SubscribeToPlan.Field()
     add_user_address = AddUserAddress.Field()
     delete_user_address = DeleteUserAddress.Field()
+    block_user = BlockUser.Field()
+    report_user = ReportUser.Field()
 

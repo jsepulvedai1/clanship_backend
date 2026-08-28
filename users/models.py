@@ -79,6 +79,13 @@ class User(AbstractUser):
         related_name="favorited_by_users",
         verbose_name="Profesionales Favoritos"
     )
+    blocked_users = models.ManyToManyField(
+        'self',
+        blank=True,
+        symmetrical=False,
+        related_name="blocked_by",
+        verbose_name="Usuarios Bloqueados"
+    )
     client_session_key = models.CharField(
         max_length=255, 
         null=True, blank=True, 
@@ -512,18 +519,44 @@ class SystemSetting(models.Model):
         verbose_name="Máximo de especialidades por maestro",
         help_text="Número máximo de especialidades/subtags que puede seleccionar un maestro"
     )
+    subscriptions_enabled_ios = models.BooleanField(
+        default=False,
+        verbose_name="Habilitar suscripciones en iOS",
+        help_text="Controla si en iOS se muestran compras/suscripciones de planes o vista informativa (Mantener en False para revisión de Apple)"
+    )
+    subscriptions_enabled_android = models.BooleanField(
+        default=True,
+        verbose_name="Habilitar suscripciones en Android",
+        help_text="Controla si en Android se muestran los planes de suscripción"
+    )
+    subscription_ios_link = models.URLField(
+        default="https://clanship.cl",
+        verbose_name="Link para información de planes en iOS",
+        help_text="URL donde el usuario en iOS puede revisar información de planes"
+    )
+    subscription_ios_message = models.TextField(
+        default="Para una mejor experiencia y conocer cómo mejorar tu plan, revisa en el siguiente link:",
+        verbose_name="Mensaje para iOS",
+        help_text="Texto informativo que se mostrará en la pantalla de planes en iOS"
+    )
 
     class Meta:
         verbose_name = "Configuración del Sistema"
         verbose_name_plural = "Configuración del Sistema"
 
     def __str__(self):
-        return f"Configuración del Sistema (Máx. Especialidades: {self.max_specialties_per_tradesman})"
+        return f"Configuración del Sistema (Suscripciones iOS: {'Activas' if self.subscriptions_enabled_ios else 'Inactivas'})"
+
+    @classmethod
+    def get_settings(cls):
+        setting = cls.objects.first()
+        if not setting:
+            setting = cls.objects.create()
+        return setting
 
     @classmethod
     def get_max_specialties(cls):
-        setting = cls.objects.first()
-        return setting.max_specialties_per_tradesman if setting else 6
+        return cls.get_settings().max_specialties_per_tradesman
 
 
 class AppVersionConfig(models.Model):
@@ -658,4 +691,26 @@ class UserDevice(models.Model):
         return f"{self.user.username} - {self.fcm_token[:20]}..."
 
 
-
+class UserReport(models.Model):
+    reporter = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='reports_made',
+        verbose_name="Usuario que reporta"
+    )
+    reported_user = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='reports_received',
+        verbose_name="Usuario reportado"
+    )
+    reason = models.TextField(verbose_name="Motivo del reporte")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de reporte")
+    is_resolved = models.BooleanField(default=False, verbose_name="¿Resuelto?")
+    
+    class Meta:
+        verbose_name = "Reporte de Usuario"
+        verbose_name_plural = "Reportes de Usuarios"
+        
+    def __str__(self):
+        return f"Reporte de {self.reporter.username} hacia {self.reported_user.username}"

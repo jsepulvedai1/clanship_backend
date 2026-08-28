@@ -26,7 +26,27 @@ class AppVersionConfigAdmin(ModelAdmin):
 
 @admin.register(SystemSetting)
 class SystemSettingAdmin(ModelAdmin):
-    list_display = ('max_specialties_per_tradesman',)
+    list_display = (
+        '__str__',
+        'max_specialties_per_tradesman',
+        'subscriptions_enabled_ios',
+        'subscriptions_enabled_android',
+        'subscription_ios_link',
+    )
+    fieldsets = (
+        ('Límites Generales', {
+            'fields': ('max_specialties_per_tradesman',)
+        }),
+        ('Feature Flags de Suscripciones (Apple Review)', {
+            'fields': (
+                'subscriptions_enabled_ios',
+                'subscriptions_enabled_android',
+                'subscription_ios_link',
+                'subscription_ios_message',
+            ),
+            'description': 'Controla si los planes de suscripción son visibles y contratables en cada plataforma. Para Apple Review, mantener "Habilitar suscripciones en iOS" en False.'
+        }),
+    )
 
 @admin.register(UserDevice)
 class UserDeviceAdmin(ModelAdmin):
