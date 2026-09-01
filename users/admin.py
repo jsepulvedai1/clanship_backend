@@ -5,7 +5,7 @@ from django.urls import path, reverse
 from django.shortcuts import get_object_or_404, redirect
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display, action
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig, UserReport
 
 @admin.register(AppVersionConfig)
 class AppVersionConfigAdmin(ModelAdmin):
@@ -100,7 +100,7 @@ class ProfessionalDocumentInline(TabularInline):
 class CustomUserAdmin(ModelAdmin, BaseUserAdmin):
     inlines = [ProfessionalProfileInline]
     fieldsets = BaseUserAdmin.fieldsets + (
-        ('Información de Clanship', {'fields': ('phone_number', 'user_type', 'avatar', 'is_available', 'favorite_professionals')}),
+        ('Información de Clanship', {'fields': ('phone_number', 'user_type', 'avatar', 'is_available', 'favorite_professionals', 'blocked_users')}),
         ('Ubicación', {'fields': ('address', 'latitude', 'longitude')}),
     )
     add_fieldsets = BaseUserAdmin.add_fieldsets + (
@@ -109,7 +109,7 @@ class CustomUserAdmin(ModelAdmin, BaseUserAdmin):
     )
     list_display = ('username', 'email', 'phone_number', 'user_type', 'is_available', 'is_staff' , 'avatar')
     list_filter = ('user_type', 'is_available', 'is_staff', 'is_superuser', 'is_active')
-    filter_horizontal = ('favorite_professionals',)
+    filter_horizontal = ('favorite_professionals', 'blocked_users')
 
 class TagInline(TabularInline):
     model = Tag
@@ -432,3 +432,10 @@ class ProfessionalDocumentAdmin(ModelAdmin):
                 doc.profile.save()
         self.message_user(request, "Los documentos seleccionados han sido RECHAZADOS y el perfil notificado.", level=messages.WARNING)
 
+
+@admin.register(UserReport)
+class UserReportAdmin(ModelAdmin):
+    list_display = ('reporter', 'reported_user', 'reason', 'is_resolved', 'created_at')
+    list_filter = ('is_resolved', 'created_at')
+    search_fields = ('reporter__username', 'reported_user__username', 'reason')
+    list_editable = ('is_resolved',)

@@ -430,7 +430,8 @@ class ProfessionalPhoto(models.Model):
         verbose_name_plural = "Fotos de Portafolio"
 
     def __str__(self):
-        return f"Foto {self.id} de {self.profile.user.username}"
+        user_str = getattr(getattr(self.profile, 'user', None), 'username', 'Sin usuario')
+        return f"Foto {self.id} de {user_str}"
 
 
 class ProfessionalDocument(models.Model):
@@ -481,7 +482,8 @@ class ProfessionalDocument(models.Model):
         verbose_name_plural = "Documentos Profesionales"
 
     def __str__(self):
-        return f"{self.name} ({self.get_status_display()}) - {self.profile.user.username}"
+        user_str = getattr(getattr(self.profile, 'user', None), 'username', 'Sin usuario')
+        return f"{self.name} ({self.get_status_display()}) - {user_str}"
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
@@ -713,4 +715,6 @@ class UserReport(models.Model):
         verbose_name_plural = "Reportes de Usuarios"
         
     def __str__(self):
-        return f"Reporte de {self.reporter.username} hacia {self.reported_user.username}"
+        reporter_name = getattr(self.reporter, 'username', 'Desconocido')
+        reported_name = getattr(self.reported_user, 'username', 'Desconocido')
+        return f"Reporte de {reporter_name} hacia {reported_name}"
