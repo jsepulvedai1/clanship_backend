@@ -99,8 +99,21 @@ class User(AbstractUser):
         db_index=True
     )
 
+    def get_full_name(self):
+        full_name = f"{self.first_name} {self.last_name}".strip()
+        return full_name.title() if full_name else self.username
+
     def __str__(self):
-        return f"{self.username} ({self.get_user_type_display()})"
+        full_name = f"{self.first_name} {self.last_name}".strip()
+        display_name = full_name.title() if full_name else self.username
+        return f"{display_name} ({self.get_user_type_display()})"
+
+    def save(self, *args, **kwargs):
+        if self.first_name:
+            self.first_name = self.first_name.strip().title()
+        if self.last_name:
+            self.last_name = self.last_name.strip().title()
+        super().save(*args, **kwargs)
 
 
 class Specialty(models.Model):

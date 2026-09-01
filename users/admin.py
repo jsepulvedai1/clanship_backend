@@ -107,9 +107,16 @@ class CustomUserAdmin(ModelAdmin, BaseUserAdmin):
         ('Información de Clanship', {'fields': ('phone_number', 'user_type', 'avatar', 'is_available')}),
         ('Ubicación', {'fields': ('address', 'latitude', 'longitude')}),
     )
-    list_display = ('username', 'email', 'phone_number', 'user_type', 'is_available', 'is_staff' , 'avatar')
+    list_display = ('user_full_name', 'username', 'email', 'phone_number', 'user_type', 'is_available', 'is_staff', 'avatar')
+    list_display_links = ('user_full_name', 'username')
     list_filter = ('user_type', 'is_available', 'is_staff', 'is_superuser', 'is_active')
     filter_horizontal = ('favorite_professionals', 'blocked_users')
+    search_fields = ('username', 'first_name', 'last_name', 'email', 'phone_number')
+
+    @display(description="Nombre y Apellido", ordering="first_name")
+    def user_full_name(self, obj):
+        name = obj.get_full_name()
+        return name if name else "-"
 
 class TagInline(TabularInline):
     model = Tag
