@@ -240,6 +240,7 @@ if sys.platform == 'darwin':
     GEOS_LIBRARY_PATH = '/opt/homebrew/opt/geos/lib/libgeos_c.dylib'
 
 from django.urls import reverse_lazy
+from django.templatetags.static import static
 
 # Configuración de django-unfold (Panel Administrativo Premium)
 UNFOLD = {
@@ -256,7 +257,7 @@ UNFOLD = {
     },
     "THEME": "light",
     "STYLES": [
-        lambda request: "/static/css/admin_theme.css",
+        lambda request: f"{static('css/admin_theme.css')}?v=20260904_2",
     ],
     "DASHBOARD_CALLBACK": "core.views.dashboard_callback",
     "SHOW_HISTORY": True,

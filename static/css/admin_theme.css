@@ -201,113 +201,121 @@ table tbody tr:hover th {
    9. CLEAR VISUAL SELECTION FOR ROWS (CHECKED / SELECTED STATES)
    ========================================================================== */
 /* Highlight rows that are selected via checkbox or Django's .selected class */
+table tbody tr.selected,
+table tbody tr.selected > *,
 table tbody tr.selected td,
 table tbody tr.selected th,
-table tbody tr:has(input[type="checkbox"]:checked) td,
-table tbody tr:has(input[type="checkbox"]:checked) th,
-tbody:has(input.action-select:checked) tr td,
-tbody:has(input.action-select:checked) tr th {
-  background-color: #e0f2fe !important; /* Vivid accessible sky-blue highlight */
-  color: #0369a1 !important;
+table tbody:has(input.action-select:checked),
+table tbody:has(input.action-select:checked) tr,
+table tbody:has(input.action-select:checked) tr > *,
+table tbody:has(input.action-select:checked) td,
+table tbody:has(input.action-select:checked) th,
+table tbody tr:has(input:checked),
+table tbody tr:has(input:checked) > *,
+table tbody tr:has(input:checked) td,
+table tbody tr:has(input:checked) th {
+  background-color: #dbeafe !important; /* Tailwind blue-100 */
+  background: #dbeafe !important;
+  border-color: #bfdbfe !important;
 }
 
+table tbody tr.selected:hover,
+table tbody tr.selected:hover > *,
 table tbody tr.selected:hover td,
 table tbody tr.selected:hover th,
-table tbody tr:has(input[type="checkbox"]:checked):hover td,
-table tbody tr:has(input[type="checkbox"]:checked):hover th {
-  background-color: #bae6fd !important; /* Slightly deeper on hover */
+table tbody:has(input.action-select:checked):hover tr,
+table tbody:has(input.action-select:checked):hover td,
+table tbody:has(input.action-select:checked):hover th {
+  background-color: #bfdbfe !important; /* Tailwind blue-200 */
+  background: #bfdbfe !important;
 }
 
 table tbody tr.selected td a,
 table tbody tr.selected th a,
-table tbody tr:has(input[type="checkbox"]:checked) td a,
-table tbody tr:has(input[type="checkbox"]:checked) th a {
-  color: #0284c7 !important;
+table tbody tr:has(input:checked) td a,
+table tbody tr:has(input:checked) th a {
+  color: #1d4ed8 !important;
   font-weight: 700 !important;
 }
 
 /* ==========================================================================
-   10. HIGH CONTRAST CHECKBOXES & RADIO BUTTONS
+   10. HIGH CONTRAST CHECKBOXES & RADIO BUTTONS (SVG BASED)
    ========================================================================== */
-/* Base Checkbox: clearly defined border and clean white background */
-input[type="checkbox"] {
-  appearance: none !important;
+/* Base Checkbox */
+input[type="checkbox"],
+input.action-select,
+#action-toggle {
   -webkit-appearance: none !important;
-  width: 18px !important;
-  height: 18px !important;
-  min-width: 18px !important;
-  min-height: 18px !important;
-  border: 2px solid #64748b !important; /* Distinct dark slate border */
-  border-radius: 4px !important;
+  appearance: none !important;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+  border: 2px solid #475569 !important; /* High-contrast dark slate border */
+  border-radius: 5px !important;
   background-color: #ffffff !important;
   cursor: pointer !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  position: relative !important;
+  display: inline-block !important;
   vertical-align: middle !important;
+  position: relative !important;
   transition: all 0.15s ease-in-out !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08) !important;
 }
 
-input[type="checkbox"]:hover {
+input[type="checkbox"]:hover,
+input.action-select:hover,
+#action-toggle:hover {
   border-color: #0284c7 !important;
-  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15) !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.2) !important;
 }
 
-input[type="checkbox"]:focus {
+input[type="checkbox"]:focus,
+input.action-select:focus,
+#action-toggle:focus {
   outline: none !important;
   border-color: #0284c7 !important;
-  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.25) !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.3) !important;
 }
 
-/* Checked State: vibrant blue fill with crystal clear WHITE checkmark */
-input[type="checkbox"]:checked {
+/* Checked State: Crisp Vivid Blue + Razor-Sharp White SVG Checkmark */
+input[type="checkbox"]:checked,
+input.action-select:checked,
+#action-toggle:checked {
   background-color: #0284c7 !important;
   border-color: #0284c7 !important;
-}
-
-/* Checkmark Icon inside Checked Checkbox */
-input[type="checkbox"]:checked::after,
-input[type="checkbox"]:checked:after {
-  content: 'done' !important;
-  font-family: 'Material Symbols Outlined' !important;
-  font-size: 15px !important;
-  font-weight: 900 !important;
-  color: #ffffff !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  line-height: 1 !important;
-  width: 100% !important;
-  height: 100% !important;
+  background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e") !important;
+  background-size: 14px 14px !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
 }
 
 /* Indeterminate state (e.g. some rows selected in header toggle) */
-input[type="checkbox"]:indeterminate {
+input[type="checkbox"]:indeterminate,
+#action-toggle:indeterminate {
   background-color: #0284c7 !important;
   border-color: #0284c7 !important;
+  background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M3 8a1 1 0 011-1h8a1 1 0 110 2H4a1 1 0 01-1-1z'/%3e%3c/svg%3e") !important;
+  background-size: 14px 14px !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
 }
 
-input[type="checkbox"]:indeterminate::after {
-  content: 'remove' !important;
-  font-family: 'Material Symbols Outlined' !important;
-  font-size: 15px !important;
-  font-weight: 900 !important;
-  color: #ffffff !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  line-height: 1 !important;
+/* Disable Unfold ::after checkmark so it cannot interfere with SVG */
+input[type="checkbox"]::after,
+input[type="checkbox"]:after,
+input.action-select::after,
+#action-toggle::after {
+  display: none !important;
+  content: none !important;
 }
 
 /* Radio Buttons */
 input[type="radio"] {
-  appearance: none !important;
   -webkit-appearance: none !important;
-  width: 18px !important;
-  height: 18px !important;
-  border: 2px solid #64748b !important;
+  appearance: none !important;
+  width: 20px !important;
+  height: 20px !important;
+  border: 2px solid #475569 !important;
   border-radius: 50% !important;
   background-color: #ffffff !important;
   cursor: pointer !important;
@@ -319,17 +327,10 @@ input[type="radio"] {
 input[type="radio"]:checked {
   border-color: #0284c7 !important;
   background-color: #ffffff !important;
-}
-
-input[type="radio"]:checked::after {
-  content: '' !important;
-  position: absolute !important;
-  top: 3px !important;
-  left: 3px !important;
-  width: 8px !important;
-  height: 8px !important;
-  border-radius: 50% !important;
-  background-color: #0284c7 !important;
+  background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='%230284c7' xmlns='http://www.w3.org/2000/svg'%3e%3ccircle cx='8' cy='8' r='4'/%3e%3c/svg%3e") !important;
+  background-size: 100% 100% !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
 }
 
 /* ==========================================================================
