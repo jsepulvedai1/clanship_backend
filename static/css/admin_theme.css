@@ -37,17 +37,32 @@
   --color-font-important-dark: #0d2b45 !important;
 }
 
-/* 2. Global Background & Text Overrides */
+/* 2. Global Text Selection */
+::selection {
+  background-color: #bae6fd !important;
+  color: #082f49 !important;
+}
+
+/* 3. Global Background & Text Overrides */
 html, html.dark, body, #content, main, .main-content, div[id="content"] {
   background-color: #f8fafc !important;
   color: #1e293b !important;
 }
 
-/* 3. Sidebar Override (White background, Slate links, Navy active pill) */
+/* 4. Sidebar Override (White background, Slate links, Navy active pill) */
 #nav-sidebar, aside, div[id="nav-sidebar"] {
   background-color: #ffffff !important;
   border-right: 1px solid #e2e8f0 !important;
   box-shadow: 1px 0 8px rgba(0, 0, 0, 0.03) !important;
+}
+
+#nav-sidebar h2 a,
+#nav-sidebar h3 {
+  color: #475569 !important;
+  font-weight: 700 !important;
+  font-size: 0.75rem !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
 }
 
 #nav-sidebar a {
@@ -75,14 +90,19 @@ html, html.dark, body, #content, main, .main-content, div[id="content"] {
   color: inherit !important;
 }
 
-/* 4. Top Navigation Bar & Header */
+/* 5. Top Navigation Bar & Header */
 header, #header, .header-container, nav {
   background-color: #ffffff !important;
   border-bottom: 1px solid #e2e8f0 !important;
   color: #0d2b45 !important;
 }
 
-/* 5. Force Light Background on Containers, Cards & Modals */
+h1, .header h1, #header-inner h1 {
+  color: #0f172a !important;
+  font-weight: 700 !important;
+}
+
+/* 6. Force Light Background on Containers, Cards & Modals */
 .bg-gray-900, .bg-gray-800, .bg-gray-700,
 .bg-base-900, .bg-base-800, .bg-base-700,
 .bg-zinc-900, .bg-zinc-800, .bg-slate-900, .bg-slate-800,
@@ -92,16 +112,28 @@ header, #header, .header-container, nav {
   color: #1e293b !important;
 }
 
-/* 6. Text Color Overrides */
+/* Neutralize Tailwind v4 dark: where selectors that introduce dark backgrounds */
+:where(.dark, .dark *) .bg-base-900,
+:where(.dark, .dark *) .bg-base-800,
+:where(.dark, .dark *) .bg-base-700,
+:where(.dark, .dark *) [class*="bg-base-900"],
+:where(.dark, .dark *) [class*="bg-base-800"],
+:where(.dark, .dark *) [class*="bg-base-950"] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+/* 7. Text Color Overrides */
 .dark\:text-white, .dark\:text-zinc-100, .dark\:text-zinc-200, .dark\:text-zinc-300, .dark\:text-slate-100, .dark\:text-slate-200 {
   color: #0f172a !important;
 }
 
 .dark\:text-zinc-400, .dark\:text-zinc-500, .dark\:text-slate-400, .dark\:text-slate-500 {
-  color: #64748b !important;
+  color: #475569 !important;
 }
 
-/* 7. Table Styling Overrides */
+/* 8. Table Styling & Header Distinction */
 table {
   border-collapse: separate !important;
   border-spacing: 0 !important;
@@ -109,46 +141,350 @@ table {
   background-color: #ffffff !important;
 }
 
-table th, .dark\:bg-base-800 th {
-  background-color: #f1f5f9 !important;
-  color: #475569 !important;
+/* Real column headers ONLY */
+table thead th,
+#result_list thead th {
+  background-color: #f8fafc !important;
+  color: #334155 !important;
   font-weight: 700 !important;
-  font-size: 0.78rem !important;
+  font-size: 0.76rem !important;
   text-transform: uppercase !important;
-  letter-spacing: 0.04em !important;
-  border-bottom: 1px solid #e2e8f0 !important;
+  letter-spacing: 0.05em !important;
+  border-bottom: 2px solid #e2e8f0 !important;
   padding: 12px 16px !important;
 }
 
-table td, .dark\:bg-base-800 td {
+table thead th a {
+  color: #334155 !important;
+  font-weight: 700 !important;
+}
+
+table thead th a:hover {
+  color: #0d2b45 !important;
+}
+
+/* Row cells (including first column <th> which Unfold outputs as row-header) */
+table tbody th,
+#result_list tbody th,
+table tbody td,
+#result_list tbody td,
+.dark\:bg-base-800 td {
   padding: 14px 16px !important;
   border-bottom: 1px solid #f1f5f9 !important;
   color: #1e293b !important;
   background-color: #ffffff !important;
+  font-size: 0.875rem !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
 }
 
-table tr:hover td {
+/* Row Links */
+table tbody th a,
+table tbody td a {
+  color: #0f172a !important;
+  font-weight: 600 !important;
+}
+
+table tbody th a:hover,
+table tbody td a:hover {
+  color: #0284c7 !important;
+}
+
+/* Row Hover */
+table tbody tr:hover td,
+table tbody tr:hover th {
   background-color: #f8fafc !important;
 }
 
-/* 8. Input & Form Fields */
+/* ==========================================================================
+   9. CLEAR VISUAL SELECTION FOR ROWS (CHECKED / SELECTED STATES)
+   ========================================================================== */
+/* Highlight rows that are selected via checkbox or Django's .selected class */
+table tbody tr.selected td,
+table tbody tr.selected th,
+table tbody tr:has(input[type="checkbox"]:checked) td,
+table tbody tr:has(input[type="checkbox"]:checked) th,
+tbody:has(input.action-select:checked) tr td,
+tbody:has(input.action-select:checked) tr th {
+  background-color: #e0f2fe !important; /* Vivid accessible sky-blue highlight */
+  color: #0369a1 !important;
+}
+
+table tbody tr.selected:hover td,
+table tbody tr.selected:hover th,
+table tbody tr:has(input[type="checkbox"]:checked):hover td,
+table tbody tr:has(input[type="checkbox"]:checked):hover th {
+  background-color: #bae6fd !important; /* Slightly deeper on hover */
+}
+
+table tbody tr.selected td a,
+table tbody tr.selected th a,
+table tbody tr:has(input[type="checkbox"]:checked) td a,
+table tbody tr:has(input[type="checkbox"]:checked) th a {
+  color: #0284c7 !important;
+  font-weight: 700 !important;
+}
+
+/* ==========================================================================
+   10. HIGH CONTRAST CHECKBOXES & RADIO BUTTONS
+   ========================================================================== */
+/* Base Checkbox: clearly defined border and clean white background */
+input[type="checkbox"] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  min-height: 18px !important;
+  border: 2px solid #64748b !important; /* Distinct dark slate border */
+  border-radius: 4px !important;
+  background-color: #ffffff !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  position: relative !important;
+  vertical-align: middle !important;
+  transition: all 0.15s ease-in-out !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+input[type="checkbox"]:hover {
+  border-color: #0284c7 !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15) !important;
+}
+
+input[type="checkbox"]:focus {
+  outline: none !important;
+  border-color: #0284c7 !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.25) !important;
+}
+
+/* Checked State: vibrant blue fill with crystal clear WHITE checkmark */
+input[type="checkbox"]:checked {
+  background-color: #0284c7 !important;
+  border-color: #0284c7 !important;
+}
+
+/* Checkmark Icon inside Checked Checkbox */
+input[type="checkbox"]:checked::after,
+input[type="checkbox"]:checked:after {
+  content: 'done' !important;
+  font-family: 'Material Symbols Outlined' !important;
+  font-size: 15px !important;
+  font-weight: 900 !important;
+  color: #ffffff !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Indeterminate state (e.g. some rows selected in header toggle) */
+input[type="checkbox"]:indeterminate {
+  background-color: #0284c7 !important;
+  border-color: #0284c7 !important;
+}
+
+input[type="checkbox"]:indeterminate::after {
+  content: 'remove' !important;
+  font-family: 'Material Symbols Outlined' !important;
+  font-size: 15px !important;
+  font-weight: 900 !important;
+  color: #ffffff !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+}
+
+/* Radio Buttons */
+input[type="radio"] {
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  width: 18px !important;
+  height: 18px !important;
+  border: 2px solid #64748b !important;
+  border-radius: 50% !important;
+  background-color: #ffffff !important;
+  cursor: pointer !important;
+  position: relative !important;
+  vertical-align: middle !important;
+  transition: all 0.15s ease-in-out !important;
+}
+
+input[type="radio"]:checked {
+  border-color: #0284c7 !important;
+  background-color: #ffffff !important;
+}
+
+input[type="radio"]:checked::after {
+  content: '' !important;
+  position: absolute !important;
+  top: 3px !important;
+  left: 3px !important;
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+  background-color: #0284c7 !important;
+}
+
+/* ==========================================================================
+   11. BOTTOM PAGINATION & FOOTER BAR (ELIMINATES TRANSLUCENT / DARK OVERLAY)
+   ========================================================================== */
+.pagination,
+div[class*="pagination"],
+div.scrollable-top,
+div:has(> .showall),
+footer {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  border-top: 1px solid #e2e8f0 !important;
+  color: #0f172a !important;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.03) !important;
+}
+
+/* Results counter: "1 Configuración de Versión de App" */
+.pagination div,
+div[class*="pagination"] div,
+.pagination span,
+div[class*="pagination"] span {
+  color: #1e293b !important;
+  font-weight: 600 !important;
+  font-size: 0.875rem !important;
+}
+
+/* Show all link */
+.showall,
+a.showall,
+div[class*="pagination"] a {
+  color: #0284c7 !important;
+  font-weight: 600 !important;
+  text-decoration: none !important;
+}
+
+div[class*="pagination"] a:hover {
+  text-decoration: underline !important;
+  color: #0369a1 !important;
+}
+
+/* ==========================================================================
+   12. FLOATING ACTIONS BAR (FOR BATCH ACTIONS)
+   ========================================================================== */
+div:has(> #changelist-actions-wrapper),
+div[class*="group-has-[input.action-select:checked]"],
+div#changelist-actions-wrapper {
+  background-color: #0d2b45 !important;
+  color: #ffffff !important;
+  border-top: 1px solid #1e3a5f !important;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.15) !important;
+}
+
+div#changelist-actions-wrapper label,
+div#changelist-actions-wrapper span {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+div#changelist-actions-wrapper select {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border: 1px solid #cbd5e1 !important;
+  font-weight: 500 !important;
+}
+
+div#changelist-actions-wrapper button,
+div#changelist-actions-wrapper .button {
+  background-color: #0284c7 !important;
+  color: #ffffff !important;
+  border: none !important;
+  font-weight: 700 !important;
+  padding: 8px 18px !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+}
+
+div#changelist-actions-wrapper button:hover,
+div#changelist-actions-wrapper .button:hover {
+  background-color: #0369a1 !important;
+}
+
+/* ==========================================================================
+   13. INPUT & FORM FIELDS
+   ========================================================================== */
 input[type="text"], input[type="search"], input[type="email"], input[type="password"], select, textarea {
   background-color: #ffffff !important;
   border: 1px solid #cbd5e1 !important;
   color: #0f172a !important;
   border-radius: 8px !important;
+  font-size: 0.875rem !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #64748b !important;
+  opacity: 1 !important;
+  font-size: 0.875rem !important;
 }
 
 input:focus, select:focus, textarea:focus {
-  border-color: #0d2b45 !important;
-  box-shadow: 0 0 0 2px rgba(13, 43, 69, 0.15) !important;
+  border-color: #0284c7 !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15) !important;
+  outline: none !important;
 }
 
-/* 9. Buttons */
+/* Form Labels & Help Texts */
+label {
+  color: #0f172a !important;
+  font-weight: 600 !important;
+}
+
+.help, p.help, span.help, .help-block {
+  color: #475569 !important;
+  font-size: 0.8125rem !important;
+}
+
+/* Breadcrumbs & Navigation Titles */
+#header-inner a,
+.breadcrumbs a {
+  color: #475569 !important;
+  font-weight: 500 !important;
+}
+
+#header-inner a:hover,
+.breadcrumbs a:hover {
+  color: #0d2b45 !important;
+}
+
+/* Search Box shortcut kbd */
+#changelist-search kbd,
+div[x-data*="search"] kbd {
+  border: 1px solid #cbd5e1 !important;
+  background-color: #f1f5f9 !important;
+  color: #64748b !important;
+  font-weight: 600 !important;
+}
+
+/* Table sorting icons */
+.sortoptions a,
+.sortoptions span {
+  color: #64748b !important;
+}
+
+.sortoptions a:hover span {
+  color: #0284c7 !important;
+}
+
+/* ==========================================================================
+   14. BUTTONS
+   ========================================================================== */
 a.bg-primary-600, button.bg-primary-600, .btn-primary {
   background-color: #0d2b45 !important;
   color: #ffffff !important;
   border-radius: 8px !important;
+  font-weight: 600 !important;
 }
 
 a.bg-primary-600:hover, button.bg-primary-600:hover {
