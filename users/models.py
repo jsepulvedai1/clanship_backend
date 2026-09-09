@@ -778,9 +778,12 @@ class SeasonalCampaign(models.Model):
     accent_color = models.CharField(max_length=9, blank=True, null=True, verbose_name="Color de acento", help_text="Hexadecimal ej: #D52B1E o #FF7518")
     header_gradient_start = models.CharField(max_length=9, blank=True, null=True, verbose_name="Inicio gradiente cabecera", help_text="Hexadecimal ej: #0D2B45")
     header_gradient_end = models.CharField(max_length=9, blank=True, null=True, verbose_name="Fin gradiente cabecera", help_text="Hexadecimal ej: #163E63")
+    search_bar_border_color = models.CharField(max_length=9, blank=True, null=True, verbose_name="Color borde buscador Home", help_text="Hexadecimal ej: #D52B1E. Si está vacío, usa el color de acento.")
+    nav_center_color = models.CharField(max_length=9, blank=True, null=True, verbose_name="Color botón central del menú", help_text="Hexadecimal ej: #D52B1E. Si está vacío, usa el color primario.")
 
     # Assets visuales y animaciones
     logo_badge_icon = models.FileField(upload_to="seasonal/badges/", blank=True, null=True, verbose_name="Insignia para logo/avatar", help_text="PNG transparente o SVG (chupalla, gorro navideño, calabaza)")
+    nav_center_icon = models.FileField(upload_to="seasonal/nav_icons/", blank=True, null=True, verbose_name="Icono central de navegación (PNG)", help_text="PNG transparente para reemplazar el icono de explorar/mapa en el menú inferior")
     banner_image = models.ImageField(upload_to="seasonal/banners/", blank=True, null=True, verbose_name="Imagen de banner de fondo", help_text="Imagen opcional para el banner principal")
     particle_effect = models.CharField(max_length=20, choices=ParticleEffect.choices, default=ParticleEffect.NONE, verbose_name="Efecto de partículas")
 

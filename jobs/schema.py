@@ -7,6 +7,7 @@ from graphql_jwt.decorators import login_required
 import datetime
 from django.utils import timezone
 import math
+from django.db.models import Q
 
 def haversine_km(lat1, lon1, lat2, lon2):
     try:

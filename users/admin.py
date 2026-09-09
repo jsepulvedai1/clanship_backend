@@ -40,16 +40,18 @@ class SeasonalCampaignAdmin(ModelAdmin):
             'fields': (
                 ('primary_color', 'secondary_color', 'accent_color'),
                 ('header_gradient_start', 'header_gradient_end'),
+                ('search_bar_border_color', 'nav_center_color'),
             ),
             'description': 'Especifica códigos hexadecimales (ej: #0B6E4F, #D52B1E). Si se dejan vacíos, se usan los colores por defecto de la aplicación.'
         }),
         ('Assets Gráficos & Efectos Visuales', {
             'fields': (
                 'logo_badge_icon',
+                'nav_center_icon',
                 'banner_image',
                 'particle_effect',
             ),
-            'description': 'Insignia flotante sobre el logo/avatar (ej: chupalla, gorro navideño, calabaza) y micro-efecto de partículas (confeti, nieve).'
+            'description': 'Insignia flotante sobre logo/avatar, icono central del menú inferior (PNG), banner de fondo y efecto de partículas (confeti, nieve).'
         }),
         ('Banner Promocional & Copys de Temporada', {
             'fields': (

@@ -5,6 +5,7 @@ from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, Professio
 import graphql_jwt
 from graphql_jwt.decorators import login_required
 from decimal import Decimal
+from django.db.models import Q
 from django.core.cache import cache
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
@@ -963,7 +964,9 @@ class RequestPasswordReset(graphene.Mutation):
         generic_message = "Si el correo está registrado, recibirás un código en unos minutos."
         email_clean = email.strip().lower()
         try:
-            user = User.objects.get(Q(email__iexact=email_clean) | Q(username__iexact=email_clean))
+            user = User.objects.filter(Q(email__iexact=email_clean) | Q(username__iexact=email_clean)).first()
+            if not user:
+                return RequestPasswordReset(success=True, message=generic_message)
             
             # Generar OTP de 6 dígitos
             otp = f"{random.randint(100000, 999999)}"
@@ -1084,7 +1087,10 @@ class ResetPasswordWithOtp(graphene.Mutation):
             if not otp_record:
                 return ResetPasswordWithOtp(success=False, message="Token de recuperación inválido o expirado.")
 
-            user = User.objects.get(Q(email__iexact=email_clean) | Q(username__iexact=email_clean))
+            user = User.objects.filter(Q(email__iexact=email_clean) | Q(username__iexact=email_clean)).first()
+            if not user:
+                return ResetPasswordWithOtp(success=False, message="Usuario no encontrado.")
+
             user.set_password(new_password)
             user.save()
 
@@ -1092,8 +1098,6 @@ class ResetPasswordWithOtp(graphene.Mutation):
             otp_record.save()
 
             return ResetPasswordWithOtp(success=True, message="Contraseña actualizada correctamente.")
-        except User.DoesNotExist:
-            return ResetPasswordWithOtp(success=False, message="Usuario no encontrado.")
         except Exception as e:
             return ResetPasswordWithOtp(success=False, message=str(e))
 
