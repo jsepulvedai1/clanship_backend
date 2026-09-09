@@ -5,7 +5,71 @@ from django.urls import path, reverse
 from django.shortcuts import get_object_or_404, redirect
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display, action
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig, UserReport
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig, UserReport, SeasonalCampaign
+
+@admin.register(SeasonalCampaign)
+class SeasonalCampaignAdmin(ModelAdmin):
+    list_display = (
+        'name',
+        'season_type',
+        'app_type',
+        'is_active',
+        'display_live_status',
+        'start_date',
+        'end_date',
+        'priority',
+        'particle_effect',
+    )
+    list_filter = ('is_active', 'season_type', 'app_type', 'particle_effect')
+    search_fields = ('name', 'greeting_prefix', 'promo_banner_title')
+    filter_horizontal = ('featured_tags',)
+
+    fieldsets = (
+        ('Configuración General', {
+            'fields': (
+                'name',
+                'season_type',
+                'app_type',
+                'is_active',
+                'priority',
+                ('start_date', 'end_date'),
+            ),
+            'description': 'Define el período de vigencia y si la campaña está habilitada.'
+        }),
+        ('Paleta de Colores (Opcional / Overrides)', {
+            'fields': (
+                ('primary_color', 'secondary_color', 'accent_color'),
+                ('header_gradient_start', 'header_gradient_end'),
+            ),
+            'description': 'Especifica códigos hexadecimales (ej: #0B6E4F, #D52B1E). Si se dejan vacíos, se usan los colores por defecto de la aplicación.'
+        }),
+        ('Assets Gráficos & Efectos Visuales', {
+            'fields': (
+                'logo_badge_icon',
+                'banner_image',
+                'particle_effect',
+            ),
+            'description': 'Insignia flotante sobre el logo/avatar (ej: chupalla, gorro navideño, calabaza) y micro-efecto de partículas (confeti, nieve).'
+        }),
+        ('Banner Promocional & Copys de Temporada', {
+            'fields': (
+                'greeting_prefix',
+                'promo_banner_title',
+                'promo_banner_subtitle',
+                ('promo_banner_cta_text', 'promo_banner_action_type'),
+                'promo_banner_action_value',
+            ),
+            'description': 'Mensajes y llamadas a la acción que aparecerán en la pantalla de inicio.'
+        }),
+        ('Categorías Destacadas', {
+            'fields': ('featured_tags',),
+            'description': 'Etiquetas o especialidades que se priorizarán durante esta temporada festiva.'
+        }),
+    )
+
+    @display(description="En Vivo", boolean=True)
+    def display_live_status(self, obj):
+        return obj.is_currently_live
 
 @admin.register(AppVersionConfig)
 class AppVersionConfigAdmin(ModelAdmin):

@@ -9,7 +9,8 @@ try:
 except ImportError:
     resend = None
 
-from users.models import User, ProfessionalProfile, AppVersionConfig
+from django.utils import timezone
+from users.models import User, ProfessionalProfile, AppVersionConfig, SeasonalCampaign
 from jobs.models import Job
 from chat.models import Message
 from django.db.models import Sum
@@ -234,3 +235,70 @@ def app_version_check_view(request):
         'title': title_custom or default_title,
         'message': message_custom or default_message
     })
+
+
+@csrf_exempt
+def seasonal_config_api_view(request):
+    """
+    Endpoint para entregar la configuración visual y temática de festividades (Remote Theming).
+    Permite activar paletas de colores, insignias sobre el logo, banners y animaciones
+    de forma remota según la fecha actual y la prioridad de la campaña configurada en Django Admin.
+    """
+    app_type = request.GET.get('app_type', 'CLIENT').upper()
+    now = timezone.now()
+
+    campaign = SeasonalCampaign.objects.filter(
+        is_active=True,
+        app_type__in=[app_type, 'ALL'],
+        start_date__lte=now,
+        end_date__gte=now,
+    ).order_by('-priority', '-id').first()
+
+    if not campaign:
+        return JsonResponse({
+            'success': True,
+            'has_active_campaign': False,
+            'campaign': None
+        })
+
+    # Serializar tags destacados
+    featured_tags_data = [
+        {'id': t.id, 'name': t.name}
+        for t in campaign.featured_tags.all()
+    ]
+
+    # Construir URLs absolutas de assets
+    logo_badge_url = request.build_absolute_uri(campaign.logo_badge_icon.url) if campaign.logo_badge_icon else None
+    banner_image_url = request.build_absolute_uri(campaign.banner_image.url) if campaign.banner_image else None
+
+    return JsonResponse({
+        'success': True,
+        'has_active_campaign': True,
+        'campaign': {
+            'id': campaign.id,
+            'name': campaign.name,
+            'season_type': campaign.season_type,
+            'colors': {
+                'primary': campaign.primary_color,
+                'secondary': campaign.secondary_color,
+                'accent': campaign.accent_color,
+                'header_gradient_start': campaign.header_gradient_start,
+                'header_gradient_end': campaign.header_gradient_end,
+            },
+            'visuals': {
+                'logo_badge_url': logo_badge_url,
+                'banner_image_url': banner_image_url,
+                'particle_effect': campaign.particle_effect,
+            },
+            'copy': {
+                'greeting_prefix': campaign.greeting_prefix,
+                'promo_banner_title': campaign.promo_banner_title,
+                'promo_banner_subtitle': campaign.promo_banner_subtitle,
+                'promo_banner_cta_text': campaign.promo_banner_cta_text,
+                'promo_banner_action_type': campaign.promo_banner_action_type,
+                'promo_banner_action_value': campaign.promo_banner_action_value,
+            },
+            'featured_tags': featured_tags_data,
+        }
+    })
+

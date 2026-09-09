@@ -6,7 +6,7 @@ from django.contrib.auth import views as auth_views
 
 from django.conf import settings
 from django.conf.urls.static import static
-from core.views import contact_api_view, app_version_check_view
+from core.views import contact_api_view, app_version_check_view, seasonal_config_api_view
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -17,6 +17,9 @@ urlpatterns = [
     
     # App Version Enforcement Check API Endpoint
     path('api/v1/app-version/', app_version_check_view, name='app_version_check'),
+    
+    # Seasonal Campaign & Theming API Endpoint
+    path('api/v1/seasonal-config/', seasonal_config_api_view, name='seasonal_config_api'),
     
     # Restablecimiento de contraseña
     path(

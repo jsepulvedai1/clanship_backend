@@ -731,3 +731,83 @@ class UserReport(models.Model):
         reporter_name = getattr(self.reporter, 'username', 'Desconocido')
         reported_name = getattr(self.reported_user, 'username', 'Desconocido')
         return f"Reporte de {reporter_name} hacia {reported_name}"
+
+
+class SeasonalCampaign(models.Model):
+    """
+    Configuración remota de temporadas y festividades (Remote Theming & Banners).
+    Permite activar paletas de colores, insignias sobre el logo, banners promocionales
+    y micro-efectos festivos desde Django Admin sin recompilar la app móvil.
+    """
+    class SeasonType(models.TextChoices):
+        FIESTAS_PATRIAS = 'FIESTAS_PATRIAS', 'Fiestas Patrias (18 de Septiembre)'
+        HALLOWEEN = 'HALLOWEEN', 'Halloween'
+        NAVIDAD = 'NAVIDAD', 'Navidad y Fin de Año'
+        VERANO = 'VERANO', 'Verano'
+        CYBER = 'CYBER', 'CyberDays / Descuentos'
+        CUSTOM = 'CUSTOM', 'Personalizada'
+
+    class AppType(models.TextChoices):
+        ALL = 'ALL', 'Todas las aplicaciones'
+        CLIENT = 'CLIENT', 'Cliente'
+        TRADESMAN = 'TRADESMAN', 'Especialista / Maestro'
+
+    class ParticleEffect(models.TextChoices):
+        NONE = 'NONE', 'Ninguno'
+        CONFETTI = 'CONFETTI', 'Confeti / Challa (Fiestas Patrias / Año Nuevo)'
+        SNOW = 'SNOW', 'Nieve (Navidad)'
+        STARS = 'STARS', 'Estrellas / Destellos'
+
+    class ActionType(models.TextChoices):
+        REQUEST_JOB = 'REQUEST_JOB', 'Abrir creación de solicitud'
+        SEARCH_TAG = 'SEARCH_TAG', 'Filtrar por etiqueta / especialidad'
+        DEEP_LINK = 'DEEP_LINK', 'Abrir enlace externo / WebView'
+
+    name = models.CharField(max_length=100, verbose_name="Nombre de la campaña", help_text="Ej: Fiestas Patrias 2026")
+    season_type = models.CharField(max_length=30, choices=SeasonType.choices, default=SeasonType.CUSTOM, verbose_name="Festividad / Tipo")
+    app_type = models.CharField(max_length=20, choices=AppType.choices, default=AppType.CLIENT, verbose_name="Aplicación de destino")
+    is_active = models.BooleanField(default=True, verbose_name="¿Activa?", help_text="Interruptor maestro (Kill switch) para encender o apagar de inmediato.")
+    
+    start_date = models.DateTimeField(verbose_name="Fecha y hora de inicio")
+    end_date = models.DateTimeField(verbose_name="Fecha y hora de término")
+    priority = models.PositiveIntegerField(default=1, verbose_name="Prioridad", help_text="Mayor valor tiene precedencia si dos campañas se solapan en fechas.")
+
+    # Paleta de colores temáticos (Overrides opcionales)
+    primary_color = models.CharField(max_length=9, blank=True, null=True, verbose_name="Color primario", help_text="Hexadecimal ej: #0B6E4F")
+    secondary_color = models.CharField(max_length=9, blank=True, null=True, verbose_name="Color secundario", help_text="Hexadecimal ej: #0D2B45")
+    accent_color = models.CharField(max_length=9, blank=True, null=True, verbose_name="Color de acento", help_text="Hexadecimal ej: #D52B1E o #FF7518")
+    header_gradient_start = models.CharField(max_length=9, blank=True, null=True, verbose_name="Inicio gradiente cabecera", help_text="Hexadecimal ej: #0D2B45")
+    header_gradient_end = models.CharField(max_length=9, blank=True, null=True, verbose_name="Fin gradiente cabecera", help_text="Hexadecimal ej: #163E63")
+
+    # Assets visuales y animaciones
+    logo_badge_icon = models.FileField(upload_to="seasonal/badges/", blank=True, null=True, verbose_name="Insignia para logo/avatar", help_text="PNG transparente o SVG (chupalla, gorro navideño, calabaza)")
+    banner_image = models.ImageField(upload_to="seasonal/banners/", blank=True, null=True, verbose_name="Imagen de banner de fondo", help_text="Imagen opcional para el banner principal")
+    particle_effect = models.CharField(max_length=20, choices=ParticleEffect.choices, default=ParticleEffect.NONE, verbose_name="Efecto de partículas")
+
+    # Textos y mensajes dinámicos
+    greeting_prefix = models.CharField(max_length=60, blank=True, null=True, verbose_name="Prefijo de saludo", help_text="Ej: '¡Tikitikiti!', '¡Feliz Navidad!', '¡Feliz 18!'")
+    promo_banner_title = models.CharField(max_length=120, blank=True, null=True, verbose_name="Título del banner", help_text="Ej: ¡Celebra el 18 sin preocupaciones!")
+    promo_banner_subtitle = models.CharField(max_length=220, blank=True, null=True, verbose_name="Subtítulo del banner", help_text="Ej: Parrilleros, gasfitería y electricidad para tu fonda o casa.")
+    promo_banner_cta_text = models.CharField(max_length=50, blank=True, null=True, verbose_name="Texto botón acción (CTA)", help_text="Ej: Pedir Especialista")
+    promo_banner_action_type = models.CharField(max_length=20, choices=ActionType.choices, default=ActionType.REQUEST_JOB, verbose_name="Tipo de acción")
+    promo_banner_action_value = models.CharField(max_length=200, blank=True, null=True, verbose_name="Valor de acción", help_text="Nombre de especialidad a buscar o URL externa")
+
+    # Etiquetas destacadas de temporada
+    featured_tags = models.ManyToManyField('users.Tag', blank=True, related_name="seasonal_campaigns", verbose_name="Etiquetas destacadas")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Campaña de Temporada / Festividad"
+        verbose_name_plural = "Campañas de Temporada / Festividades"
+        ordering = ['-priority', '-start_date']
+
+    def __str__(self):
+        return f"{self.name} ({self.get_season_type_display()})"
+
+    @property
+    def is_currently_live(self):
+        now = timezone.now()
+        return self.is_active and (self.start_date <= now <= self.end_date)
+

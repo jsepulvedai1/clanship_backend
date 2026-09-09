@@ -21,6 +21,16 @@ def haversine_km(lat1, lon1, lat2, lon2):
         return 0.0
 
 
+def format_clp(amount):
+    if amount is None:
+        return ""
+    try:
+        val = int(round(float(amount)))
+        return f"${val:,}".replace(",", ".")
+    except (ValueError, TypeError):
+        return f"${amount}"
+
+
 class JobProposalType(DjangoObjectType):
     professional_name = graphene.String()
     professional_avatar_url = graphene.String()
@@ -703,7 +713,7 @@ class SubmitJobProposal(graphene.Mutation):
                 send_user_push_notification(
                     user=cust,
                     title="Nueva Cotización Recibida",
-                    body=f"El profesional {prof_name} ha enviado una propuesta de ${estimated_price} para '{public_request.title}'.",
+                    body=f"El profesional {prof_name} ha enviado una propuesta de {format_clp(estimated_price)} para '{public_request.title}'.",
                     data={"event": "job_proposal_received", "public_request_id": public_request.id}
                 )
         except Exception:
@@ -767,7 +777,7 @@ class AcceptJobProposal(graphene.Mutation):
         Message.objects.create(
             room=room,
             sender=user,
-            text=f"¡Hola! He aceptado tu cotización de ${proposal.estimated_price} para la visita del {proposal.scheduled_date} a las {proposal.scheduled_time}."
+            text=f"¡Hola! He aceptado tu cotización de {format_clp(proposal.estimated_price)} para la visita del {proposal.scheduled_date} a las {proposal.scheduled_time}."
         )
 
         return AcceptJobProposal(success=True, job=job)
