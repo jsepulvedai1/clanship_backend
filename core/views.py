@@ -267,9 +267,16 @@ def seasonal_config_api_view(request):
         for t in campaign.featured_tags.all()
     ]
 
-    # Construir URLs absolutas de assets
-    logo_badge_url = request.build_absolute_uri(campaign.logo_badge_icon.url) if campaign.logo_badge_icon else None
-    banner_image_url = request.build_absolute_uri(campaign.banner_image.url) if campaign.banner_image else None
+    # Construir URLs absolutas de assets (asegurando HTTPS en producción)
+    def to_https(url_str):
+        if not url_str:
+            return None
+        if not settings.DEBUG and url_str.startswith('http://'):
+            return url_str.replace('http://', 'https://', 1)
+        return url_str
+
+    logo_badge_url = to_https(request.build_absolute_uri(campaign.logo_badge_icon.url)) if campaign.logo_badge_icon else None
+    banner_image_url = to_https(request.build_absolute_uri(campaign.banner_image.url)) if campaign.banner_image else None
 
     return JsonResponse({
         'success': True,
