@@ -47,11 +47,12 @@ class SeasonalCampaignAdmin(ModelAdmin):
         ('Assets Gráficos & Efectos Visuales', {
             'fields': (
                 ('logo_badge_icon', 'nav_center_icon'),
-                ('show_top_garland', 'custom_garland_image'),
+                ('show_top_garland', 'garland_position'),
+                'custom_garland_image',
                 'banner_image',
                 'particle_effect',
             ),
-            'description': 'Insignia flotante, icono central del menú (PNG), guirnalda superior (banderines/murciélagos/navidad), banner de fondo y partículas.'
+            'description': 'Insignia flotante, icono central del menú (PNG), guirnaldas temáticas (ubicación arriba, abajo o ambos), banner de fondo y partículas.'
         }),
         ('Banner Promocional & Copys de Temporada', {
             'fields': (

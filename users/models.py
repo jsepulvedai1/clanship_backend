@@ -785,7 +785,19 @@ class SeasonalCampaign(models.Model):
     logo_badge_icon = models.FileField(upload_to="seasonal/badges/", blank=True, null=True, verbose_name="Insignia para logo/avatar", help_text="PNG transparente o SVG (chupalla, gorro navideño, calabaza)")
     nav_center_icon = models.FileField(upload_to="seasonal/nav_icons/", blank=True, null=True, verbose_name="Icono central de navegación (PNG)", help_text="PNG transparente para reemplazar el icono de explorar/mapa en el menú inferior")
     banner_image = models.ImageField(upload_to="seasonal/banners/", blank=True, null=True, verbose_name="Imagen de banner de fondo", help_text="Imagen opcional para el banner principal")
-    show_top_garland = models.BooleanField(default=False, verbose_name="¿Mostrar guirnalda superior?", help_text="Activa una fila decorativa superior: Banderas chilenas (Fiestas Patrias), Murciélagos (Halloween) o Guirnaldas (Navidad).")
+    class GarlandPosition(models.TextChoices):
+        BOTH = 'BOTH', 'En ambos (Barra superior y Card principal)'
+        TOP = 'TOP', 'Solo arriba (Barra superior / Nombre)'
+        BOTTOM = 'BOTTOM', 'Solo abajo (Card principal / Banner)'
+
+    show_top_garland = models.BooleanField(default=False, verbose_name="¿Mostrar guirnaldas / banderines?", help_text="Activa la fila decorativa de guirnaldas (Banderas chilenas, Murciélagos o Guirnalda de pino).")
+    garland_position = models.CharField(
+        max_length=20,
+        choices=GarlandPosition.choices,
+        default=GarlandPosition.BOTH,
+        verbose_name="Ubicación de guirnaldas",
+        help_text="Controla si las guirnaldas aparecen arriba (en la barra superior), abajo (en el card principal), o en ambos lugares."
+    )
     custom_garland_image = models.FileField(upload_to="seasonal/garlands/", blank=True, null=True, verbose_name="Imagen de guirnalda personalizada (PNG)", help_text="Opcional: PNG transparente que reemplaza la guirnalda automática.")
     particle_effect = models.CharField(max_length=20, choices=ParticleEffect.choices, default=ParticleEffect.NONE, verbose_name="Efecto de partículas")
 
