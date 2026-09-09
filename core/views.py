@@ -277,6 +277,7 @@ def seasonal_config_api_view(request):
 
     logo_badge_url = to_https(request.build_absolute_uri(campaign.logo_badge_icon.url)) if campaign.logo_badge_icon else None
     nav_center_icon_url = to_https(request.build_absolute_uri(campaign.nav_center_icon.url)) if campaign.nav_center_icon else None
+    custom_garland_url = to_https(request.build_absolute_uri(campaign.custom_garland_image.url)) if campaign.custom_garland_image else None
     banner_image_url = to_https(request.build_absolute_uri(campaign.banner_image.url)) if campaign.banner_image else None
 
     return JsonResponse({
@@ -298,6 +299,8 @@ def seasonal_config_api_view(request):
             'visuals': {
                 'logo_badge_url': logo_badge_url,
                 'nav_center_icon_url': nav_center_icon_url,
+                'show_top_garland': campaign.show_top_garland,
+                'custom_garland_url': custom_garland_url,
                 'banner_image_url': banner_image_url,
                 'particle_effect': campaign.particle_effect,
             },
