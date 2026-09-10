@@ -784,8 +784,117 @@ class SeasonalCampaign(models.Model):
         max_length=9,
         blank=True,
         null=True,
-        verbose_name="Color fondo cuadros de solicitudes",
-        help_text="Hexadecimal ej: #F1F5F9 o #0D2B45 para las 4 tarjetas de solicitudes en la app de maestro."
+        verbose_name="Color fondo cuadros (General / Fallback)",
+        help_text="Hexadecimal ej: #F1F5F9. Aplica a todas las tarjetas de solicitudes que no tengan un color específico."
+    )
+    stat_card_active_bg_color = models.CharField(
+        max_length=9,
+        blank=True,
+        null=True,
+        verbose_name="Color fondo: Solicitudes de Trabajo (Activas)",
+        help_text="Hexadecimal ej: #F1F5F9 o #0D2B45."
+    )
+    stat_card_completed_bg_color = models.CharField(
+        max_length=9,
+        blank=True,
+        null=True,
+        verbose_name="Color fondo: Solicitudes Completadas",
+        help_text="Hexadecimal ej: #ECFDF5 (verde menta suave)."
+    )
+    stat_card_rejected_bg_color = models.CharField(
+        max_length=9,
+        blank=True,
+        null=True,
+        verbose_name="Color fondo: Solicitudes Rechazadas",
+        help_text="Hexadecimal ej: #FEF2F2 (rojo suave)."
+    )
+    stat_card_scheduled_bg_color = models.CharField(
+        max_length=9,
+        blank=True,
+        null=True,
+        verbose_name="Color fondo: Solicitudes Programadas",
+        help_text="Hexadecimal ej: #FFFBEB (ámbar suave)."
+    )
+
+    # Personalización de textos, números e iconos en tarjetas (Tradesman)
+    stat_cards_number_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color números tarjetas (General / Fallback)",
+        help_text="Hexadecimal ej: #0B6E4F para el número grande de las tarjetas."
+    )
+    stat_cards_text_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color textos tarjetas (General / Fallback)",
+        help_text="Hexadecimal ej: #2E3135 para la etiqueta de las tarjetas."
+    )
+    stat_cards_icon_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color iconos tarjetas (General / Fallback)",
+        help_text="Hexadecimal ej: #0B6E4F para el icono y halo de las tarjetas."
+    )
+
+    stat_card_active_number_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color número: Solicitudes de Trabajo",
+        help_text="Hexadecimal ej: #2E3135 o #0D2B45."
+    )
+    stat_card_active_text_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color texto: Solicitudes de Trabajo",
+        help_text="Hexadecimal ej: #2E3135."
+    )
+    stat_card_active_icon_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color icono: Solicitudes de Trabajo",
+        help_text="Hexadecimal ej: #2E3135."
+    )
+
+    stat_card_completed_number_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color número: Solicitudes Completadas",
+        help_text="Hexadecimal ej: #0B6E4F."
+    )
+    stat_card_completed_text_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color texto: Solicitudes Completadas",
+        help_text="Hexadecimal ej: #2E3135."
+    )
+    stat_card_completed_icon_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color icono: Solicitudes Completadas",
+        help_text="Hexadecimal ej: #0B6E4F."
+    )
+
+    stat_card_rejected_number_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color número: Solicitudes Rechazadas",
+        help_text="Hexadecimal ej: #EA4335."
+    )
+    stat_card_rejected_text_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color texto: Solicitudes Rechazadas",
+        help_text="Hexadecimal ej: #2E3135."
+    )
+    stat_card_rejected_icon_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color icono: Solicitudes Rechazadas",
+        help_text="Hexadecimal ej: #EA4335."
+    )
+
+    stat_card_scheduled_number_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color número: Solicitudes Programadas",
+        help_text="Hexadecimal ej: #F28C28."
+    )
+    stat_card_scheduled_text_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color texto: Solicitudes Programadas",
+        help_text="Hexadecimal ej: #2E3135."
+    )
+    stat_card_scheduled_icon_color = models.CharField(
+        max_length=9, blank=True, null=True,
+        verbose_name="Color icono: Solicitudes Programadas",
+        help_text="Hexadecimal ej: #F28C28."
     )
 
     # Assets visuales y animaciones
@@ -796,8 +905,36 @@ class SeasonalCampaign(models.Model):
         upload_to="seasonal/stat_cards/",
         blank=True,
         null=True,
-        verbose_name="Imagen de fondo cuadros de solicitudes",
-        help_text="Imagen opcional (textura, patrón o festividad) para el fondo de las 4 tarjetas de solicitudes en la app de maestro."
+        verbose_name="Imagen de fondo cuadros (General / Fallback)",
+        help_text="Imagen para las tarjetas que no tengan una imagen específica."
+    )
+    stat_card_active_bg_image = models.ImageField(
+        upload_to="seasonal/stat_cards/",
+        blank=True,
+        null=True,
+        verbose_name="Imagen fondo: Solicitudes de Trabajo (Activas)",
+        help_text="Imagen específica para la tarjeta de Solicitudes de Trabajo."
+    )
+    stat_card_completed_bg_image = models.ImageField(
+        upload_to="seasonal/stat_cards/",
+        blank=True,
+        null=True,
+        verbose_name="Imagen fondo: Solicitudes Completadas",
+        help_text="Imagen específica para la tarjeta de Solicitudes Completadas."
+    )
+    stat_card_rejected_bg_image = models.ImageField(
+        upload_to="seasonal/stat_cards/",
+        blank=True,
+        null=True,
+        verbose_name="Imagen fondo: Solicitudes Rechazadas",
+        help_text="Imagen específica para la tarjeta de Solicitudes Rechazadas."
+    )
+    stat_card_scheduled_bg_image = models.ImageField(
+        upload_to="seasonal/stat_cards/",
+        blank=True,
+        null=True,
+        verbose_name="Imagen fondo: Solicitudes Programadas",
+        help_text="Imagen específica para la tarjeta de Solicitudes Programadas."
     )
     class GarlandPosition(models.TextChoices):
         BOTH = 'BOTH', 'En ambos (Barra superior y Card principal)'

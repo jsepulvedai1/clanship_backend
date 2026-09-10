@@ -280,6 +280,10 @@ def seasonal_config_api_view(request):
     custom_garland_url = to_https(request.build_absolute_uri(campaign.custom_garland_image.url)) if campaign.custom_garland_image else None
     banner_image_url = to_https(request.build_absolute_uri(campaign.banner_image.url)) if campaign.banner_image else None
     stat_cards_bg_image_url = to_https(request.build_absolute_uri(campaign.stat_cards_bg_image.url)) if campaign.stat_cards_bg_image else None
+    stat_card_active_bg_image_url = to_https(request.build_absolute_uri(campaign.stat_card_active_bg_image.url)) if campaign.stat_card_active_bg_image else None
+    stat_card_completed_bg_image_url = to_https(request.build_absolute_uri(campaign.stat_card_completed_bg_image.url)) if campaign.stat_card_completed_bg_image else None
+    stat_card_rejected_bg_image_url = to_https(request.build_absolute_uri(campaign.stat_card_rejected_bg_image.url)) if campaign.stat_card_rejected_bg_image else None
+    stat_card_scheduled_bg_image_url = to_https(request.build_absolute_uri(campaign.stat_card_scheduled_bg_image.url)) if campaign.stat_card_scheduled_bg_image else None
 
     return JsonResponse({
         'success': True,
@@ -297,6 +301,25 @@ def seasonal_config_api_view(request):
                 'search_bar_border': campaign.search_bar_border_color,
                 'nav_center': campaign.nav_center_color,
                 'stat_cards_bg': campaign.stat_cards_bg_color,
+                'stat_cards_number': campaign.stat_cards_number_color,
+                'stat_cards_text': campaign.stat_cards_text_color,
+                'stat_cards_icon': campaign.stat_cards_icon_color,
+                'stat_card_active_bg': campaign.stat_card_active_bg_color,
+                'stat_card_active_number': campaign.stat_card_active_number_color,
+                'stat_card_active_text': campaign.stat_card_active_text_color,
+                'stat_card_active_icon': campaign.stat_card_active_icon_color,
+                'stat_card_completed_bg': campaign.stat_card_completed_bg_color,
+                'stat_card_completed_number': campaign.stat_card_completed_number_color,
+                'stat_card_completed_text': campaign.stat_card_completed_text_color,
+                'stat_card_completed_icon': campaign.stat_card_completed_icon_color,
+                'stat_card_rejected_bg': campaign.stat_card_rejected_bg_color,
+                'stat_card_rejected_number': campaign.stat_card_rejected_number_color,
+                'stat_card_rejected_text': campaign.stat_card_rejected_text_color,
+                'stat_card_rejected_icon': campaign.stat_card_rejected_icon_color,
+                'stat_card_scheduled_bg': campaign.stat_card_scheduled_bg_color,
+                'stat_card_scheduled_number': campaign.stat_card_scheduled_number_color,
+                'stat_card_scheduled_text': campaign.stat_card_scheduled_text_color,
+                'stat_card_scheduled_icon': campaign.stat_card_scheduled_icon_color,
             },
             'visuals': {
                 'logo_badge_url': logo_badge_url,
@@ -308,6 +331,10 @@ def seasonal_config_api_view(request):
                 'custom_garland_url': custom_garland_url,
                 'banner_image_url': banner_image_url,
                 'stat_cards_bg_image_url': stat_cards_bg_image_url,
+                'stat_card_active_bg_image_url': stat_card_active_bg_image_url,
+                'stat_card_completed_bg_image_url': stat_card_completed_bg_image_url,
+                'stat_card_rejected_bg_image_url': stat_card_rejected_bg_image_url,
+                'stat_card_scheduled_bg_image_url': stat_card_scheduled_bg_image_url,
                 'particle_effect': campaign.particle_effect,
             },
             'copy': {

@@ -40,7 +40,7 @@ class SeasonalCampaignAdmin(ModelAdmin):
             'fields': (
                 ('primary_color', 'secondary_color', 'accent_color'),
                 ('header_gradient_start', 'header_gradient_end'),
-                ('search_bar_border_color', 'nav_center_color', 'stat_cards_bg_color'),
+                ('search_bar_border_color', 'nav_center_color'),
             ),
             'description': 'Especifica códigos hexadecimales (ej: #0B6E4F, #D52B1E). Si se dejan vacíos, se usan los colores por defecto de la aplicación.'
         }),
@@ -49,10 +49,25 @@ class SeasonalCampaignAdmin(ModelAdmin):
                 ('logo_badge_icon', 'nav_center_icon'),
                 ('show_top_garland', 'garland_position'),
                 'custom_garland_image',
-                ('banner_image', 'stat_cards_bg_image'),
+                'banner_image',
                 'particle_effect',
             ),
-            'description': 'Insignia flotante, icono central del menú (PNG), guirnaldas temáticas, banner de fondo, fondo de cuadros de solicitudes (maestro) y partículas.'
+            'description': 'Insignia flotante, icono central del menú (PNG), guirnaldas temáticas (ubicación arriba, abajo o ambos), banner de fondo y partículas.'
+        }),
+        ('Cuadros de Solicitudes - App Maestro (Personalización Independiente)', {
+            'fields': (
+                ('stat_cards_bg_color', 'stat_cards_bg_image'),
+                ('stat_cards_number_color', 'stat_cards_text_color', 'stat_cards_icon_color'),
+                ('stat_card_active_bg_color', 'stat_card_active_bg_image'),
+                ('stat_card_active_number_color', 'stat_card_active_text_color', 'stat_card_active_icon_color'),
+                ('stat_card_completed_bg_color', 'stat_card_completed_bg_image'),
+                ('stat_card_completed_number_color', 'stat_card_completed_text_color', 'stat_card_completed_icon_color'),
+                ('stat_card_rejected_bg_color', 'stat_card_rejected_bg_image'),
+                ('stat_card_rejected_number_color', 'stat_card_rejected_text_color', 'stat_card_rejected_icon_color'),
+                ('stat_card_scheduled_bg_color', 'stat_card_scheduled_bg_image'),
+                ('stat_card_scheduled_number_color', 'stat_card_scheduled_text_color', 'stat_card_scheduled_icon_color'),
+            ),
+            'description': 'Personaliza el fondo, imagen, color de números, textos e iconos para cada una de las 4 tarjetas de solicitudes en la app de maestro. Las primeras dos filas aplican como valores generales/fallback.'
         }),
         ('Banner Promocional & Copys de Temporada', {
             'fields': (
