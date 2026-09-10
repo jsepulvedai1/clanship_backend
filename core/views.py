@@ -335,6 +335,11 @@ def seasonal_config_api_view(request):
                 'stat_card_completed_bg_image_url': stat_card_completed_bg_image_url,
                 'stat_card_rejected_bg_image_url': stat_card_rejected_bg_image_url,
                 'stat_card_scheduled_bg_image_url': stat_card_scheduled_bg_image_url,
+                'stat_cards_image_opacity': campaign.stat_cards_image_opacity,
+                'stat_card_active_image_opacity': campaign.stat_card_active_image_opacity,
+                'stat_card_completed_image_opacity': campaign.stat_card_completed_image_opacity,
+                'stat_card_rejected_image_opacity': campaign.stat_card_rejected_image_opacity,
+                'stat_card_scheduled_image_opacity': campaign.stat_card_scheduled_image_opacity,
                 'particle_effect': campaign.particle_effect,
             },
             'copy': {

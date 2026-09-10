@@ -56,18 +56,18 @@ class SeasonalCampaignAdmin(ModelAdmin):
         }),
         ('Cuadros de Solicitudes - App Maestro (Personalización Independiente)', {
             'fields': (
-                ('stat_cards_bg_color', 'stat_cards_bg_image'),
+                ('stat_cards_bg_color', 'stat_cards_bg_image', 'stat_cards_image_opacity'),
                 ('stat_cards_number_color', 'stat_cards_text_color', 'stat_cards_icon_color'),
-                ('stat_card_active_bg_color', 'stat_card_active_bg_image'),
+                ('stat_card_active_bg_color', 'stat_card_active_bg_image', 'stat_card_active_image_opacity'),
                 ('stat_card_active_number_color', 'stat_card_active_text_color', 'stat_card_active_icon_color'),
-                ('stat_card_completed_bg_color', 'stat_card_completed_bg_image'),
+                ('stat_card_completed_bg_color', 'stat_card_completed_bg_image', 'stat_card_completed_image_opacity'),
                 ('stat_card_completed_number_color', 'stat_card_completed_text_color', 'stat_card_completed_icon_color'),
-                ('stat_card_rejected_bg_color', 'stat_card_rejected_bg_image'),
+                ('stat_card_rejected_bg_color', 'stat_card_rejected_bg_image', 'stat_card_rejected_image_opacity'),
                 ('stat_card_rejected_number_color', 'stat_card_rejected_text_color', 'stat_card_rejected_icon_color'),
-                ('stat_card_scheduled_bg_color', 'stat_card_scheduled_bg_image'),
+                ('stat_card_scheduled_bg_color', 'stat_card_scheduled_bg_image', 'stat_card_scheduled_image_opacity'),
                 ('stat_card_scheduled_number_color', 'stat_card_scheduled_text_color', 'stat_card_scheduled_icon_color'),
             ),
-            'description': 'Personaliza el fondo, imagen, color de números, textos e iconos para cada una de las 4 tarjetas de solicitudes en la app de maestro. Las primeras dos filas aplican como valores generales/fallback.'
+            'description': 'Personaliza el fondo, imagen, nivel de opacidad (0 a 100%), color de números, textos e iconos para cada una de las 4 tarjetas de solicitudes en la app de maestro. Las primeras dos filas aplican como valores generales/fallback.'
         }),
         ('Banner Promocional & Copys de Temporada', {
             'fields': (

@@ -936,6 +936,31 @@ class SeasonalCampaign(models.Model):
         verbose_name="Imagen fondo: Solicitudes Programadas",
         help_text="Imagen específica para la tarjeta de Solicitudes Programadas."
     )
+    stat_cards_image_opacity = models.PositiveSmallIntegerField(
+        blank=True, null=True,
+        verbose_name="Opacidad imagen tarjetas - General (%)",
+        help_text="Porcentaje de 0 a 100% (ej: 25 para marca de agua sutil, 75 para imagen visible, 100 para foto completa sin filtro). Aplica a las que no definan un porcentaje propio."
+    )
+    stat_card_active_image_opacity = models.PositiveSmallIntegerField(
+        blank=True, null=True,
+        verbose_name="Opacidad imagen: Solicitudes de Trabajo (%)",
+        help_text="0 a 100% de visibilidad."
+    )
+    stat_card_completed_image_opacity = models.PositiveSmallIntegerField(
+        blank=True, null=True,
+        verbose_name="Opacidad imagen: Solicitudes Completadas (%)",
+        help_text="0 a 100% de visibilidad."
+    )
+    stat_card_rejected_image_opacity = models.PositiveSmallIntegerField(
+        blank=True, null=True,
+        verbose_name="Opacidad imagen: Solicitudes Rechazadas (%)",
+        help_text="0 a 100% de visibilidad."
+    )
+    stat_card_scheduled_image_opacity = models.PositiveSmallIntegerField(
+        blank=True, null=True,
+        verbose_name="Opacidad imagen: Solicitudes Programadas (%)",
+        help_text="0 a 100% de visibilidad."
+    )
     class GarlandPosition(models.TextChoices):
         BOTH = 'BOTH', 'En ambos (Barra superior y Card principal)'
         TOP = 'TOP', 'Solo arriba (Barra superior / Nombre)'
