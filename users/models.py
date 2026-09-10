@@ -369,6 +369,23 @@ class ProfessionalProfile(models.Model):
         return AssociateReferral.objects.filter(referrer=self.user, reward_granted=False).count()
 
     @property
+    def referrals_rewards_earned_count(self):
+        from users.models import ReferralRewardLog
+        return ReferralRewardLog.objects.filter(professional=self.user).count()
+
+    @property
+    def referral_max_rewards_per_user(self):
+        from users.models import SystemSetting
+        return SystemSetting.get_settings().referral_max_rewards_per_user
+
+    @property
+    def referral_has_reached_max_rewards(self):
+        limit = self.referral_max_rewards_per_user
+        if limit is None or limit <= 0:
+            return False
+        return self.referrals_rewards_earned_count >= limit
+
+    @property
     def requires_plan_upgrade(self):
         if not self.plan or self.plan.max_completed_jobs is None:
             return False
@@ -584,10 +601,38 @@ class SystemSetting(models.Model):
         verbose_name="Habilitar suscripciones en iOS",
         help_text="Controla si en iOS se muestran compras/suscripciones de planes o vista informativa (Mantener en False para revisión de Apple)"
     )
+    subscriptions_min_version_ios = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Versión mínima para suscripciones en iOS",
+        help_text="Versión mínima requerida (ej: 1.0.5) para mostrar planes en iOS. Dejar en blanco si no aplica."
+    )
+    subscriptions_blocked_versions_ios = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Versiones bloqueadas en iOS (revisión de Apple)",
+        help_text="Versiones separadas por coma que NO mostrarán planes (ej: 1.0.6, 1.0.7). Útil cuando una versión específica está en revisión."
+    )
     subscriptions_enabled_android = models.BooleanField(
         default=True,
         verbose_name="Habilitar suscripciones en Android",
         help_text="Controla si en Android se muestran los planes de suscripción"
+    )
+    subscriptions_min_version_android = models.CharField(
+        max_length=20,
+        blank=True,
+        default="",
+        verbose_name="Versión mínima para suscripciones en Android",
+        help_text="Versión mínima requerida (ej: 1.0.5) para mostrar planes en Android. Dejar en blanco si no aplica."
+    )
+    subscriptions_blocked_versions_android = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Versiones bloqueadas en Android",
+        help_text="Versiones separadas por coma que NO mostrarán planes en Android (ej: 1.0.6). Dejar en blanco si no aplica."
     )
     subscription_ios_link = models.URLField(
         default="https://clanship.cl",
@@ -629,6 +674,11 @@ class SystemSetting(models.Model):
         verbose_name="Duración del beneficio (X días)",
         help_text="Días de duración que se otorgarán del plan asociado"
     )
+    referral_max_rewards_per_user = models.PositiveIntegerField(
+        default=1,
+        verbose_name="Límite de beneficios por maestro",
+        help_text="Veces máximas que un maestro puede ganar el beneficio del plan (0 = Ilimitado)"
+    )
     referral_eligible_user_type = models.CharField(
         max_length=20,
         choices=EligibleReferralUserType.choices,
@@ -643,6 +693,56 @@ class SystemSetting(models.Model):
 
     def __str__(self):
         return f"Configuración del Sistema (Suscripciones iOS: {'Activas' if self.subscriptions_enabled_ios else 'Inactivas'})"
+
+    def is_subscription_enabled_for_version(self, platform='ios', app_version=None):
+        """
+        Determina si la sección de suscripciones y planes está habilitada
+        para una plataforma y versión específica de la app.
+        """
+        platform = (platform or 'ios').lower()
+        if platform == 'ios':
+            is_enabled = self.subscriptions_enabled_ios
+            min_v = (self.subscriptions_min_version_ios or '').strip()
+            blocked_str = self.subscriptions_blocked_versions_ios or ''
+        else:
+            is_enabled = self.subscriptions_enabled_android
+            min_v = (self.subscriptions_min_version_android or '').strip()
+            blocked_str = self.subscriptions_blocked_versions_android or ''
+
+        # Si el switch maestro de la plataforma está apagado, se bloquea para todas las versiones
+        if not is_enabled:
+            return False
+
+        # Si no se indica versión, respetar el switch maestro
+        if not app_version:
+            return is_enabled
+
+        raw_version = str(app_version).strip()
+        clean_version = raw_version.split('+')[0].split('-')[0].strip()
+
+        # 1. Verificar si está en la lista de versiones bloqueadas (ej: "1.0.6, 1.0.7")
+        blocked_list = [b.strip() for b in blocked_str.split(',') if b.strip()]
+        for blocked_item in blocked_list:
+            clean_blocked = blocked_item.split('+')[0].split('-')[0].strip()
+            if raw_version == blocked_item or clean_version == clean_blocked:
+                return False
+
+        # 2. Verificar versión mínima si está configurada
+        if min_v:
+            def parse_ver(v):
+                try:
+                    c = v.split('+')[0].split('-')[0].strip()
+                    parts = [int(p) for p in c.split('.') if p.isdigit()]
+                    while len(parts) < 3:
+                        parts.append(0)
+                    return parts[:3]
+                except Exception:
+                    return [0, 0, 0]
+
+            if parse_ver(clean_version) < parse_ver(min_v):
+                return False
+
+        return True
 
     @classmethod
     def get_settings(cls):

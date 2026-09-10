@@ -134,6 +134,7 @@ class SystemSettingAdmin(ModelAdmin):
         'referral_target_count',
         'referral_reward_plan',
         'referral_reward_days',
+        'referral_max_rewards_per_user',
         'max_specialties_per_tradesman',
         'subscriptions_enabled_ios',
         'subscriptions_enabled_android',
@@ -145,21 +146,24 @@ class SystemSettingAdmin(ModelAdmin):
                 'referral_target_count',
                 'referral_reward_plan',
                 'referral_reward_days',
+                'referral_max_rewards_per_user',
                 'referral_eligible_user_type',
             ),
-            'description': 'Configura la meta (N personas) que deben registrarse con el código de un maestro para que este gane un período (X días) del plan asociado por gerencia.'
+            'description': 'Configura la meta (N personas) que deben registrarse con el código de un maestro para que este gane un período (X días) del plan asociado por gerencia, y el límite máximo de veces que puede ganarlo (0 = ilimitado).'
         }),
         ('Límites Generales', {
             'fields': ('max_specialties_per_tradesman',)
         }),
-        ('Feature Flags de Suscripciones (Apple Review)', {
+        ('Control de Suscripciones y Planes por Versión (Apple Review / Android)', {
             'fields': (
-                'subscriptions_enabled_ios',
-                'subscriptions_enabled_android',
+                ('subscriptions_enabled_ios', 'subscriptions_min_version_ios'),
+                'subscriptions_blocked_versions_ios',
                 'subscription_ios_link',
                 'subscription_ios_message',
+                ('subscriptions_enabled_android', 'subscriptions_min_version_android'),
+                'subscriptions_blocked_versions_android',
             ),
-            'description': 'Controla si los planes de suscripción son visibles y contratables en cada plataforma. Para Apple Review, mantener "Habilitar suscripciones en iOS" en False.'
+            'description': 'Controla si los planes de suscripción son visibles y contratables por plataforma y versión de la app. Para Apple Review, puedes ingresar la versión en revisión (ej: 1.0.6) en "Versiones bloqueadas en iOS" para ocultar planes únicamente a los revisores de Apple sin afectar a usuarios en producción.'
         }),
     )
 
@@ -386,9 +390,17 @@ class ProfessionalProfileAdmin(ModelAdmin):
 
     @display(description="Asociados")
     def referrals_count_display(self, obj):
+        earned = obj.referrals_rewards_earned_count
+        limit = obj.referral_max_rewards_per_user
+        if obj.referral_has_reached_max_rewards:
+            badge = f'<span style="background: #e0e7ff; color: #3730a3; padding: 2px 6px; border-radius: 4px; font-weight: 600; font-size: 0.75rem;">🏆 {earned}/{limit} max</span>'
+        elif limit > 0:
+            badge = f'<span style="color: #64748b; font-size: 0.75rem;">🎁 {earned}/{limit}</span>'
+        else:
+            badge = f'<span style="color: #64748b; font-size: 0.75rem;">🎁 {earned} (ilim.)</span>'
         return format_html(
-            '<div style="font-size: 0.8rem;"><strong>{} pend.</strong> / {} tot.</div>',
-            obj.referrals_pending_count, obj.referrals_total_count
+            '<div style="font-size: 0.8rem;"><strong>{} pend.</strong> / {} tot.<br>{}</div>',
+            obj.referrals_pending_count, obj.referrals_total_count, format_html(badge)
         )
 
     @display(description="Estado")

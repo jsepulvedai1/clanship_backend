@@ -213,6 +213,9 @@ class ProfessionalProfileType(DjangoObjectType):
     referrals_target_count = graphene.Int()
     referral_reward_plan_name = graphene.String()
     referral_reward_days = graphene.Int()
+    referrals_rewards_earned_count = graphene.Int()
+    referral_max_rewards_per_user = graphene.Int()
+    referral_has_reached_max_rewards = graphene.Boolean()
 
     class Meta:
         model = ProfessionalProfile
@@ -238,6 +241,15 @@ class ProfessionalProfileType(DjangoObjectType):
     def resolve_referral_reward_days(self, info):
         from .models import SystemSetting
         return SystemSetting.get_settings().referral_reward_days
+
+    def resolve_referrals_rewards_earned_count(self, info):
+        return self.referrals_rewards_earned_count
+
+    def resolve_referral_max_rewards_per_user(self, info):
+        return self.referral_max_rewards_per_user
+
+    def resolve_referral_has_reached_max_rewards(self, info):
+        return self.referral_has_reached_max_rewards
 
     def resolve_specialties(self, info):
         specs = list(self.specialties.all())
@@ -287,6 +299,11 @@ class AppConfigType(graphene.ObjectType):
     subscription_ios_link = graphene.String()
     subscription_ios_message = graphene.String()
     max_specialties_per_tradesman = graphene.Int()
+    subscriptions_min_version_ios = graphene.String()
+    subscriptions_blocked_versions_ios = graphene.String()
+    subscriptions_min_version_android = graphene.String()
+    subscriptions_blocked_versions_android = graphene.String()
+    is_subscriptions_enabled = graphene.Boolean()
 
 
 class Query(graphene.ObjectType):
@@ -298,17 +315,44 @@ class Query(graphene.ObjectType):
     my_favorites = graphene.List(UserType)
     subscription_plans = graphene.List(SubscriptionPlanType)
     max_specialties_per_tradesman = graphene.Int()
-    app_config = graphene.Field(AppConfigType)
+    app_config = graphene.Field(
+        AppConfigType,
+        platform=graphene.String(),
+        app_version=graphene.String(),
+    )
 
-    def resolve_app_config(self, info):
+    def resolve_app_config(self, info, platform=None, app_version=None):
         from .models import SystemSetting
         setting = SystemSetting.get_settings()
+
+        ios_enabled = setting.is_subscription_enabled_for_version(
+            'ios', 
+            app_version if (not platform or platform.lower() == 'ios') else None
+        )
+        android_enabled = setting.is_subscription_enabled_for_version(
+            'android', 
+            app_version if (not platform or platform.lower() == 'android') else None
+        )
+
+        req_platform = (platform or '').lower()
+        if req_platform == 'ios':
+            current_platform_enabled = ios_enabled
+        elif req_platform == 'android':
+            current_platform_enabled = android_enabled
+        else:
+            current_platform_enabled = ios_enabled or android_enabled
+
         return AppConfigType(
-            subscriptions_enabled_ios=setting.subscriptions_enabled_ios,
-            subscriptions_enabled_android=setting.subscriptions_enabled_android,
+            subscriptions_enabled_ios=ios_enabled,
+            subscriptions_enabled_android=android_enabled,
             subscription_ios_link=setting.subscription_ios_link,
             subscription_ios_message=setting.subscription_ios_message,
             max_specialties_per_tradesman=setting.max_specialties_per_tradesman,
+            subscriptions_min_version_ios=setting.subscriptions_min_version_ios or "",
+            subscriptions_blocked_versions_ios=setting.subscriptions_blocked_versions_ios or "",
+            subscriptions_min_version_android=setting.subscriptions_min_version_android or "",
+            subscriptions_blocked_versions_android=setting.subscriptions_blocked_versions_android or "",
+            is_subscriptions_enabled=current_platform_enabled,
         )
 
     def resolve_max_specialties_per_tradesman(self, info):
@@ -719,12 +763,16 @@ class RegisterUser(graphene.Mutation):
                             )
 
                             target = setting.referral_target_count or 5
+                            max_rewards = setting.referral_max_rewards_per_user or 0
+                            rewards_earned = ReferralRewardLog.objects.filter(professional=referrer_profile.user).count()
+                            has_reached_max = max_rewards > 0 and rewards_earned >= max_rewards
+
                             unrewarded = list(AssociateReferral.objects.filter(
                                 referrer=referrer_profile.user,
                                 reward_granted=False
                             ).order_by('created_at'))
 
-                            if len(unrewarded) >= target:
+                            if not has_reached_max and len(unrewarded) >= target:
                                 reward_plan = setting.referral_reward_plan
                                 if not reward_plan:
                                     reward_plan = SubscriptionPlan.objects.filter(name__icontains='Profesional').first() or SubscriptionPlan.objects.filter(price__gt=0).first()
