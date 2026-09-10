@@ -194,15 +194,50 @@ class ProfessionalDocumentType(DjangoObjectType):
             return info.context.build_absolute_uri(self.file.url)
         return None
 
+class ValidateReferralCodeType(graphene.ObjectType):
+    is_valid = graphene.Boolean()
+    tradesman_name = graphene.String()
+    referrer_name = graphene.String()
+    message = graphene.String()
+
+    def resolve_referrer_name(self, info):
+        return self.tradesman_name
+
 class ProfessionalProfileType(DjangoObjectType):
     documents = graphene.List(ProfessionalDocumentType)
     requires_plan_upgrade = graphene.Boolean()
     specialties = graphene.List(SpecialtyType)
     tags = graphene.List(TagType)
+    referrals_total_count = graphene.Int()
+    referrals_pending_count = graphene.Int()
+    referrals_target_count = graphene.Int()
+    referral_reward_plan_name = graphene.String()
+    referral_reward_days = graphene.Int()
 
     class Meta:
         model = ProfessionalProfile
         fields = "__all__"
+
+    def resolve_referrals_total_count(self, info):
+        return self.referrals_total_count
+
+    def resolve_referrals_pending_count(self, info):
+        return self.referrals_pending_count
+
+    def resolve_referrals_target_count(self, info):
+        from .models import SystemSetting
+        return SystemSetting.get_settings().referral_target_count
+
+    def resolve_referral_reward_plan_name(self, info):
+        from .models import SystemSetting
+        setting = SystemSetting.get_settings()
+        if setting.referral_reward_plan:
+            return setting.referral_reward_plan.name
+        return "Plan Profesional"
+
+    def resolve_referral_reward_days(self, info):
+        from .models import SystemSetting
+        return SystemSetting.get_settings().referral_reward_days
 
     def resolve_specialties(self, info):
         specs = list(self.specialties.all())
@@ -295,6 +330,25 @@ class Query(graphene.ObjectType):
             phone_clean = phone_number.strip()
             phone_exists = User.objects.filter(phone_number=phone_clean).exists()
         return CheckUserExistenceType(email_exists=email_exists, phone_exists=phone_exists)
+
+    validate_referral_code = graphene.Field(
+        ValidateReferralCodeType,
+        code=graphene.String(required=True)
+    )
+
+    def resolve_validate_referral_code(self, info, code):
+        if not code or not code.strip():
+            return ValidateReferralCodeType(is_valid=False, tradesman_name=None, message="Ingresa un código")
+        clean_code = code.strip().upper()
+        from .models import SystemSetting, ProfessionalProfile
+        setting = SystemSetting.get_settings()
+        if not setting.referral_program_active:
+            return ValidateReferralCodeType(is_valid=False, tradesman_name=None, message="El programa de asociados no está activo")
+        profile = ProfessionalProfile.objects.filter(referral_code__iexact=clean_code).select_related('user').first()
+        if not profile or not profile.user:
+            return ValidateReferralCodeType(is_valid=False, tradesman_name=None, message="Código no válido o no encontrado")
+        name = profile.user.get_full_name() or profile.user.username
+        return ValidateReferralCodeType(is_valid=True, tradesman_name=name, message="Código válido")
 
     # Nueva query para buscar maestros cercanos (soporta filtro de texto)
     nearby_professionals = graphene.List(
@@ -558,11 +612,12 @@ class RegisterUser(graphene.Mutation):
         last_name = graphene.String(required=True)
         phone_number = graphene.String()
         user_type = graphene.String()
+        referral_code = graphene.String(required=False)
 
     user = graphene.Field(UserType)
     success = graphene.Boolean()
 
-    def mutate(self, info, email, password, first_name, last_name, phone_number=None, user_type='CUSTOMER'):
+    def mutate(self, info, email, password, first_name, last_name, phone_number=None, user_type='CUSTOMER', referral_code=None):
         email_clean = email.strip().lower()
         if len(first_name) > 30:
             raise Exception('El nombre no puede tener más de 30 caracteres')
@@ -587,6 +642,113 @@ class RegisterUser(graphene.Mutation):
             from users.models import ProfessionalProfile, SubscriptionPlan
             initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
             ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
+
+        # Procesamiento de código de asociado / referido
+        if referral_code and referral_code.strip():
+            clean_ref_code = referral_code.strip().upper()
+            try:
+                from users.models import SystemSetting, ProfessionalProfile, AssociateReferral, ReferralRewardLog, SubscriptionPlan
+                from django.utils import timezone
+                import datetime
+
+                setting = SystemSetting.get_settings()
+                if setting.referral_program_active:
+                    eligible = True
+                    if setting.referral_eligible_user_type == SystemSetting.EligibleReferralUserType.CUSTOMER_ONLY and user_type != 'CUSTOMER':
+                        eligible = False
+                    elif setting.referral_eligible_user_type == SystemSetting.EligibleReferralUserType.PROFESSIONAL_ONLY and user_type != 'PROFESSIONAL':
+                        eligible = False
+
+                    if eligible:
+                        referrer_profile = ProfessionalProfile.objects.filter(referral_code__iexact=clean_ref_code).select_related('user', 'plan').first()
+                        if referrer_profile and referrer_profile.user and referrer_profile.user_id != user.id:
+                            # Registrar referido
+                            AssociateReferral.objects.get_or_create(
+                                referrer=referrer_profile.user,
+                                referred_user=user,
+                                defaults={'referral_code_used': clean_ref_code}
+                            )
+
+                            target = setting.referral_target_count or 5
+                            unrewarded = list(AssociateReferral.objects.filter(
+                                referrer=referrer_profile.user,
+                                reward_granted=False
+                            ).order_by('created_at'))
+
+                            if len(unrewarded) >= target:
+                                reward_plan = setting.referral_reward_plan
+                                if not reward_plan:
+                                    reward_plan = SubscriptionPlan.objects.filter(name__icontains='Profesional').first() or SubscriptionPlan.objects.filter(price__gt=0).first()
+
+                                reward_days = setting.referral_reward_days or 30
+                                now = timezone.now()
+
+                                if referrer_profile.plan_expires_at and referrer_profile.plan_expires_at > now:
+                                    new_expires = referrer_profile.plan_expires_at + datetime.timedelta(days=reward_days)
+                                else:
+                                    new_expires = now + datetime.timedelta(days=reward_days)
+
+                                if reward_plan:
+                                    referrer_profile.plan = reward_plan
+                                referrer_profile.plan_expires_at = new_expires
+                                referrer_profile.save(update_fields=['plan', 'plan_expires_at'])
+
+                                reward_batch = unrewarded[:target]
+                                batch_ids = [r.id for r in reward_batch]
+                                AssociateReferral.objects.filter(id__in=batch_ids).update(reward_granted=True)
+
+                                total_at_time = AssociateReferral.objects.filter(referrer=referrer_profile.user).count()
+
+                                ReferralRewardLog.objects.create(
+                                    professional=referrer_profile.user,
+                                    plan=reward_plan,
+                                    days_granted=reward_days,
+                                    referrals_count_at_time=total_at_time,
+                                    new_plan_expires_at=new_expires
+                                )
+
+                                # Notificar al maestro: ¡Meta cumplida y beneficio otorgado!
+                                try:
+                                    from channels.layers import get_channel_layer
+                                    from asgiref.sync import async_to_sync
+                                    channel_layer = get_channel_layer()
+                                    if channel_layer:
+                                        plan_name = reward_plan.name if reward_plan else 'tu plan'
+                                        msg = f"¡Felicidades! Completaste tu meta de {target} asociados. Ganaste {reward_days} días de {plan_name} gratis."
+                                        async_to_sync(channel_layer.group_send)(
+                                            f'user_{referrer_profile.user.id}',
+                                            {
+                                                'type': 'job_notification',
+                                                'event': 'referral_reward_granted',
+                                                'job_id': 0,
+                                                'message': msg,
+                                            }
+                                        )
+                                except Exception as e:
+                                    print(f"Error sending referral reward notification: {e}")
+                            else:
+                                # Notificar al maestro: Nuevo asociado inscrito
+                                try:
+                                    from channels.layers import get_channel_layer
+                                    from asgiref.sync import async_to_sync
+                                    channel_layer = get_channel_layer()
+                                    if channel_layer:
+                                        current_pending = len(unrewarded)
+                                        referred_name = user.get_full_name() or "Un nuevo usuario"
+                                        msg = f"¡{referred_name} se inscribió con tu código de asociado! Llevas {current_pending} de {target} para tu beneficio."
+                                        async_to_sync(channel_layer.group_send)(
+                                            f'user_{referrer_profile.user.id}',
+                                            {
+                                                'type': 'job_notification',
+                                                'event': 'referral_registered',
+                                                'job_id': 0,
+                                                'message': msg,
+                                            }
+                                        )
+                                except Exception as e:
+                                    print(f"Error sending associate registration notification: {e}")
+            except Exception as e:
+                print(f"Error processing referral code during registration: {e}")
 
         return RegisterUser(user=user, success=True)
 

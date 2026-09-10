@@ -5,7 +5,7 @@ from django.urls import path, reverse
 from django.shortcuts import get_object_or_404, redirect
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display, action
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig, UserReport, SeasonalCampaign
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig, UserReport, SeasonalCampaign, AssociateReferral, ReferralRewardLog
 
 @admin.register(SeasonalCampaign)
 class SeasonalCampaignAdmin(ModelAdmin):
@@ -38,65 +38,85 @@ class SeasonalCampaignAdmin(ModelAdmin):
         }),
         ('Paleta de Colores (Opcional / Overrides)', {
             'fields': (
-                ('primary_color', 'secondary_color', 'accent_color'),
+                'primary_color',
+                'secondary_color',
+                'accent_color',
                 ('header_gradient_start', 'header_gradient_end'),
-                ('search_bar_border_color', 'nav_center_color'),
-            ),
-            'description': 'Especifica códigos hexadecimales (ej: #0B6E4F, #D52B1E). Si se dejan vacíos, se usan los colores por defecto de la aplicación.'
-        }),
-        ('Assets Gráficos & Efectos Visuales', {
-            'fields': (
-                ('logo_badge_icon', 'nav_center_icon'),
-                ('show_top_garland', 'garland_position'),
-                'custom_garland_image',
-                'banner_image',
-                'particle_effect',
-            ),
-            'description': 'Insignia flotante, icono central del menú (PNG), guirnaldas temáticas (ubicación arriba, abajo o ambos), banner de fondo y partículas.'
-        }),
-        ('Cuadros de Solicitudes - App Maestro (Personalización Independiente)', {
-            'fields': (
-                ('stat_cards_bg_color', 'stat_cards_bg_image', 'stat_cards_image_opacity'),
+                'search_bar_border_color',
+                'nav_center_color',
+                'stat_cards_bg_color',
+                ('stat_card_active_bg_color', 'stat_card_completed_bg_color'),
+                ('stat_card_rejected_bg_color', 'stat_card_scheduled_bg_color'),
                 ('stat_cards_number_color', 'stat_cards_text_color', 'stat_cards_icon_color'),
-                ('stat_card_active_bg_color', 'stat_card_active_bg_image', 'stat_card_active_image_opacity'),
                 ('stat_card_active_number_color', 'stat_card_active_text_color', 'stat_card_active_icon_color'),
-                ('stat_card_completed_bg_color', 'stat_card_completed_bg_image', 'stat_card_completed_image_opacity'),
                 ('stat_card_completed_number_color', 'stat_card_completed_text_color', 'stat_card_completed_icon_color'),
-                ('stat_card_rejected_bg_color', 'stat_card_rejected_bg_image', 'stat_card_rejected_image_opacity'),
                 ('stat_card_rejected_number_color', 'stat_card_rejected_text_color', 'stat_card_rejected_icon_color'),
-                ('stat_card_scheduled_bg_color', 'stat_card_scheduled_bg_image', 'stat_card_scheduled_image_opacity'),
                 ('stat_card_scheduled_number_color', 'stat_card_scheduled_text_color', 'stat_card_scheduled_icon_color'),
             ),
-            'description': 'Personaliza el fondo, imagen, nivel de opacidad (0 a 100%), color de números, textos e iconos para cada una de las 4 tarjetas de solicitudes en la app de maestro. Las primeras dos filas aplican como valores generales/fallback.'
+            'classes': ('collapse',),
+            'description': 'Personaliza los colores de la app durante esta temporada. Si se dejan vacíos, se usarán los colores estándar.'
         }),
-        ('Banner Promocional & Copys de Temporada', {
+        ('Banners, Insignias y Decoraciones', {
+            'fields': (
+                'logo_badge_icon',
+                'nav_center_icon',
+                'banner_image',
+                'stat_cards_bg_image',
+                ('stat_card_active_bg_image', 'stat_card_completed_bg_image'),
+                ('stat_card_rejected_bg_image', 'stat_card_scheduled_bg_image'),
+                'stat_cards_image_opacity',
+                ('stat_card_active_image_opacity', 'stat_card_completed_image_opacity'),
+                ('stat_card_rejected_image_opacity', 'stat_card_scheduled_image_opacity'),
+                ('show_top_garland', 'garland_position'),
+                'custom_garland_image',
+                'particle_effect',
+            ),
+            'description': 'Configura elementos visuales decorativos como insignias sobre el logo, iconos de navegación, fondos de tarjetas y guirnaldas.'
+        }),
+        ('Textos Promocionales y Llamados a la Acción', {
             'fields': (
                 'greeting_prefix',
                 'promo_banner_title',
                 'promo_banner_subtitle',
-                ('promo_banner_cta_text', 'promo_banner_action_type'),
-                'promo_banner_action_value',
+                'promo_banner_cta_text',
+                ('promo_banner_action_type', 'promo_banner_action_value'),
             ),
-            'description': 'Mensajes y llamadas a la acción que aparecerán en la pantalla de inicio.'
+            'classes': ('collapse',),
+            'description': 'Configura los mensajes del banner promocional principal.'
         }),
-        ('Categorías Destacadas', {
+        ('Etiquetas Destacadas de la Temporada', {
             'fields': ('featured_tags',),
-            'description': 'Etiquetas o especialidades que se priorizarán durante esta temporada festiva.'
+            'description': 'Servicios o especialidades que se destacarán prioritariamente en la Home durante esta campaña.'
         }),
     )
 
-    @display(description="En Vivo", boolean=True)
+    @display(description="Estado de Vigencia", label=True)
     def display_live_status(self, obj):
-        return obj.is_currently_live
+        if obj.is_currently_live:
+            return "Activa Ahora", "success"
+        elif not obj.is_active:
+            return "Inactiva (Apagada)", "danger"
+        else:
+            return "Fuera de Rango de Fechas", "warning"
 
 @admin.register(AppVersionConfig)
 class AppVersionConfigAdmin(ModelAdmin):
-    list_display = ('app_type', 'min_version', 'latest_version', 'is_active', 'updated_at')
+    list_display = (
+        'app_type',
+        'min_version',
+        'latest_version',
+        'is_active',
+        'updated_at'
+    )
     list_filter = ('app_type', 'is_active')
-    search_fields = ('app_type', 'min_version', 'latest_version')
+    search_fields = ('min_version', 'latest_version', 'title', 'message')
+
     fieldsets = (
-        ('Información Principal', {
-            'fields': ('app_type', 'is_active', 'min_version', 'latest_version')
+        ('Configuración General', {
+            'fields': ('app_type', 'is_active')
+        }),
+        ('Control de Versiones', {
+            'fields': (('min_version', 'latest_version'),)
         }),
         ('Enlaces de Tiendas', {
             'fields': ('store_url_android', 'store_url_ios')
@@ -110,12 +130,25 @@ class AppVersionConfigAdmin(ModelAdmin):
 class SystemSettingAdmin(ModelAdmin):
     list_display = (
         '__str__',
+        'referral_program_active',
+        'referral_target_count',
+        'referral_reward_plan',
+        'referral_reward_days',
         'max_specialties_per_tradesman',
         'subscriptions_enabled_ios',
         'subscriptions_enabled_android',
-        'subscription_ios_link',
     )
     fieldsets = (
+        ('Programa de Código de Asociados (Referidos)', {
+            'fields': (
+                'referral_program_active',
+                'referral_target_count',
+                'referral_reward_plan',
+                'referral_reward_days',
+                'referral_eligible_user_type',
+            ),
+            'description': 'Configura la meta (N personas) que deben registrarse con el código de un maestro para que este gane un período (X días) del plan asociado por gerencia.'
+        }),
         ('Límites Generales', {
             'fields': ('max_specialties_per_tradesman',)
         }),
@@ -251,6 +284,9 @@ class ProfessionalProfileAdmin(ModelAdmin):
         'user_name_and_contact', 
         'specialty', 
         'plan', 
+        'referral_code',
+        'referrals_count_display',
+        'plan_expires_at',
         'documents_summary', 
         'photos_count', 
         'verification_badge', 
@@ -258,13 +294,13 @@ class ProfessionalProfileAdmin(ModelAdmin):
     )
     list_filter = ('is_verified', 'verification_status', 'specialty', 'plan')
     filter_horizontal = ('tags', 'subtags', 'specialties')
-    search_fields = ('user__username', 'user__email', 'user__first_name', 'user__last_name', 'user__phone_number')
+    search_fields = ('user__username', 'user__email', 'user__first_name', 'user__last_name', 'user__phone_number', 'referral_code')
     actions = ['make_verified', 'make_unverified', 'make_rejected']
     readonly_fields = ('verification_banner', 'documents_and_photos_gallery')
 
     fieldsets = (
         ('Información del Profesional', {
-            'fields': ('user', 'specialty', 'specialties', 'plan', 'bio', 'hourly_rate', 'rating', 'service_radius')
+            'fields': ('user', 'referral_code', 'specialty', 'specialties', 'plan', 'plan_start_date', 'plan_expires_at', 'bio', 'hourly_rate', 'rating', 'service_radius')
         }),
         ('Estado de Habilitación y Verificación', {
             'fields': ('verification_status', 'is_verified', 'rejection_reason', 'verification_banner')
@@ -347,6 +383,13 @@ class ProfessionalProfileAdmin(ModelAdmin):
     def photos_count(self, obj):
         count = obj.photos.count()
         return format_html('<span>📷 {} foto(s)</span>', count)
+
+    @display(description="Asociados")
+    def referrals_count_display(self, obj):
+        return format_html(
+            '<div style="font-size: 0.8rem;"><strong>{} pend.</strong> / {} tot.</div>',
+            obj.referrals_pending_count, obj.referrals_total_count
+        )
 
     @display(description="Estado")
     def verification_badge(self, obj):
@@ -528,3 +571,37 @@ class UserReportAdmin(ModelAdmin):
     list_filter = ('is_resolved', 'created_at')
     search_fields = ('reporter__username', 'reported_user__username', 'reason')
     list_editable = ('is_resolved',)
+
+
+@admin.register(AssociateReferral)
+class AssociateReferralAdmin(ModelAdmin):
+    list_display = ('referred_user', 'referrer', 'referral_code_used', 'reward_granted', 'created_at')
+    list_filter = ('reward_granted', 'created_at')
+    search_fields = (
+        'referral_code_used',
+        'referrer__username',
+        'referrer__first_name',
+        'referrer__last_name',
+        'referrer__email',
+        'referred_user__username',
+        'referred_user__first_name',
+        'referred_user__last_name',
+        'referred_user__email',
+    )
+    readonly_fields = ('created_at',)
+    ordering = ('-created_at',)
+
+
+@admin.register(ReferralRewardLog)
+class ReferralRewardLogAdmin(ModelAdmin):
+    list_display = ('professional', 'plan', 'days_granted', 'referrals_count_at_time', 'new_plan_expires_at', 'granted_at')
+    list_filter = ('plan', 'granted_at')
+    search_fields = (
+        'professional__username',
+        'professional__first_name',
+        'professional__last_name',
+        'professional__email',
+    )
+    readonly_fields = ('granted_at',)
+    ordering = ('-granted_at',)
+

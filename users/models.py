@@ -268,6 +268,16 @@ class ProfessionalProfile(models.Model):
         verbose_name="Plan de Suscripción"
     )
     plan_start_date = models.DateTimeField(default=timezone.now, verbose_name="Fecha de inicio del plan")
+    plan_expires_at = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de expiración del plan / beneficio")
+    referral_code = models.CharField(
+        max_length=20,
+        unique=True,
+        null=True,
+        blank=True,
+        verbose_name="Código de Asociado",
+        db_index=True,
+        help_text="Código único para compartir y ganar beneficios por asociados referidos"
+    )
     bio = models.TextField(max_length=500, verbose_name="Biografía", null=True, blank=True)
     hourly_rate = models.DecimalField(
         max_digits=10, 
@@ -333,6 +343,31 @@ class ProfessionalProfile(models.Model):
     def __str__(self):
         return f"Perfil de {self.user.username} - {self.specialty}"
 
+    @classmethod
+    def generate_unique_referral_code(cls):
+        import secrets
+        chars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+        while True:
+            code = f"CLAN-{''.join(secrets.choice(chars) for _ in range(5))}"
+            if not cls.objects.filter(referral_code=code).exists():
+                return code
+
+    @property
+    def is_plan_expired(self):
+        if not self.plan_expires_at:
+            return False
+        return timezone.now() > self.plan_expires_at
+
+    @property
+    def referrals_total_count(self):
+        from users.models import AssociateReferral
+        return AssociateReferral.objects.filter(referrer=self.user).count()
+
+    @property
+    def referrals_pending_count(self):
+        from users.models import AssociateReferral
+        return AssociateReferral.objects.filter(referrer=self.user, reward_granted=False).count()
+
     @property
     def requires_plan_upgrade(self):
         if not self.plan or self.plan.max_completed_jobs is None:
@@ -360,6 +395,16 @@ class ProfessionalProfile(models.Model):
                 old_rejection_reason = old_obj.rejection_reason
             except Exception:
                 pass
+
+        if not self.referral_code:
+            self.referral_code = self.generate_unique_referral_code()
+
+        # Check plan expiration: if promotional/reward plan has expired, revert to Plan Base
+        if self.plan_expires_at and timezone.now() > self.plan_expires_at:
+            base_plan = SubscriptionPlan.objects.filter(name__in=["Básico", "Plan Base"]).first()
+            if base_plan and self.plan_id != base_plan.id:
+                self.plan = base_plan
+                self.plan_expires_at = None
 
         # Sync is_verified and verification_status
         if self.is_verified:
@@ -555,6 +600,43 @@ class SystemSetting(models.Model):
         help_text="Texto informativo que se mostrará en la pantalla de planes en iOS"
     )
 
+    class EligibleReferralUserType(models.TextChoices):
+        ALL = 'ALL', 'Todos (Clientes y Maestros)'
+        CUSTOMER_ONLY = 'CUSTOMER_ONLY', 'Solo Clientes'
+        PROFESSIONAL_ONLY = 'PROFESSIONAL_ONLY', 'Solo Maestros'
+
+    referral_program_active = models.BooleanField(
+        default=True,
+        verbose_name="Programa de asociados activo",
+        help_text="Activa o desactiva el sistema de códigos de asociado"
+    )
+    referral_target_count = models.PositiveIntegerField(
+        default=5,
+        verbose_name="Meta de inscritos (N personas)",
+        help_text="Cantidad de usuarios que deben registrarse con el código para otorgar el beneficio al maestro"
+    )
+    referral_reward_plan = models.ForeignKey(
+        'users.SubscriptionPlan',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="referral_reward_settings",
+        verbose_name="Plan otorgado por meta",
+        help_text="Plan que ganará el maestro al alcanzar la meta de inscritos"
+    )
+    referral_reward_days = models.PositiveIntegerField(
+        default=30,
+        verbose_name="Duración del beneficio (X días)",
+        help_text="Días de duración que se otorgarán del plan asociado"
+    )
+    referral_eligible_user_type = models.CharField(
+        max_length=20,
+        choices=EligibleReferralUserType.choices,
+        default=EligibleReferralUserType.ALL,
+        verbose_name="Tipos de usuarios que suman a la meta",
+        help_text="Define si suman a la meta registros de clientes, de maestros o ambos"
+    )
+
     class Meta:
         verbose_name = "Configuración del Sistema"
         verbose_name_plural = "Configuración del Sistema"
@@ -572,6 +654,92 @@ class SystemSetting(models.Model):
     @classmethod
     def get_max_specialties(cls):
         return cls.get_settings().max_specialties_per_tradesman
+
+
+class AssociateReferral(models.Model):
+    """
+    Registro de usuarios que se inscriben utilizando el código de asociado de un maestro.
+    """
+    referrer = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="referrals_made",
+        verbose_name="Maestro que refirió"
+    )
+    referred_user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="referred_by_relation",
+        verbose_name="Usuario inscrito con el código"
+    )
+    referral_code_used = models.CharField(
+        max_length=50,
+        verbose_name="Código de asociado utilizado"
+    )
+    reward_granted = models.BooleanField(
+        default=False,
+        verbose_name="¿Premio ya otorgado?",
+        help_text="Indica si este registro ya fue contabilizado en una meta N cumplida"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de inscripción"
+    )
+
+    class Meta:
+        verbose_name = "Asociado Referido"
+        verbose_name_plural = "Asociados Referidos"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        referrer_name = self.referrer.get_full_name() or self.referrer.username
+        referred_name = self.referred_user.get_full_name() or self.referred_user.username
+        return f"{referred_name} se inscribió con código de {referrer_name}"
+
+
+class ReferralRewardLog(models.Model):
+    """
+    Historial de beneficios otorgados a los maestros por alcanzar metas de asociados.
+    """
+    professional = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="referral_rewards",
+        verbose_name="Maestro beneficiado"
+    )
+    plan = models.ForeignKey(
+        'users.SubscriptionPlan',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Plan otorgado"
+    )
+    days_granted = models.PositiveIntegerField(
+        verbose_name="Días otorgados"
+    )
+    referrals_count_at_time = models.PositiveIntegerField(
+        verbose_name="Inscritos acumulados a la fecha"
+    )
+    new_plan_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Nueva fecha de vencimiento"
+    )
+    granted_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Fecha de otorgamiento"
+    )
+
+    class Meta:
+        verbose_name = "Historial de Beneficio por Asociados"
+        verbose_name_plural = "Historial de Beneficios por Asociados"
+        ordering = ['-granted_at']
+
+    def __str__(self):
+        prof_name = self.professional.get_full_name() or self.professional.username
+        plan_name = self.plan.name if self.plan else 'Plan'
+        return f"{prof_name} - {self.days_granted} días de {plan_name}"
+
 
 
 class AppVersionConfig(models.Model):
@@ -1003,4 +1171,42 @@ class SeasonalCampaign(models.Model):
     def is_currently_live(self):
         now = timezone.now()
         return self.is_active and (self.start_date <= now <= self.end_date)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self._optimize_images()
+
+    def _optimize_images(self):
+        """
+        Comprime y redimensiona imágenes subidas para garantizar carga instantánea en móviles.
+        """
+        import os
+        import io
+        from PIL import Image
+
+        image_fields = [
+            'stat_cards_bg_image',
+            'stat_card_active_bg_image',
+            'stat_card_completed_bg_image',
+            'stat_card_rejected_bg_image',
+            'stat_card_scheduled_bg_image',
+            'banner_image',
+        ]
+        for field_name in image_fields:
+            image_field = getattr(self, field_name)
+            if image_field and hasattr(image_field, 'path') and os.path.exists(image_field.path):
+                try:
+                    file_size = os.path.getsize(image_field.path)
+                    if file_size > 120 * 1024:  # Si supera 120KB, optimizar
+                        with Image.open(image_field.path) as img:
+                            img.thumbnail((800, 800), Image.Resampling.LANCZOS)
+                            buffer = io.BytesIO()
+                            if img.mode in ('RGBA', 'LA') or (img.mode == 'P' and 'transparency' in img.info):
+                                img.save(buffer, format='PNG', optimize=True)
+                            else:
+                                img.convert('RGB').save(buffer, format='JPEG', quality=85, optimize=True)
+                            with open(image_field.path, 'wb') as f:
+                                f.write(buffer.getvalue())
+                except Exception:
+                    pass
 
