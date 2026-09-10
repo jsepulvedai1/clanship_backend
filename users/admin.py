@@ -5,7 +5,7 @@ from django.urls import path, reverse
 from django.shortcuts import get_object_or_404, redirect
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display, action
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig, UserReport, SeasonalCampaign, AssociateReferral, ReferralRewardLog
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig, UserReport, SeasonalCampaign, AssociateReferral, ReferralRewardLog, ReferralProgramContent
 
 @admin.register(SeasonalCampaign)
 class SeasonalCampaignAdmin(ModelAdmin):
@@ -604,4 +604,68 @@ class ReferralRewardLogAdmin(ModelAdmin):
     )
     readonly_fields = ('granted_at',)
     ordering = ('-granted_at',)
+
+
+@admin.register(ReferralProgramContent)
+class ReferralProgramContentAdmin(ModelAdmin):
+    list_display = ('language_badge', 'hero_title', 'is_active', 'updated_at')
+    list_filter = ('language', 'is_active')
+    search_fields = ('hero_title', 'hero_description', 'share_message')
+
+    @display(description="Idioma")
+    def language_badge(self, obj):
+        flag_map = {
+            'es': '🇪🇸 Español (es)',
+            'en': '🇬🇧 English (en)',
+            'fr': '🇫🇷 Français (fr)',
+        }
+        return flag_map.get(obj.language, obj.get_language_display())
+
+    fieldsets = (
+        ('Idioma y Estado', {
+            'fields': (
+                ('language', 'is_active'),
+            ),
+            'description': 'Selecciona el idioma correspondiente a este grupo de textos y si está activo.'
+        }),
+        ('Pantalla Principal del Código de Asociado', {
+            'fields': (
+                'hero_title',
+                'hero_description',
+                'share_message',
+            ),
+            'description': 'Textos de la cabecera y plantilla para compartir en redes/WhatsApp. Usa comodines {target}, {days}, {plan} y {code}.'
+        }),
+        ('Instructivo: ¿Cómo funciona?', {
+            'fields': (
+                'how_it_works_title',
+                'step_1',
+                'step_2',
+                'step_3',
+            ),
+            'description': 'Pasos mostrados al final de la pantalla de asociados. En el Paso 3 puedes usar {target}, {days} y {plan}.'
+        }),
+        ('Banners y Secciones en la App', {
+            'fields': (
+                ('banner_title', 'banner_subtitle'),
+                'my_plan_invite_text',
+                'active_benefit_text',
+            ),
+            'description': 'Textos del banner en Perfil y tarjeta informativa en la pantalla "Mi Plan".'
+        }),
+        ('Notificaciones (Push FCM y WebSocket)', {
+            'fields': (
+                'notification_new_referral',
+                'notification_reward_earned',
+            ),
+            'description': 'Mensajes enviados al maestro. En nuevo referido usa {name}, {pending}, {target}. En meta alcanzada usa {target}, {days}, {plan}.'
+        }),
+        ('Formularios de Registro', {
+            'fields': (
+                ('registration_code_label', 'registration_code_hint'),
+            ),
+            'description': 'Etiqueta y placeholder del campo opcional de código en los registros de clientes y maestros.'
+        }),
+    )
+
 

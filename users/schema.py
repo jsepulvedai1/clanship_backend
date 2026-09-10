@@ -1,7 +1,7 @@
 import uuid
 import graphene
 from graphene_django import DjangoObjectType
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP, UserDevice, SystemSetting, UserReport
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP, UserDevice, SystemSetting, UserReport, ReferralProgramContent
 import graphql_jwt
 from graphql_jwt.decorators import login_required
 from decimal import Decimal
@@ -262,12 +262,32 @@ class ProfessionalProfileType(DjangoObjectType):
     def resolve_requires_plan_upgrade(self, info):
         return self.requires_plan_upgrade
 
+class ReferralProgramContentType(graphene.ObjectType):
+    language = graphene.String()
+    is_active = graphene.Boolean()
+    hero_title = graphene.String()
+    hero_description = graphene.String()
+    share_message = graphene.String()
+    how_it_works_title = graphene.String()
+    step_1 = graphene.String()
+    step_2 = graphene.String()
+    step_3 = graphene.String()
+    banner_title = graphene.String()
+    banner_subtitle = graphene.String()
+    my_plan_invite_text = graphene.String()
+    active_benefit_text = graphene.String()
+    notification_new_referral = graphene.String()
+    notification_reward_earned = graphene.String()
+    registration_code_label = graphene.String()
+    registration_code_hint = graphene.String()
+
 class AppConfigType(graphene.ObjectType):
     subscriptions_enabled_ios = graphene.Boolean()
     subscriptions_enabled_android = graphene.Boolean()
     subscription_ios_link = graphene.String()
     subscription_ios_message = graphene.String()
     max_specialties_per_tradesman = graphene.Int()
+
 
 class Query(graphene.ObjectType):
     me = graphene.Field(UserType)
@@ -349,6 +369,35 @@ class Query(graphene.ObjectType):
             return ValidateReferralCodeType(is_valid=False, tradesman_name=None, message="Código no válido o no encontrado")
         name = profile.user.get_full_name() or profile.user.username
         return ValidateReferralCodeType(is_valid=True, tradesman_name=name, message="Código válido")
+
+    referral_program_content = graphene.Field(
+        ReferralProgramContentType,
+        language=graphene.String()
+    )
+
+    def resolve_referral_program_content(self, info, language=None):
+        from .models import ReferralProgramContent
+        content = ReferralProgramContent.get_content_for_language(language)
+        return ReferralProgramContentType(
+            language=content.language,
+            is_active=content.is_active,
+            hero_title=content.hero_title,
+            hero_description=content.hero_description,
+            share_message=content.share_message,
+            how_it_works_title=content.how_it_works_title,
+            step_1=content.step_1,
+            step_2=content.step_2,
+            step_3=content.step_3,
+            banner_title=content.banner_title,
+            banner_subtitle=content.banner_subtitle,
+            my_plan_invite_text=content.my_plan_invite_text,
+            active_benefit_text=content.active_benefit_text,
+            notification_new_referral=content.notification_new_referral,
+            notification_reward_earned=content.notification_reward_earned,
+            registration_code_label=content.registration_code_label,
+            registration_code_hint=content.registration_code_hint,
+        )
+
 
     # Nueva query para buscar maestros cercanos (soporta filtro de texto)
     nearby_professionals = graphene.List(
@@ -713,8 +762,11 @@ class RegisterUser(graphene.Mutation):
                                     from asgiref.sync import async_to_sync
                                     channel_layer = get_channel_layer()
                                     if channel_layer:
+                                        content = ReferralProgramContent.get_content_for_language('es')
                                         plan_name = reward_plan.name if reward_plan else 'tu plan'
-                                        msg = f"¡Felicidades! Completaste tu meta de {target} asociados. Ganaste {reward_days} días de {plan_name} gratis."
+                                        msg = content.notification_reward_earned or "¡Felicidades! Completaste tu meta de {target} asociados. Ganaste {days} días de {plan} gratis."
+                                        for k, v in {'target': target, 'days': reward_days, 'plan': plan_name}.items():
+                                            msg = msg.replace(f"{{{k}}}", str(v))
                                         async_to_sync(channel_layer.group_send)(
                                             f'user_{referrer_profile.user.id}',
                                             {
@@ -733,9 +785,12 @@ class RegisterUser(graphene.Mutation):
                                     from asgiref.sync import async_to_sync
                                     channel_layer = get_channel_layer()
                                     if channel_layer:
+                                        content = ReferralProgramContent.get_content_for_language('es')
                                         current_pending = len(unrewarded)
                                         referred_name = user.get_full_name() or "Un nuevo usuario"
-                                        msg = f"¡{referred_name} se inscribió con tu código de asociado! Llevas {current_pending} de {target} para tu beneficio."
+                                        msg = content.notification_new_referral or "¡{name} se inscribió con tu código de asociado! Llevas {pending} de {target} para tu beneficio."
+                                        for k, v in {'name': referred_name, 'pending': current_pending, 'target': target}.items():
+                                            msg = msg.replace(f"{{{k}}}", str(v))
                                         async_to_sync(channel_layer.group_send)(
                                             f'user_{referrer_profile.user.id}',
                                             {

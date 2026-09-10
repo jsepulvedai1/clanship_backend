@@ -742,6 +742,153 @@ class ReferralRewardLog(models.Model):
 
 
 
+class ReferralProgramContent(models.Model):
+    """
+    Textos configurables y localizados por idioma para el Programa de Asociados (Referidos).
+    Permite a la gerencia modificar textos, mensajes de compartir, pasos y notificaciones.
+    """
+    class Language(models.TextChoices):
+        SPANISH = 'es', 'Español'
+        ENGLISH = 'en', 'English'
+        FRENCH = 'fr', 'Français'
+
+    language = models.CharField(
+        max_length=10,
+        choices=Language.choices,
+        unique=True,
+        default=Language.SPANISH,
+        verbose_name="Idioma",
+        help_text="Código de idioma (es, en, fr)"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Activo",
+        help_text="Indica si esta versión de textos está disponible"
+    )
+
+    # Pantalla Principal del Código de Asociado
+    hero_title = models.CharField(
+        max_length=200,
+        default="¡Invita y gana beneficios!",
+        verbose_name="Título principal",
+        help_text="Título en la cabecera de la pantalla de asociados"
+    )
+    hero_description = models.TextField(
+        default="Comparte tu código con clientes o conocidos. Cada vez que {target} personas se inscriban con tu código, ganarás {days} días de {plan} gratis.",
+        verbose_name="Descripción del beneficio",
+        help_text="Variables disponibles: {target} (meta), {days} (días), {plan} (nombre del plan)"
+    )
+    share_message = models.TextField(
+        default="¡Hola! Te invito a unirte a Clanship. Regístrate usando mi código de asociado {code} para contactarme y encontrar los mejores especialistas: https://clanship.cl",
+        verbose_name="Mensaje para compartir (WhatsApp/Redes)",
+        help_text="Variable disponible: {code} (código único del maestro)"
+    )
+
+    # Sección Informativa: ¿Cómo funciona?
+    how_it_works_title = models.CharField(
+        max_length=100,
+        default="¿Cómo funciona?",
+        verbose_name="Título: ¿Cómo funciona?"
+    )
+    step_1 = models.CharField(
+        max_length=300,
+        default="Comparte tu código con clientes o colegas.",
+        verbose_name="Paso 1"
+    )
+    step_2 = models.CharField(
+        max_length=300,
+        default="Al registrarse en Clanship, ingresan tu código.",
+        verbose_name="Paso 2"
+    )
+    step_3 = models.CharField(
+        max_length=300,
+        default="Al completar {target} asociados, ganas automáticamente {days} días de {plan}.",
+        verbose_name="Paso 3",
+        help_text="Variables disponibles: {target}, {days}, {plan}"
+    )
+
+    # Banners en Perfil y Mi Plan
+    banner_title = models.CharField(
+        max_length=100,
+        default="Mi Código de Asociado",
+        verbose_name="Título de banner en perfil"
+    )
+    banner_subtitle = models.CharField(
+        max_length=200,
+        default="Invita {target} asociados y gana un plan gratis",
+        verbose_name="Subtítulo de banner en perfil",
+        help_text="Variables disponibles: {target}, {days}, {plan}"
+    )
+    my_plan_invite_text = models.CharField(
+        max_length=200,
+        default="Invita {target} asociados y gana {days} días gratis de {plan}.",
+        verbose_name="Texto de invitación en Mi Plan",
+        help_text="Variables disponibles: {target}, {days}, {plan}"
+    )
+    active_benefit_text = models.CharField(
+        max_length=200,
+        default="Beneficio de plan activo hasta el {date}",
+        verbose_name="Texto de beneficio activo",
+        help_text="Variable disponible: {date}"
+    )
+
+    # Notificaciones (Push FCM y WebSocket)
+    notification_new_referral = models.CharField(
+        max_length=300,
+        default="¡{name} se inscribió con tu código de asociado! Llevas {pending} de {target} para tu beneficio.",
+        verbose_name="Notificación: Nuevo asociado inscrito",
+        help_text="Variables disponibles: {name}, {pending}, {target}"
+    )
+    notification_reward_earned = models.CharField(
+        max_length=300,
+        default="¡Felicidades! Completaste tu meta de {target} asociados. Ganaste {days} días de {plan} gratis.",
+        verbose_name="Notificación: Meta alcanzada (Beneficio ganado)",
+        help_text="Variables disponibles: {target}, {days}, {plan}"
+    )
+
+    # Formulario de Registro
+    registration_code_label = models.CharField(
+        max_length=200,
+        default="Código de asociado o invitación (Opcional)",
+        verbose_name="Etiqueta de campo en registro"
+    )
+    registration_code_hint = models.CharField(
+        max_length=100,
+        default="Ej: CLAN-ABC12",
+        verbose_name="Texto de ayuda / Placeholder en registro"
+    )
+
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Última modificación")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
+
+    class Meta:
+        verbose_name = "Contenido de Programa de Asociados"
+        verbose_name_plural = "Contenidos de Programa de Asociados (por Idioma)"
+        ordering = ['language']
+
+    def __str__(self):
+        return f"Contenido Asociados ({self.get_language_display()})"
+
+    @classmethod
+    def get_content_for_language(cls, lang_code=None):
+        if lang_code:
+            lang_code = lang_code.split('-')[0].split('_')[0].lower()
+        else:
+            lang_code = 'es'
+        
+        content = cls.objects.filter(language=lang_code, is_active=True).first()
+        if content:
+            return content
+        
+        if lang_code != 'es':
+            spanish = cls.objects.filter(language='es', is_active=True).first()
+            if spanish:
+                return spanish
+        
+        return cls(language='es')
+
+
+
 class AppVersionConfig(models.Model):
     class AppType(models.TextChoices):
         CLIENT = 'CLIENT', 'Cliente'
