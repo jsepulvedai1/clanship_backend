@@ -780,11 +780,25 @@ class SeasonalCampaign(models.Model):
     header_gradient_end = models.CharField(max_length=9, blank=True, null=True, verbose_name="Fin gradiente cabecera", help_text="Hexadecimal ej: #163E63")
     search_bar_border_color = models.CharField(max_length=9, blank=True, null=True, verbose_name="Color borde buscador Home", help_text="Hexadecimal ej: #D52B1E. Si está vacío, usa el color de acento.")
     nav_center_color = models.CharField(max_length=9, blank=True, null=True, verbose_name="Color botón central del menú", help_text="Hexadecimal ej: #D52B1E. Si está vacío, usa el color primario.")
+    stat_cards_bg_color = models.CharField(
+        max_length=9,
+        blank=True,
+        null=True,
+        verbose_name="Color fondo cuadros de solicitudes",
+        help_text="Hexadecimal ej: #F1F5F9 o #0D2B45 para las 4 tarjetas de solicitudes en la app de maestro."
+    )
 
     # Assets visuales y animaciones
     logo_badge_icon = models.FileField(upload_to="seasonal/badges/", blank=True, null=True, verbose_name="Insignia para logo/avatar", help_text="PNG transparente o SVG (chupalla, gorro navideño, calabaza)")
     nav_center_icon = models.FileField(upload_to="seasonal/nav_icons/", blank=True, null=True, verbose_name="Icono central de navegación (PNG)", help_text="PNG transparente para reemplazar el icono de explorar/mapa en el menú inferior")
     banner_image = models.ImageField(upload_to="seasonal/banners/", blank=True, null=True, verbose_name="Imagen de banner de fondo", help_text="Imagen opcional para el banner principal")
+    stat_cards_bg_image = models.ImageField(
+        upload_to="seasonal/stat_cards/",
+        blank=True,
+        null=True,
+        verbose_name="Imagen de fondo cuadros de solicitudes",
+        help_text="Imagen opcional (textura, patrón o festividad) para el fondo de las 4 tarjetas de solicitudes en la app de maestro."
+    )
     class GarlandPosition(models.TextChoices):
         BOTH = 'BOTH', 'En ambos (Barra superior y Card principal)'
         TOP = 'TOP', 'Solo arriba (Barra superior / Nombre)'

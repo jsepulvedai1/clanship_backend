@@ -40,7 +40,7 @@ class SeasonalCampaignAdmin(ModelAdmin):
             'fields': (
                 ('primary_color', 'secondary_color', 'accent_color'),
                 ('header_gradient_start', 'header_gradient_end'),
-                ('search_bar_border_color', 'nav_center_color'),
+                ('search_bar_border_color', 'nav_center_color', 'stat_cards_bg_color'),
             ),
             'description': 'Especifica códigos hexadecimales (ej: #0B6E4F, #D52B1E). Si se dejan vacíos, se usan los colores por defecto de la aplicación.'
         }),
@@ -49,10 +49,10 @@ class SeasonalCampaignAdmin(ModelAdmin):
                 ('logo_badge_icon', 'nav_center_icon'),
                 ('show_top_garland', 'garland_position'),
                 'custom_garland_image',
-                'banner_image',
+                ('banner_image', 'stat_cards_bg_image'),
                 'particle_effect',
             ),
-            'description': 'Insignia flotante, icono central del menú (PNG), guirnaldas temáticas (ubicación arriba, abajo o ambos), banner de fondo y partículas.'
+            'description': 'Insignia flotante, icono central del menú (PNG), guirnaldas temáticas, banner de fondo, fondo de cuadros de solicitudes (maestro) y partículas.'
         }),
         ('Banner Promocional & Copys de Temporada', {
             'fields': (
