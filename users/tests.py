@@ -61,3 +61,122 @@ class SubscriptionVersionBlockingTestCase(TestCase):
         res_allowed = schema.execute(q_allowed)
         self.assertTrue(res_allowed.data['appConfig']['subscriptionsEnabledIos'])
         self.assertTrue(res_allowed.data['appConfig']['isSubscriptionsEnabled'])
+
+
+class NationwideCoverageTestCase(TestCase):
+    def setUp(self):
+        from users.models import User, ProfessionalProfile
+        self.setting = SystemSetting.get_settings()
+        self.setting.nationwide_coverage_mode = False
+        self.setting.save()
+
+        # Maestro en Santiago (lat -33.4489, lon -70.6693) con radio de 10 km
+        self.prof_user = User.objects.create_user(
+            username='maestro_santiago',
+            email='maestro_santiago@test.com',
+            password='password123',
+            user_type=User.UserType.PROFESSIONAL,
+            is_available=True,
+            first_name='Juan',
+            last_name='Perez'
+        )
+        self.profile = ProfessionalProfile.objects.create(
+            user=self.prof_user,
+            service_radius=10,
+            latitude=-33.4489,
+            longitude=-70.6693,
+            is_verified=True
+        )
+
+    def test_nationwide_coverage_flag_detection(self):
+        self.setting.nationwide_coverage_mode = False
+        self.setting.save()
+        self.assertFalse(SystemSetting.is_nationwide_coverage_active())
+
+        self.setting.nationwide_coverage_mode = True
+        self.setting.save()
+        self.assertTrue(SystemSetting.is_nationwide_coverage_active())
+
+    def test_search_nearby_professionals_nationwide(self):
+        # Consulta desde Valparaíso (~100 km de distancia de Santiago)
+        # Lat: -33.0472, Lon: -71.6127
+        query = '''
+        query {
+          nearbyProfessionals(latitude: -33.0472, longitude: -71.6127) {
+            id
+            username
+            distance
+          }
+        }
+        '''
+        # 1. Con modo nacional desactivado: No debe retornar al maestro (100 km > 10 km)
+        self.setting.nationwide_coverage_mode = False
+        self.setting.save()
+        res = schema.execute(query)
+        self.assertIsNone(res.errors)
+        self.assertEqual(len(res.data['nearbyProfessionals']), 0)
+
+        # 2. Con modo nacional activado: Debe retornar al maestro de Santiago
+        self.setting.nationwide_coverage_mode = True
+        self.setting.save()
+        res = schema.execute(query)
+        self.assertIsNone(res.errors)
+        self.assertEqual(len(res.data['nearbyProfessionals']), 1)
+        self.assertEqual(res.data['nearbyProfessionals'][0]['username'], 'maestro_santiago')
+        # La distancia debe ser calculada y superior a 90 km
+        self.assertGreater(res.data['nearbyProfessionals'][0]['distance'], 90.0)
+
+    def test_create_job_radius_validation_nationwide(self):
+        from users.models import User
+        from django.test import RequestFactory
+        from jobs.schema import CreateJob
+        import datetime
+
+        # Cliente en Valparaíso (~100 km de distancia)
+        customer = User.objects.create_user(
+            username='cliente_valpo',
+            email='cliente_valpo@test.com',
+            password='password123',
+            user_type=User.UserType.CUSTOMER,
+            latitude=-33.0472,
+            longitude=-71.6127
+        )
+
+        rf = RequestFactory()
+        request = rf.post('/graphql/')
+        request.user = customer
+
+        mutation_gql = '''
+        mutation {
+          createJob(
+            professionalId: %d,
+            scheduledDate: "%s",
+            scheduledTime: "10:00:00",
+            description: "Reparación techo",
+            agreedPrice: "50000",
+            address: "Valparaíso centro"
+          ) {
+            job {
+              id
+              status
+            }
+          }
+        }
+        ''' % (self.prof_user.id, (datetime.date.today() + datetime.timedelta(days=1)).isoformat())
+
+        # 1. Modo nacional apagado: debe fallar con error de radio
+        self.setting.nationwide_coverage_mode = False
+        self.setting.save()
+        res_fail = schema.execute(mutation_gql, context_value=request)
+        self.assertIsNotNone(res_fail.errors)
+        self.assertIn("radio de cobertura", str(res_fail.errors[0]))
+
+        # 2. Modo nacional encendido: debe crear el trabajo exitosamente
+        self.setting.nationwide_coverage_mode = True
+        self.setting.save()
+        res_ok = schema.execute(mutation_gql, context_value=request)
+        self.assertIsNone(res_ok.errors)
+        self.assertIsNotNone(res_ok.data['createJob']['job']['id'])
+
+
+
