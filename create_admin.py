@@ -14,15 +14,21 @@ def generate_superuser():
     # Buscamos las credenciales desde variables de entorno. 
     # Si no existen en Render, usará por defecto 'admin' y 'admin' como pediste.
     username = os.environ.get('DJANGO_SUPERUSER_USERNAME', 'admin')
-    email = os.environ.get('DJANGO_SUPERUSER_EMAIL', 'admin@clanship.com')
-    password = os.environ.get('DJANGO_SUPERUSER_PASSWORD', 'admin')
+    email = os.environ.get('DJANGO_SUPERUSER_EMAIL', 'admin@clanship.cl')
+    password = os.environ.get('DJANGO_SUPERUSER_PASSWORD', 'Clanship2026!')
 
-    if not User.objects.filter(username=username).exists():
-        print(f"==> Creando superusuario de forma automática ({username})...")
-        User.objects.create_superuser(username=username, email=email, password=password)
-        print("==> ¡Superusuario creado con éxito! 🎉")
+    user, created = User.objects.get_or_create(username=username, defaults={'email': email})
+    user.email = email
+    user.set_password(password)
+    user.is_staff = True
+    user.is_superuser = True
+    if hasattr(user, 'user_type'):
+        user.user_type = 'ADMIN'
+    user.save()
+    if created:
+        print(f"==> ¡Superusuario '{username}' creado con éxito! 🎉")
     else:
-        print(f"==> El superusuario '{username}' ya existe. Saltando paso.")
+        print(f"==> Superusuario '{username}' actualizado con contraseña y permisos de administrador. ✅")
 
 if __name__ == '__main__':
     generate_superuser()
