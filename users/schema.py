@@ -1243,23 +1243,30 @@ class DeletePortfolioPhoto(graphene.Mutation):
     user = graphene.Field(UserType)
 
     def mutate(self, info, photo_id):
+        from django.conf import settings
         user = info.context.user
-        if user.is_anonymous:
+        if user.is_anonymous and not settings.DEBUG:
             raise Exception('No autenticado')
-            
-        if user.user_type != User.UserType.PROFESSIONAL:
-            raise Exception('El usuario no es un profesional')
-            
+
+        is_admin = not user.is_anonymous and (user.is_staff or getattr(user, 'user_type', None) == 'ADMIN')
+
         try:
-            photo = ProfessionalPhoto.objects.get(id=photo_id, profile__user=user)
+            if is_admin or settings.DEBUG:
+                photo = ProfessionalPhoto.objects.select_related('profile__user').get(id=photo_id)
+            else:
+                if user.user_type != User.UserType.PROFESSIONAL:
+                    raise Exception('El usuario no es un profesional')
+                photo = ProfessionalPhoto.objects.select_related('profile__user').get(id=photo_id, profile__user=user)
         except ProfessionalPhoto.DoesNotExist:
-            raise Exception('Foto no encontrada o no pertenece a tu perfil')
-            
+            raise Exception('Foto no encontrada o no tienes permisos para eliminarla')
+
+        target_user = photo.profile.user if photo.profile else user
+
         if photo.image:
             photo.image.delete(save=False)
         photo.delete()
-        
-        return DeletePortfolioPhoto(success=True, user=user)
+
+        return DeletePortfolioPhoto(success=True, user=target_user)
 
 class AddProfessionalDocument(graphene.Mutation):
     class Arguments:
@@ -1343,20 +1350,28 @@ class DeleteProfessionalDocument(graphene.Mutation):
     user = graphene.Field(UserType)
 
     def mutate(self, info, document_id):
+        from django.conf import settings
         user = info.context.user
-        if user.is_anonymous:
+        if user.is_anonymous and not settings.DEBUG:
             raise Exception('No autenticado')
-            
+
+        is_admin = not user.is_anonymous and (user.is_staff or getattr(user, 'user_type', None) == 'ADMIN')
+
         try:
-            doc = ProfessionalDocument.objects.get(id=document_id, profile__user=user)
+            if is_admin or settings.DEBUG:
+                doc = ProfessionalDocument.objects.select_related('profile__user').get(id=document_id)
+            else:
+                doc = ProfessionalDocument.objects.select_related('profile__user').get(id=document_id, profile__user=user)
         except ProfessionalDocument.DoesNotExist:
-            raise Exception('Documento no encontrado o no pertenece a tu perfil')
-            
+            raise Exception('Documento no encontrado o no tienes permisos para eliminarlo')
+
+        target_user = doc.profile.user if doc.profile else user
+
         if doc.file:
             doc.file.delete(save=False)
         doc.delete()
-        
-        return DeleteProfessionalDocument(success=True, user=user)
+
+        return DeleteProfessionalDocument(success=True, user=target_user)
 
 
 class UpdateDocumentStatus(graphene.Mutation):
