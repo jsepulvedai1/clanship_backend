@@ -17,13 +17,13 @@ fi
 echo "==> Aplicando migraciones (migrate)..."
 python manage.py migrate --no-input
 
-echo "==> Recopilando archivos estáticos (collectstatic)..."
-python manage.py collectstatic --no-input
-
-echo "==> Ejecutando script de creación de superusuario..."
-python create_admin.py
-
 if [ $# -eq 0 ]; then
+  echo "==> Recopilando archivos estáticos en segundo plano..."
+  python manage.py collectstatic --no-input &
+
+  echo "==> Ejecutando script de creación de superusuario en segundo plano..."
+  python create_admin.py &
+
   echo "==> Iniciando Daphne (ASGI) en el puerto 8000 con ping-interval..."
   exec daphne -b 0.0.0.0 -p 8000 --ping-interval 20 --ping-timeout 30 core.asgi:application
 else

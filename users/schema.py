@@ -38,7 +38,8 @@ class UserType(DjangoObjectType):
             "avatar", "latitude", "longitude", "address", 
             "is_available", "is_emergency", "professional_profile", "first_name", "last_name",
             "active_jobs", "completed_jobs", "scheduled_jobs", "rejected_jobs", "reviews_count",
-            "is_favorite", "fcm_token", "saved_addresses", "is_validated"
+            "is_favorite", "fcm_token", "saved_addresses", "is_validated",
+            "date_joined", "is_active"
         )
 
     def resolve_is_validated(self, info):
@@ -267,12 +268,23 @@ class ProfessionalProfileType(DjangoObjectType):
 
     def resolve_documents(self, info):
         user = info.context.user
-        if not user.is_anonymous and user == self.user:
+        if not user.is_anonymous and (user == self.user or user.is_staff or getattr(user, 'user_type', None) == 'ADMIN'):
             return self.documents.all()
         return self.documents.filter(is_visible=True)
 
     def resolve_requires_plan_upgrade(self, info):
         return self.requires_plan_upgrade
+
+
+class PaginatedProfessionalsType(graphene.ObjectType):
+    total_count = graphene.Int()
+    total_pages = graphene.Int()
+    current_page = graphene.Int()
+    page_size = graphene.Int()
+    has_next = graphene.Boolean()
+    has_prev = graphene.Boolean()
+    results = graphene.List(ProfessionalProfileType)
+
 
 class ReferralProgramContentType(graphene.ObjectType):
     language = graphene.String()
@@ -311,7 +323,28 @@ class Query(graphene.ObjectType):
     specialties = graphene.List(SpecialtyType)
     tags = graphene.List(TagType)
     subtags = graphene.List(SubTagType)
-    professionals = graphene.List(ProfessionalProfileType, specialty_id=graphene.Int())
+    all_users = graphene.List(
+        UserType,
+        user_type=graphene.String(),
+        search=graphene.String()
+    )
+    professionals = graphene.List(
+        ProfessionalProfileType, 
+        specialty_id=graphene.Int(),
+        include_unverified=graphene.Boolean(default_value=False)
+    )
+    paginated_professionals = graphene.Field(
+        PaginatedProfessionalsType,
+        page=graphene.Int(default_value=1),
+        page_size=graphene.Int(default_value=10),
+        search=graphene.String(),
+        specialty_id=graphene.Int(),
+        verification_status=graphene.String(),
+        is_available=graphene.Boolean(),
+        is_emergency=graphene.Boolean(),
+        is_active=graphene.Boolean(),
+        order_by=graphene.String(default_value="-date_joined")
+    )
     my_favorites = graphene.List(UserType)
     subscription_plans = graphene.List(SubscriptionPlanType)
     max_specialties_per_tradesman = graphene.Int()
@@ -514,13 +547,110 @@ class Query(graphene.ObjectType):
         except Exception:
             return SubscriptionPlan.objects.exclude(name__iexact='Plan Inicial').order_by('display_order', 'id')
 
-    def resolve_professionals(self, info, specialty_id=None):
-        queryset = ProfessionalProfile.objects.filter(is_verified=True).select_related(
+    def resolve_all_users(self, info, user_type=None, search=None):
+        queryset = User.objects.all().select_related('professional_profile__specialty', 'professional_profile__plan').prefetch_related('saved_addresses')
+        if user_type:
+            queryset = queryset.filter(user_type=user_type)
+        if search:
+            queryset = queryset.filter(
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search) |
+                Q(username__icontains=search) |
+                Q(email__icontains=search) |
+                Q(phone_number__icontains=search)
+            )
+        return queryset.order_by('-date_joined')
+
+    def resolve_professionals(self, info, specialty_id=None, include_unverified=False):
+        user = info.context.user
+        can_see_unverified = include_unverified and (not user.is_anonymous and (user.is_staff or getattr(user, 'user_type', None) == 'ADMIN'))
+        queryset = ProfessionalProfile.objects.select_related(
             'user', 'specialty', 'plan'
-        ).prefetch_related('tags', 'subtags', 'photos')
+        ).prefetch_related('tags', 'subtags', 'photos', 'specialties')
+        if not can_see_unverified and not include_unverified:
+            queryset = queryset.filter(is_verified=True)
         if specialty_id:
             queryset = queryset.filter(specialty_id=specialty_id)
-        return queryset
+        return queryset.order_by('-id')
+
+    def resolve_paginated_professionals(
+        self, info, page=1, page_size=10, search=None, specialty_id=None,
+        verification_status=None, is_available=None, is_emergency=None,
+        is_active=None, order_by="-date_joined"
+    ):
+        import math
+        user = info.context.user
+        is_admin = not user.is_anonymous and (user.is_staff or getattr(user, 'user_type', None) == 'ADMIN')
+
+        queryset = ProfessionalProfile.objects.all()
+
+        # Si no es admin o staff, solo se muestran los verificados
+        if not is_admin:
+            queryset = queryset.filter(is_verified=True)
+
+        if specialty_id:
+            queryset = queryset.filter(Q(specialty_id=specialty_id) | Q(specialties__id=specialty_id)).distinct()
+
+        if verification_status and verification_status != 'ALL':
+            queryset = queryset.filter(verification_status=verification_status)
+
+        if is_available is not None:
+            queryset = queryset.filter(user__is_available=is_available)
+
+        if is_emergency is not None:
+            queryset = queryset.filter(user__is_emergency=is_emergency)
+
+        if is_active is not None:
+            queryset = queryset.filter(user__is_active=is_active)
+
+        if search:
+            search_str = search.strip()
+            queryset = queryset.filter(
+                Q(user__first_name__icontains=search_str) |
+                Q(user__last_name__icontains=search_str) |
+                Q(user__username__icontains=search_str) |
+                Q(user__email__icontains=search_str) |
+                Q(user__phone_number__icontains=search_str) |
+                Q(specialty__name__icontains=search_str) |
+                Q(referral_code__icontains=search_str) |
+                Q(address__icontains=search_str) |
+                Q(user__address__icontains=search_str)
+            ).distinct()
+
+        allowed_orderings = {
+            "-date_joined": "-user__date_joined",
+            "date_joined": "user__date_joined",
+            "-id": "-id",
+            "id": "id",
+            "-rating": "-rating",
+            "rating": "rating",
+            "name": "user__first_name",
+            "-name": "-user__first_name",
+        }
+        db_order = allowed_orderings.get(order_by, "-user__date_joined")
+        queryset = queryset.order_by(db_order)
+
+        total_count = queryset.count()
+        page_size = max(1, min(page_size or 10, 100))
+        total_pages = max(1, math.ceil(total_count / page_size))
+        page = max(1, min(page or 1, total_pages))
+
+        offset = (page - 1) * page_size
+        results_qs = queryset.select_related(
+            'user', 'specialty', 'plan'
+        ).prefetch_related(
+            'tags', 'subtags', 'photos', 'documents', 'specialties'
+        )[offset:offset + page_size]
+
+        return PaginatedProfessionalsType(
+            total_count=total_count,
+            total_pages=total_pages,
+            current_page=page,
+            page_size=page_size,
+            has_next=page < total_pages,
+            has_prev=page > 1,
+            results=list(results_qs)
+        )
 
     def resolve_nearby_professionals(self, info, latitude, longitude, radius_km, specialty_id=None, query=None, tag_ids=None, subtag_ids=None):
         from math import cos, radians, sin, atan2, sqrt
@@ -1228,6 +1358,113 @@ class DeleteProfessionalDocument(graphene.Mutation):
         
         return DeleteProfessionalDocument(success=True, user=user)
 
+
+class UpdateDocumentStatus(graphene.Mutation):
+    class Arguments:
+        document_id = graphene.ID(required=True)
+        status = graphene.String(required=True)  # 'APPROVED', 'REJECTED', 'PENDING'
+        rejection_reason = graphene.String()
+
+    success = graphene.Boolean()
+    document = graphene.Field(ProfessionalDocumentType)
+    message = graphene.String()
+
+    def mutate(self, info, document_id, status, rejection_reason=None):
+        from django.conf import settings
+        user = info.context.user
+        is_admin = not user.is_anonymous and (user.is_staff or getattr(user, 'user_type', None) == 'ADMIN')
+        if not is_admin and not settings.DEBUG:
+            raise Exception("No autorizado. Se requieren permisos de administrador.")
+
+        status_upper = status.upper().strip()
+        if status_upper not in ['APPROVED', 'REJECTED', 'PENDING']:
+            raise Exception(f"Estado '{status}' inválido. Debe ser APPROVED, REJECTED o PENDING.")
+
+        try:
+            doc = ProfessionalDocument.objects.select_related('profile').get(id=document_id)
+        except ProfessionalDocument.DoesNotExist:
+            raise Exception("Documento no encontrado.")
+
+        doc.status = status_upper
+        if status_upper == 'REJECTED':
+            reason = rejection_reason.strip() if rejection_reason else f"El documento '{doc.name}' no cumple con los estándares requeridos."
+            doc.rejection_reason = reason
+            doc.save()
+            if doc.profile:
+                doc.profile.is_verified = False
+                doc.profile.verification_status = ProfessionalProfile.VerificationStatus.REJECTED
+                doc.profile.rejection_reason = reason
+                doc.profile.save()
+            msg = f"Documento '{doc.name}' rechazado correctamente."
+        elif status_upper == 'APPROVED':
+            doc.rejection_reason = None
+            doc.save()
+            if doc.profile:
+                if not doc.profile.documents.filter(status__in=['PENDING', 'REJECTED']).exists():
+                    doc.profile.is_verified = True
+                    doc.profile.verification_status = ProfessionalProfile.VerificationStatus.APPROVED
+                    doc.profile.rejection_reason = None
+                    doc.profile.save()
+            msg = f"Documento '{doc.name}' aprobado exitosamente."
+        else:  # PENDING
+            doc.rejection_reason = None
+            doc.save()
+            if doc.profile and doc.profile.verification_status != ProfessionalProfile.VerificationStatus.APPROVED:
+                doc.profile.verification_status = ProfessionalProfile.VerificationStatus.PENDING
+                doc.profile.save()
+            msg = f"Documento '{doc.name}' restablecido a pendiente."
+
+        return UpdateDocumentStatus(success=True, document=doc, message=msg)
+
+
+class VerifyTradesman(graphene.Mutation):
+    class Arguments:
+        user_id = graphene.ID(required=True)
+        action = graphene.String(required=True)  # 'APPROVE', 'REJECT'
+        rejection_reason = graphene.String()
+
+    success = graphene.Boolean()
+    user = graphene.Field(UserType)
+    message = graphene.String()
+
+    def mutate(self, info, user_id, action, rejection_reason=None):
+        from django.conf import settings
+        from .models import User, ProfessionalProfile
+        user = info.context.user
+        is_admin = not user.is_anonymous and (user.is_staff or getattr(user, 'user_type', None) == 'ADMIN')
+        if not is_admin and not settings.DEBUG:
+            raise Exception("No autorizado. Se requieren permisos de administrador.")
+
+        try:
+            target_user = User.objects.select_related('professional_profile').get(id=user_id)
+        except User.DoesNotExist:
+            raise Exception("Usuario no encontrado.")
+
+        profile = getattr(target_user, 'professional_profile', None)
+        if not profile:
+            raise Exception("El usuario no posee un perfil profesional.")
+
+        action_upper = action.upper().strip()
+        if action_upper == 'APPROVE':
+            profile.is_verified = True
+            profile.verification_status = ProfessionalProfile.VerificationStatus.APPROVED
+            profile.rejection_reason = None
+            profile.save()
+            profile.documents.filter(status='PENDING').update(status='APPROVED', rejection_reason=None)
+            msg = f"Maestro '{target_user.get_full_name()}' aprobado y habilitado exitosamente."
+        elif action_upper == 'REJECT':
+            reason = rejection_reason.strip() if rejection_reason else "Antecedentes o documentación no cumplen con los estándares requeridos."
+            profile.is_verified = False
+            profile.verification_status = ProfessionalProfile.VerificationStatus.REJECTED
+            profile.rejection_reason = reason
+            profile.save()
+            msg = f"Maestro '{target_user.get_full_name()}' marcado como observado/rechazado."
+        else:
+            raise Exception(f"Acción '{action}' inválida. Debe ser APPROVE o REJECT.")
+
+        return VerifyTradesman(success=True, user=target_user, message=msg)
+
+
 import random
 from django.utils import timezone
 from datetime import timedelta
@@ -1560,6 +1797,8 @@ class Mutation(graphene.ObjectType):
     add_professional_document = AddProfessionalDocument.Field()
     toggle_document_visibility = ToggleDocumentVisibility.Field()
     delete_professional_document = DeleteProfessionalDocument.Field()
+    update_document_status = UpdateDocumentStatus.Field()
+    verify_tradesman = VerifyTradesman.Field()
     request_password_reset = RequestPasswordReset.Field()
     verify_password_reset_otp = VerifyPasswordResetOtp.Field()
     reset_password_with_otp = ResetPasswordWithOtp.Field()
