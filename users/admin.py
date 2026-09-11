@@ -130,6 +130,7 @@ class AppVersionConfigAdmin(ModelAdmin):
 class SystemSettingAdmin(ModelAdmin):
     list_display = (
         '__str__',
+        'nationwide_coverage_mode',
         'referral_program_active',
         'referral_target_count',
         'referral_reward_plan',
@@ -139,7 +140,12 @@ class SystemSettingAdmin(ModelAdmin):
         'subscriptions_enabled_ios',
         'subscriptions_enabled_android',
     )
+    list_editable = ('nationwide_coverage_mode',)
     fieldsets = (
+        ('Cobertura Nacional (Periodo de Prueba Todo Chile)', {
+            'fields': ('nationwide_coverage_mode',),
+            'description': 'Si está activo, los clientes podrán ver a todos los maestros del país y solicitarles trabajos directamente, ignorando el radio de movilidad individual (service_radius) configurado por cada maestro.'
+        }),
         ('Programa de Código de Asociados (Referidos)', {
             'fields': (
                 'referral_program_active',

@@ -156,9 +156,11 @@ CORS_ALLOWED_ORIGINS = [
     "https://admin.clanship.cl",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:4200",
+    "http://127.0.0.1:4200",
 ]
 
-CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,https://clanship.cl,https://admin.clanship.cl').split(',')
+CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,http://localhost:4200,http://127.0.0.1:4200,https://clanship.cl,https://admin.clanship.cl').split(',')
 
 # Graphene Configuration
 GRAPHENE = {
@@ -276,3 +278,6 @@ NO_REPLY_FROM_EMAIL = os.environ.get(
     f'Equipo Clanship <{os.environ.get("NO_REPLY_EMAIL_USER", "noreply@clanship.cl")}>',
 )
 DEFAULT_FROM_EMAIL = NO_REPLY_FROM_EMAIL
+
+# Cobertura de búsqueda y contratación a nivel nacional (Periodo de prueba Todo Chile)
+NATIONWIDE_COVERAGE_MODE = os.environ.get('NATIONWIDE_COVERAGE_MODE', 'False').lower() in ('true', '1', 'yes')

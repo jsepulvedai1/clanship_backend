@@ -572,23 +572,36 @@ class Query(graphene.ObjectType):
                 Q(professional_profile__subtags__in=matching_subtags)
             ).distinct()
 
-        # Cálculo aproximado de Bounding Box (1 grado latitud ~ 111km)
-        lat_range = radius_km / 111.0
-        lon_range = radius_km / (111.0 * cos(radians(latitude)))
+        from .models import SystemSetting
+        nationwide_mode = SystemSetting.is_nationwide_coverage_active()
 
-        filtered_queryset = queryset.filter(
-            Q(professional_profile__latitude__range=(latitude - lat_range, latitude + lat_range),
-              professional_profile__longitude__range=(longitude - lon_range, longitude + lon_range)) |
-            Q(latitude__range=(latitude - lat_range, latitude + lat_range),
-              longitude__range=(longitude - lon_range, longitude + lon_range))
-        ).select_related(
-            'professional_profile__plan',
-            'professional_profile__specialty'
-        ).prefetch_related(
-            'saved_addresses',
-            'professional_profile__tags',
-            'professional_profile__subtags'
-        )
+        if nationwide_mode:
+            filtered_queryset = queryset.select_related(
+                'professional_profile__plan',
+                'professional_profile__specialty'
+            ).prefetch_related(
+                'saved_addresses',
+                'professional_profile__tags',
+                'professional_profile__subtags'
+            )
+        else:
+            # Cálculo aproximado de Bounding Box (1 grado latitud ~ 111km)
+            lat_range = radius_km / 111.0
+            lon_range = radius_km / (111.0 * cos(radians(latitude)))
+
+            filtered_queryset = queryset.filter(
+                Q(professional_profile__latitude__range=(latitude - lat_range, latitude + lat_range),
+                  professional_profile__longitude__range=(longitude - lon_range, longitude + lon_range)) |
+                Q(latitude__range=(latitude - lat_range, latitude + lat_range),
+                  longitude__range=(longitude - lon_range, longitude + lon_range))
+            ).select_related(
+                'professional_profile__plan',
+                'professional_profile__specialty'
+            ).prefetch_related(
+                'saved_addresses',
+                'professional_profile__tags',
+                'professional_profile__subtags'
+            )
 
         # Convert to list and calculate Haversine distance for each
         results = list(filtered_queryset)
@@ -628,13 +641,14 @@ class Query(graphene.ObjectType):
             return 0
 
         # Filtrar profesionales según su propio radio de movilidad/servicio (service_radius)
-        in_radius_results = []
-        for user in results:
-            prof = getattr(user, 'professional_profile', None)
-            max_radius = prof.service_radius if (prof and prof.service_radius is not None) else 10
-            if user.distance <= max_radius:
-                in_radius_results.append(user)
-        results = in_radius_results
+        if not nationwide_mode:
+            in_radius_results = []
+            for user in results:
+                prof = getattr(user, 'professional_profile', None)
+                max_radius = prof.service_radius if (prof and prof.service_radius is not None) else 10
+                if user.distance <= max_radius:
+                    in_radius_results.append(user)
+            results = in_radius_results
 
         # Sort by plan search priority (descending) then distance (ascending)
         results.sort(key=lambda u: (-get_plan_priority(u), u.distance))

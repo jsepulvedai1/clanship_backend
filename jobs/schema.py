@@ -227,24 +227,28 @@ class CreateJob(graphene.Mutation):
         if prof_profile:
             if prof_profile.requires_plan_upgrade:
                 raise Exception("Este profesional no puede recibir nuevas solicitudes en este momento ya que debe actualizar su plan de suscripción.")
-            max_radius = prof_profile.service_radius or 10
-            cust_lat = user.latitude
-            cust_lon = user.longitude
-            prof_lat = prof_profile.latitude or professional.latitude
-            prof_lon = prof_profile.longitude or professional.longitude
+            from users.models import SystemSetting
+            nationwide_mode = SystemSetting.is_nationwide_coverage_active()
 
-            if cust_lat is not None and cust_lon is not None and prof_lat is not None and prof_lon is not None:
-                from math import cos, radians, sin, atan2, sqrt
-                def calc_dist(lat1, lon1, lat2, lon2):
-                    R = 6371.0
-                    d_lat = radians(lat2 - lat1)
-                    d_lon = radians(lon2 - lon1)
-                    a = sin(d_lat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
-                    return R * (2 * atan2(sqrt(a), sqrt(1 - a)))
+            if not nationwide_mode:
+                max_radius = prof_profile.service_radius or 10
+                cust_lat = user.latitude
+                cust_lon = user.longitude
+                prof_lat = prof_profile.latitude or professional.latitude
+                prof_lon = prof_profile.longitude or professional.longitude
 
-                dist = calc_dist(float(cust_lat), float(cust_lon), float(prof_lat), float(prof_lon))
-                if dist > max_radius:
-                    raise Exception(f"El profesional sólo ofrece servicio dentro de su radio de cobertura ({max_radius} km).")
+                if cust_lat is not None and cust_lon is not None and prof_lat is not None and prof_lon is not None:
+                    from math import cos, radians, sin, atan2, sqrt
+                    def calc_dist(lat1, lon1, lat2, lon2):
+                        R = 6371.0
+                        d_lat = radians(lat2 - lat1)
+                        d_lon = radians(lon2 - lon1)
+                        a = sin(d_lat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
+                        return R * (2 * atan2(sqrt(a), sqrt(1 - a)))
+
+                    dist = calc_dist(float(cust_lat), float(cust_lon), float(prof_lat), float(prof_lon))
+                    if dist > max_radius:
+                        raise Exception(f"El profesional sólo ofrece servicio dentro de su radio de cobertura ({max_radius} km).")
 
         # Check if an active job already exists between this customer and professional
         active_job = Job.objects.filter(
@@ -409,7 +413,10 @@ class Query(graphene.ObjectType):
                         Q(specialty_id__in=prof_specialty_ids) | Q(specialty__isnull=True) | Q(custom_specialty__isnull=False)
                     )
 
-            if prof_profile.latitude and prof_profile.longitude:
+            from users.models import SystemSetting
+            nationwide_mode = SystemSetting.is_nationwide_coverage_active()
+
+            if not nationwide_mode and prof_profile.latitude and prof_profile.longitude:
                 max_radius = float(prof_profile.service_radius or 30.0)
                 filtered_ids = []
                 for req in queryset:

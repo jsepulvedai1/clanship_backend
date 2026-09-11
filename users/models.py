@@ -596,6 +596,11 @@ class SystemSetting(models.Model):
         verbose_name="Máximo de especialidades por maestro",
         help_text="Número máximo de especialidades/subtags que puede seleccionar un maestro"
     )
+    nationwide_coverage_mode = models.BooleanField(
+        default=False,
+        verbose_name="Modo Cobertura Nacional (Todo Chile)",
+        help_text="Si está activo, los clientes pueden ver y contratar a maestros de todo el país, ignorando los límites de radio de movilidad individuales."
+    )
     subscriptions_enabled_ios = models.BooleanField(
         default=False,
         verbose_name="Habilitar suscripciones en iOS",
@@ -754,6 +759,16 @@ class SystemSetting(models.Model):
     @classmethod
     def get_max_specialties(cls):
         return cls.get_settings().max_specialties_per_tradesman
+
+    @classmethod
+    def is_nationwide_coverage_active(cls):
+        from django.conf import settings
+        try:
+            setting = cls.get_settings()
+            db_active = getattr(setting, 'nationwide_coverage_mode', False)
+        except Exception:
+            db_active = False
+        return db_active or getattr(settings, 'NATIONWIDE_COVERAGE_MODE', False)
 
 
 class AssociateReferral(models.Model):
