@@ -343,6 +343,7 @@ class Query(graphene.ObjectType):
         is_available=graphene.Boolean(),
         is_emergency=graphene.Boolean(),
         is_active=graphene.Boolean(),
+        include_unverified=graphene.Boolean(default_value=True),
         order_by=graphene.String(default_value="-date_joined")
     )
     my_favorites = graphene.List(UserType)
@@ -576,7 +577,7 @@ class Query(graphene.ObjectType):
     def resolve_paginated_professionals(
         self, info, page=1, page_size=10, search=None, specialty_id=None,
         verification_status=None, is_available=None, is_emergency=None,
-        is_active=None, order_by="-date_joined"
+        is_active=None, include_unverified=True, order_by="-date_joined"
     ):
         import math
         user = info.context.user
@@ -584,8 +585,8 @@ class Query(graphene.ObjectType):
 
         queryset = ProfessionalProfile.objects.all()
 
-        # Si no es admin o staff, solo se muestran los verificados
-        if not is_admin:
+        # Si no es admin o staff, solo se muestran los verificados a menos que se solicite include_unverified o un estado explícito
+        if not is_admin and not include_unverified and not verification_status:
             queryset = queryset.filter(is_verified=True)
 
         if specialty_id:
