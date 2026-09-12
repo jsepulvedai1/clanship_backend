@@ -162,6 +162,11 @@ CORS_ALLOWED_ORIGINS = [
 
 CSRF_TRUSTED_ORIGINS = os.environ.get('CSRF_TRUSTED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,http://localhost:4200,http://127.0.0.1:4200,https://clanship.cl,https://admin.clanship.cl').split(',')
 
+from corsheaders.defaults import default_headers
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'x-clanship-admin',
+]
+
 # Graphene Configuration
 GRAPHENE = {
     'SCHEMA': 'core.schema.schema',
