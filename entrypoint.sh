@@ -24,8 +24,8 @@ if [ $# -eq 0 ]; then
   echo "==> Ejecutando script de creación de superusuario en segundo plano..."
   python create_admin.py &
 
-  echo "==> Iniciando Daphne (ASGI) en el puerto 8000 con ping-interval..."
-  exec daphne -b 0.0.0.0 -p 8000 --ping-interval 20 --ping-timeout 30 core.asgi:application
+  echo "==> Iniciando Daphne (ASGI) en el puerto 8000 con ping-interval y close-timeout..."
+  exec daphne -b 0.0.0.0 -p 8000 --ping-interval 20 --ping-timeout 30 --application-close-timeout 30 core.asgi:application
 else
   echo "==> Ejecutando comando personalizado: $@"
   exec "$@"

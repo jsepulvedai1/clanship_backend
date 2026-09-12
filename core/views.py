@@ -10,6 +10,9 @@ except ImportError:
     resend = None
 
 from django.utils import timezone
+from django.core.cache import cache
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
 from users.models import User, ProfessionalProfile, AppVersionConfig, SeasonalCampaign
 from jobs.models import Job
 from chat.models import Message
@@ -182,7 +185,12 @@ def app_version_check_view(request):
     """
     app_type = request.GET.get('app_type', 'CLIENT').upper()
     platform = request.GET.get('platform', 'android').lower()
-    current_version = request.GET.get('version', '1.0.0')
+    current_version = request.GET.get('version', '1.0.0').strip()
+
+    cache_key = f"app_ver_{app_type}_{platform}_{current_version}"
+    cached_payload = cache.get(cache_key)
+    if cached_payload is not None:
+        return JsonResponse(cached_payload)
 
     # Intentar obtener la configuración desde la BD (Django Admin)
     db_config = AppVersionConfig.objects.filter(app_type=app_type, is_active=True).first()
@@ -223,7 +231,7 @@ def app_version_check_view(request):
     default_title = 'Actualización Requerida' if update_required else 'Actualización Disponible'
     default_message = 'Para continuar usando Clanship de manera segura, por favor actualiza la aplicación a la última versión disponible.' if update_required else 'Hay una nueva versión disponible con mejoras y correcciones.'
 
-    return JsonResponse({
+    response_data = {
         'success': True,
         'app_type': app_type,
         'current_version': current_version,
@@ -234,7 +242,9 @@ def app_version_check_view(request):
         'store_url': store_url,
         'title': title_custom or default_title,
         'message': message_custom or default_message
-    })
+    }
+    cache.set(cache_key, response_data, 300)
+    return JsonResponse(response_data)
 
 
 @csrf_exempt
@@ -245,6 +255,12 @@ def seasonal_config_api_view(request):
     de forma remota según la fecha actual y la prioridad de la campaña configurada en Django Admin.
     """
     app_type = request.GET.get('app_type', 'CLIENT').upper()
+
+    cache_key = f"seasonal_cfg_{app_type}"
+    cached_payload = cache.get(cache_key)
+    if cached_payload is not None:
+        return JsonResponse(cached_payload)
+
     now = timezone.now()
 
     campaign = SeasonalCampaign.objects.filter(
@@ -255,11 +271,13 @@ def seasonal_config_api_view(request):
     ).order_by('-priority', '-id').first()
 
     if not campaign:
-        return JsonResponse({
+        empty_payload = {
             'success': True,
             'has_active_campaign': False,
             'campaign': None
-        })
+        }
+        cache.set(cache_key, empty_payload, 300)
+        return JsonResponse(empty_payload)
 
     # Serializar tags destacados
     featured_tags_data = [
@@ -285,7 +303,7 @@ def seasonal_config_api_view(request):
     stat_card_rejected_bg_image_url = to_https(request.build_absolute_uri(campaign.stat_card_rejected_bg_image.url)) if campaign.stat_card_rejected_bg_image else None
     stat_card_scheduled_bg_image_url = to_https(request.build_absolute_uri(campaign.stat_card_scheduled_bg_image.url)) if campaign.stat_card_scheduled_bg_image else None
 
-    return JsonResponse({
+    response_data = {
         'success': True,
         'has_active_campaign': True,
         'campaign': {
@@ -352,5 +370,28 @@ def seasonal_config_api_view(request):
             },
             'featured_tags': featured_tags_data,
         }
-    })
+    }
+    cache.set(cache_key, response_data, 300)
+    return JsonResponse(response_data)
+
+
+@receiver([post_save, post_delete], sender=AppVersionConfig)
+def clear_app_version_cache(sender, **kwargs):
+    try:
+        if hasattr(cache, 'delete_pattern'):
+            cache.delete_pattern("*app_ver_*")
+    except Exception as e:
+        logger.warning(f"Error invalidating app version cache: {e}")
+
+
+@receiver([post_save, post_delete], sender=SeasonalCampaign)
+def clear_seasonal_cache(sender, **kwargs):
+    try:
+        cache.delete("seasonal_cfg_CLIENT")
+        cache.delete("seasonal_cfg_TRADESMAN")
+        cache.delete("seasonal_cfg_ALL")
+        if hasattr(cache, 'delete_pattern'):
+            cache.delete_pattern("*seasonal_cfg_*")
+    except Exception as e:
+        logger.warning(f"Error invalidating seasonal config cache: {e}")
 
