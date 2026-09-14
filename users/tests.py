@@ -179,4 +179,73 @@ class NationwideCoverageTestCase(TestCase):
         self.assertIsNotNone(res_ok.data['createJob']['job']['id'])
 
 
+class RegisterUserPhoneValidationTestCase(TestCase):
+    def test_register_user_missing_phone_fails(self):
+        mutation = '''
+        mutation {
+          registerUser(
+            email: "test_nophone@example.com",
+            password: "Password123!",
+            firstName: "Juan",
+            lastName: "Perez",
+            phoneNumber: ""
+          ) {
+            success
+          }
+        }
+        '''
+        res = schema.execute(mutation)
+        self.assertIsNotNone(res.errors)
+        self.assertIn("El número de teléfono es obligatorio", str(res.errors))
+
+    def test_register_user_duplicate_phone_fails(self):
+        from users.models import User
+        User.objects.create_user(
+            username="existing@example.com",
+            email="existing@example.com",
+            password="Password123!",
+            phone_number="+56912345678"
+        )
+        mutation = '''
+        mutation {
+          registerUser(
+            email: "new_user@example.com",
+            password: "Password123!",
+            firstName: "Pedro",
+            lastName: "Gomez",
+            phoneNumber: "+56912345678"
+          ) {
+            success
+          }
+        }
+        '''
+        res = schema.execute(mutation)
+        self.assertIsNotNone(res.errors)
+        self.assertIn("El número de teléfono ya está registrado", str(res.errors))
+
+    def test_register_user_with_valid_phone_succeeds(self):
+        mutation = '''
+        mutation {
+          registerUser(
+            email: "valid_user@example.com",
+            password: "Password123!",
+            firstName: "Maria",
+            lastName: "Lopez",
+            phoneNumber: "+56987654321"
+          ) {
+            success
+            user {
+              id
+              phoneNumber
+            }
+          }
+        }
+        '''
+        res = schema.execute(mutation)
+        self.assertIsNone(res.errors)
+        self.assertTrue(res.data['registerUser']['success'])
+        self.assertEqual(res.data['registerUser']['user']['phoneNumber'], "+56987654321")
+
+
+
 

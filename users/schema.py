@@ -5,7 +5,7 @@ from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, Professio
 import graphql_jwt
 from graphql_jwt.decorators import login_required
 from decimal import Decimal
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.core.cache import cache
 from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
@@ -76,6 +76,8 @@ class UserType(DjangoObjectType):
         return ""
 
     def resolve_active_jobs(self, info):
+        if hasattr(self, '_prefetched_active_jobs'):
+            return self._prefetched_active_jobs
         from jobs.models import Job
         from django.db.models import Q
         return Job.objects.filter(
@@ -84,6 +86,8 @@ class UserType(DjangoObjectType):
         ).count()
 
     def resolve_scheduled_jobs(self, info):
+        if hasattr(self, '_prefetched_scheduled_jobs'):
+            return self._prefetched_scheduled_jobs
         from jobs.models import Job
         from django.db.models import Q
         return Job.objects.filter(
@@ -92,6 +96,8 @@ class UserType(DjangoObjectType):
         ).count()
 
     def resolve_rejected_jobs(self, info):
+        if hasattr(self, '_prefetched_rejected_jobs'):
+            return self._prefetched_rejected_jobs
         from jobs.models import Job
         from django.db.models import Q
         return Job.objects.filter(
@@ -100,6 +106,8 @@ class UserType(DjangoObjectType):
         ).count()
 
     def resolve_completed_jobs(self, info):
+        if hasattr(self, '_prefetched_completed_jobs'):
+            return self._prefetched_completed_jobs
         from jobs.models import Job
         from django.db.models import Q
         return Job.objects.filter(
@@ -318,6 +326,62 @@ class AppConfigType(graphene.ObjectType):
     is_subscriptions_enabled = graphene.Boolean()
 
 
+def attach_job_counts_to_users(users):
+    """
+    Optimización N+1 para GraphQL:
+    Calcula los conteos de trabajos (active, scheduled, rejected, completed)
+    en solo 2 consultas agregadas en batch para toda la lista de usuarios,
+    en lugar de 4 consultas SQL individuales por cada usuario.
+    """
+    if not users:
+        return users
+    user_list = list(users)
+    uids = [u.id for u in user_list if getattr(u, 'id', None)]
+    if not uids:
+        return user_list
+
+    from jobs.models import Job
+
+    c_counts = Job.objects.filter(customer_id__in=uids).values("customer_id").annotate(
+        active=Count("id", filter=Q(status=Job.Status.REQUESTED)),
+        scheduled=Count("id", filter=Q(status__in=[Job.Status.AGREED, Job.Status.IN_VISIT])),
+        rejected=Count("id", filter=Q(status=Job.Status.CANCELLED)),
+        completed=Count("id", filter=Q(status=Job.Status.FINISHED)),
+    )
+    p_counts = Job.objects.filter(professional_id__in=uids).values("professional_id").annotate(
+        active=Count("id", filter=Q(status=Job.Status.REQUESTED)),
+        scheduled=Count("id", filter=Q(status__in=[Job.Status.AGREED, Job.Status.IN_VISIT])),
+        rejected=Count("id", filter=Q(status=Job.Status.CANCELLED)),
+        completed=Count("id", filter=Q(status=Job.Status.FINISHED)),
+    )
+
+    stats = {uid: {"active": 0, "scheduled": 0, "rejected": 0, "completed": 0} for uid in uids}
+    for row in c_counts:
+        uid = row["customer_id"]
+        if uid in stats:
+            stats[uid]["active"] += row["active"]
+            stats[uid]["scheduled"] += row["scheduled"]
+            stats[uid]["rejected"] += row["rejected"]
+            stats[uid]["completed"] += row["completed"]
+
+    for row in p_counts:
+        uid = row["professional_id"]
+        if uid in stats:
+            stats[uid]["active"] += row["active"]
+            stats[uid]["scheduled"] += row["scheduled"]
+            stats[uid]["rejected"] += row["rejected"]
+            stats[uid]["completed"] += row["completed"]
+
+    for u in user_list:
+        user_stats = stats.get(u.id, {"active": 0, "scheduled": 0, "rejected": 0, "completed": 0})
+        u._prefetched_active_jobs = user_stats["active"]
+        u._prefetched_scheduled_jobs = user_stats["scheduled"]
+        u._prefetched_rejected_jobs = user_stats["rejected"]
+        u._prefetched_completed_jobs = user_stats["completed"]
+
+    return user_list
+
+
 class Query(graphene.ObjectType):
     me = graphene.Field(UserType)
     specialties = graphene.List(SpecialtyType)
@@ -532,10 +596,10 @@ class Query(graphene.ObjectType):
         user = info.context.user
         if user.is_anonymous:
             raise Exception('No autenticado')
-        return user.favorite_professionals.select_related(
+        return attach_job_counts_to_users(user.favorite_professionals.select_related(
             'professional_profile__plan',
             'professional_profile__specialty'
-        ).prefetch_related('saved_addresses').all()
+        ).prefetch_related('saved_addresses').all())
 
     def resolve_subscription_plans(self, info):
         try:
@@ -560,7 +624,8 @@ class Query(graphene.ObjectType):
                 Q(email__icontains=search) |
                 Q(phone_number__icontains=search)
             )
-        return queryset.order_by('-date_joined')
+        users = list(queryset.order_by('-date_joined'))
+        return attach_job_counts_to_users(users)
 
     def resolve_professionals(self, info, specialty_id=None, include_unverified=False):
         user = info.context.user
