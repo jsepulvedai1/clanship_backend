@@ -749,11 +749,21 @@ class SystemSetting(models.Model):
 
         return True
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        from django.core.cache import cache
+        cache.delete('system_setting_singleton')
+
     @classmethod
     def get_settings(cls):
-        setting = cls.objects.first()
+        from django.core.cache import cache
+        cached = cache.get('system_setting_singleton')
+        if cached is not None:
+            return cached
+        setting = cls.objects.select_related('referral_reward_plan').first()
         if not setting:
             setting = cls.objects.create()
+        cache.set('system_setting_singleton', setting, 300)
         return setting
 
     @classmethod

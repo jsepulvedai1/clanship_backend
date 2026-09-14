@@ -231,9 +231,13 @@ class ProfessionalProfileType(DjangoObjectType):
         fields = "__all__"
 
     def resolve_referrals_total_count(self, info):
+        if hasattr(self, '_prefetched_referrals_total'):
+            return self._prefetched_referrals_total
         return self.referrals_total_count
 
     def resolve_referrals_pending_count(self, info):
+        if hasattr(self, '_prefetched_referrals_pending'):
+            return self._prefetched_referrals_pending
         return self.referrals_pending_count
 
     def resolve_referrals_target_count(self, info):
@@ -252,6 +256,8 @@ class ProfessionalProfileType(DjangoObjectType):
         return SystemSetting.get_settings().referral_reward_days
 
     def resolve_referrals_rewards_earned_count(self, info):
+        if hasattr(self, '_prefetched_referrals_earned'):
+            return self._prefetched_referrals_earned
         return self.referrals_rewards_earned_count
 
     def resolve_referral_max_rewards_per_user(self, info):
@@ -275,10 +281,12 @@ class ProfessionalProfileType(DjangoObjectType):
         return tag_list
 
     def resolve_documents(self, info):
-        user = info.context.user
-        if not user.is_anonymous and (user == self.user or user.is_staff or getattr(user, 'user_type', None) == 'ADMIN'):
-            return self.documents.all()
-        return self.documents.filter(is_visible=True)
+        user = getattr(info.context, 'user', None)
+        can_see_all = user and not user.is_anonymous and (user == self.user or user.is_staff or getattr(user, 'user_type', None) == 'ADMIN')
+        all_docs = self.documents.all()
+        if can_see_all:
+            return all_docs
+        return [d for d in all_docs if d.is_visible]
 
     def resolve_requires_plan_upgrade(self, info):
         return self.requires_plan_upgrade
@@ -380,6 +388,49 @@ def attach_job_counts_to_users(users):
         u._prefetched_completed_jobs = user_stats["completed"]
 
     return user_list
+
+
+def attach_referral_counts_to_profiles(profiles):
+    """
+    Optimización N+1 para GraphQL:
+    Calcula los conteos de referidos en solo 2 consultas agregadas en batch
+    para toda la lista de perfiles profesionales, en lugar de 3 consultas SQL por cada profesional.
+    """
+    if not profiles:
+        return profiles
+    profile_list = list(profiles)
+    user_ids = [p.user_id for p in profile_list if getattr(p, "user_id", None)]
+    if not user_ids:
+        return profile_list
+
+    from users.models import AssociateReferral, ReferralRewardLog
+
+    ref_counts = AssociateReferral.objects.filter(referrer_id__in=user_ids).values("referrer_id").annotate(
+        total=Count("id"),
+        pending=Count("id", filter=Q(reward_granted=False))
+    )
+    reward_counts = ReferralRewardLog.objects.filter(professional_id__in=user_ids).values("professional_id").annotate(
+        earned=Count("id")
+    )
+
+    stats = {uid: {"total": 0, "pending": 0, "earned": 0} for uid in user_ids}
+    for r in ref_counts:
+        uid = r["referrer_id"]
+        if uid in stats:
+            stats[uid]["total"] = r["total"]
+            stats[uid]["pending"] = r["pending"]
+    for r in reward_counts:
+        uid = r["professional_id"]
+        if uid in stats:
+            stats[uid]["earned"] = r["earned"]
+
+    for p in profile_list:
+        s = stats.get(p.user_id, {"total": 0, "pending": 0, "earned": 0})
+        p._prefetched_referrals_total = s["total"]
+        p._prefetched_referrals_pending = s["pending"]
+        p._prefetched_referrals_earned = s["earned"]
+
+    return profile_list
 
 
 class Query(graphene.ObjectType):
@@ -628,16 +679,17 @@ class Query(graphene.ObjectType):
         return attach_job_counts_to_users(users)
 
     def resolve_professionals(self, info, specialty_id=None, include_unverified=False):
-        user = info.context.user
-        can_see_unverified = include_unverified and (not user.is_anonymous and (user.is_staff or getattr(user, 'user_type', None) == 'ADMIN'))
+        user = getattr(info.context, 'user', None)
+        can_see_unverified = include_unverified and (user and not user.is_anonymous and (user.is_staff or getattr(user, 'user_type', None) == 'ADMIN'))
         queryset = ProfessionalProfile.objects.select_related(
             'user', 'specialty', 'plan'
-        ).prefetch_related('tags', 'subtags', 'photos', 'specialties')
+        ).prefetch_related('tags', 'subtags', 'photos', 'documents', 'specialties')
         if not can_see_unverified and not include_unverified:
             queryset = queryset.filter(is_verified=True)
         if specialty_id:
             queryset = queryset.filter(specialty_id=specialty_id)
-        return queryset.order_by('-id')
+        profiles = list(queryset.order_by('-id'))
+        return attach_referral_counts_to_profiles(profiles)
 
     def resolve_paginated_professionals(
         self, info, page=1, page_size=10, search=None, specialty_id=None,
@@ -645,8 +697,8 @@ class Query(graphene.ObjectType):
         is_active=None, include_unverified=True, order_by="-date_joined"
     ):
         import math
-        user = info.context.user
-        is_admin = not user.is_anonymous and (user.is_staff or getattr(user, 'user_type', None) == 'ADMIN')
+        user = getattr(info.context, 'user', None)
+        is_admin = user and not user.is_anonymous and (user.is_staff or getattr(user, 'user_type', None) == 'ADMIN')
 
         queryset = ProfessionalProfile.objects.all()
 
@@ -715,7 +767,7 @@ class Query(graphene.ObjectType):
             page_size=page_size,
             has_next=page < total_pages,
             has_prev=page > 1,
-            results=list(results_qs)
+            results=attach_referral_counts_to_profiles(list(results_qs))
         )
 
     def resolve_nearby_professionals(self, info, latitude, longitude, radius_km, specialty_id=None, query=None, tag_ids=None, subtag_ids=None):
@@ -848,7 +900,7 @@ class Query(graphene.ObjectType):
 
         # Sort by plan search priority (descending) then distance (ascending)
         results.sort(key=lambda u: (-get_plan_priority(u), u.distance))
-        return results
+        return attach_job_counts_to_users(results)
 
 import base64
 from django.core.files.base import ContentFile
