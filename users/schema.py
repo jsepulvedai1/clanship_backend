@@ -848,29 +848,36 @@ class RegisterUser(graphene.Mutation):
         password = graphene.String(required=True)
         first_name = graphene.String(required=True)
         last_name = graphene.String(required=True)
-        phone_number = graphene.String()
+        phone_number = graphene.String(required=True)
         user_type = graphene.String()
         referral_code = graphene.String(required=False)
 
     user = graphene.Field(UserType)
     success = graphene.Boolean()
 
-    def mutate(self, info, email, password, first_name, last_name, phone_number=None, user_type='CUSTOMER', referral_code=None):
+    def mutate(self, info, email, password, first_name, last_name, phone_number, user_type='CUSTOMER', referral_code=None):
         email_clean = email.strip().lower()
         if len(first_name) > 30:
             raise Exception('El nombre no puede tener más de 30 caracteres')
         if len(last_name) > 30:
             raise Exception('El apellido no puede tener más de 30 caracteres')
 
+        phone_clean = phone_number.strip() if phone_number else None
+        if not phone_clean:
+            raise Exception('El número de teléfono es obligatorio')
+
         if User.objects.filter(email__iexact=email_clean).exists() or User.objects.filter(username__iexact=email_clean).exists():
             raise Exception('El usuario ya existe')
+
+        if User.objects.filter(phone_number=phone_clean).exists():
+            raise Exception('El número de teléfono ya está registrado por otro usuario')
 
         user = User(
             username=email_clean,
             email=email_clean,
             first_name=first_name.strip(),
             last_name=last_name.strip(),
-            phone_number=phone_number.strip() if phone_number else None,
+            phone_number=phone_clean,
             user_type=user_type
         )
         user.set_password(password)
@@ -1513,8 +1520,14 @@ class VerifyTradesman(graphene.Mutation):
             profile.rejection_reason = reason
             profile.save()
             msg = f"Maestro '{target_user.get_full_name()}' marcado como observado/rechazado."
+        elif action_upper in ['PENDING', 'RESET']:
+            profile.is_verified = False
+            profile.verification_status = ProfessionalProfile.VerificationStatus.PENDING
+            profile.rejection_reason = None
+            profile.save()
+            msg = f"Maestro '{target_user.get_full_name()}' restablecido a pendiente de revisión."
         else:
-            raise Exception(f"Acción '{action}' inválida. Debe ser APPROVE o REJECT.")
+            raise Exception(f"Acción '{action}' inválida. Debe ser APPROVE, REJECT o PENDING.")
 
         return VerifyTradesman(success=True, user=target_user, message=msg)
 

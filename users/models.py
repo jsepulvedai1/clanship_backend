@@ -27,7 +27,7 @@ class User(AbstractUser):
         max_length=15, 
         unique=True, 
         verbose_name="Número de Teléfono",
-        null=True, blank=True
+        null=True, blank=False
     )
     user_type = models.CharField(
         max_length=20,
