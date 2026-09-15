@@ -8,7 +8,8 @@ User = get_user_model()
 class SingleSessionMiddleware(object):
     def resolve(self, next, root, info, **args):
         request = info.context
-        if hasattr(request, 'META'):
+        if hasattr(request, 'META') and not getattr(request, '_single_session_validated', False):
+            request._single_session_validated = True
             auth_header = request.META.get('HTTP_AUTHORIZATION', '')
             if auth_header and (' ' in auth_header):
                 parts = auth_header.split(' ', 1)

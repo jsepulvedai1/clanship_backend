@@ -45,13 +45,15 @@ class User(AbstractUser):
         max_digits=12, 
         decimal_places=9, 
         null=True, blank=True, 
-        verbose_name="Latitud"
+        verbose_name="Latitud",
+        db_index=True
     )
     longitude = models.DecimalField(
         max_digits=12, 
         decimal_places=9, 
         null=True, blank=True, 
-        verbose_name="Longitud"
+        verbose_name="Longitud",
+        db_index=True
     )
     address = models.CharField(
         max_length=255, 
@@ -322,13 +324,15 @@ class ProfessionalProfile(models.Model):
         max_digits=12, 
         decimal_places=9, 
         null=True, blank=True, 
-        verbose_name="Latitud Profesional"
+        verbose_name="Latitud Profesional",
+        db_index=True
     )
     longitude = models.DecimalField(
         max_digits=12, 
         decimal_places=9, 
         null=True, blank=True, 
-        verbose_name="Longitud Profesional"
+        verbose_name="Longitud Profesional",
+        db_index=True
     )
 
     # Radio de servicio y etiquetas asociadas

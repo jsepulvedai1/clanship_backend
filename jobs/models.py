@@ -172,8 +172,8 @@ class PublicJobRequest(models.Model):
     title = models.CharField(max_length=150, verbose_name="Título del servicio")
     description = models.TextField(verbose_name="Descripción detallada")
     address = models.CharField(max_length=255, verbose_name="Dirección de la visita")
-    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name="Latitud")
-    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name="Longitud")
+    latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name="Latitud", db_index=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True, verbose_name="Longitud", db_index=True)
     photo = models.ImageField(upload_to="public_job_photos/", null=True, blank=True, verbose_name="Fotografía del problema")
     photos = models.JSONField(default=list, blank=True, verbose_name="Fotografías del problema (máximo 4)")
     desired_date = models.DateField(null=True, blank=True, verbose_name="Fecha deseada del trabajo")
@@ -184,16 +184,21 @@ class PublicJobRequest(models.Model):
         max_length=20,
         choices=Status.choices,
         default=Status.OPEN,
-        verbose_name="Estado"
+        verbose_name="Estado",
+        db_index=True
     )
     
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
     expires_at = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de expiración")
 
     class Meta:
         verbose_name = "Solicitud Abierta"
         verbose_name_plural = "Solicitudes Abiertas"
+        indexes = [
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['latitude', 'longitude']),
+        ]
 
     def __str__(self):
         return f"Solicitud Abierta {self.id}: {self.title} ({self.customer.username})"
@@ -238,6 +243,9 @@ class JobProposal(models.Model):
         verbose_name = "Propuesta de Trabajo"
         verbose_name_plural = "Propuestas de Trabajo"
         unique_together = ('public_request', 'professional')
+        indexes = [
+            models.Index(fields=['public_request', '-created_at']),
+        ]
 
     def __str__(self):
         return f"Propuesta {self.id} de {self.professional.username} para Solicitud #{self.public_request_id}"

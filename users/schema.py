@@ -56,9 +56,14 @@ class UserType(DjangoObjectType):
 
     def resolve_is_favorite(self, info):
         user = info.context.user
-        if user.is_anonymous:
+        if not user or user.is_anonymous:
             return False
-        return user.favorite_professionals.filter(id=self.id).exists()
+        if not hasattr(user, '_favorite_prof_ids'):
+            try:
+                user._favorite_prof_ids = set(user.favorite_professionals.values_list('id', flat=True))
+            except Exception:
+                user._favorite_prof_ids = set()
+        return self.id in user._favorite_prof_ids
 
     def resolve_avatar_url(self, info):
         if self.avatar:
@@ -650,7 +655,14 @@ class Query(graphene.ObjectType):
         return attach_job_counts_to_users(user.favorite_professionals.select_related(
             'professional_profile__plan',
             'professional_profile__specialty'
-        ).prefetch_related('saved_addresses').all())
+        ).prefetch_related(
+            'saved_addresses',
+            'professional_profile__tags',
+            'professional_profile__subtags',
+            'professional_profile__photos',
+            'professional_profile__documents',
+            'professional_profile__specialties'
+        ).all())
 
     def resolve_subscription_plans(self, info):
         try:
@@ -830,7 +842,10 @@ class Query(graphene.ObjectType):
             ).prefetch_related(
                 'saved_addresses',
                 'professional_profile__tags',
-                'professional_profile__subtags'
+                'professional_profile__subtags',
+                'professional_profile__photos',
+                'professional_profile__documents',
+                'professional_profile__specialties'
             )
         else:
             # Cálculo aproximado de Bounding Box (1 grado latitud ~ 111km)
@@ -848,7 +863,10 @@ class Query(graphene.ObjectType):
             ).prefetch_related(
                 'saved_addresses',
                 'professional_profile__tags',
-                'professional_profile__subtags'
+                'professional_profile__subtags',
+                'professional_profile__photos',
+                'professional_profile__documents',
+                'professional_profile__specialties'
             )
 
         # Convert to list and calculate Haversine distance for each

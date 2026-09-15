@@ -418,10 +418,22 @@ class Query(graphene.ObjectType):
 
             if not nationwide_mode and prof_profile.latitude and prof_profile.longitude:
                 max_radius = float(prof_profile.service_radius or 30.0)
+                lat = float(prof_profile.latitude)
+                lon = float(prof_profile.longitude)
+                lat_range = max_radius / 111.0
+                lon_range = max_radius / (111.0 * math.cos(math.radians(lat)))
+
+                # Pre-filtrado rápido por Bounding Box en SQL
+                queryset = queryset.filter(
+                    Q(latitude__range=(lat - lat_range, lat + lat_range),
+                      longitude__range=(lon - lon_range, lon + lon_range)) |
+                    Q(latitude__isnull=True) | Q(longitude__isnull=True)
+                )
+
                 filtered_ids = []
                 for req in queryset:
                     if req.latitude and req.longitude:
-                        dist = haversine_km(prof_profile.latitude, prof_profile.longitude, req.latitude, req.longitude)
+                        dist = haversine_km(lat, lon, req.latitude, req.longitude)
                         if dist <= max_radius:
                             filtered_ids.append(req.id)
                     else:

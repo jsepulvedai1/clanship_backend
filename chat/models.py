@@ -55,7 +55,7 @@ class Message(models.Model):
         default='TEXT',
         verbose_name="Tipo de mensaje"
     )
-    is_read = models.BooleanField(default=False)
+    is_read = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
@@ -64,6 +64,7 @@ class Message(models.Model):
         ordering = ['created_at']
         indexes = [
             models.Index(fields=['room', 'created_at']),
+            models.Index(fields=['room', 'is_read', 'sender']),
         ]
 
     def __str__(self):
