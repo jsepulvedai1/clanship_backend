@@ -983,14 +983,14 @@ class RegisterUser(graphene.Mutation):
         password = graphene.String(required=True)
         first_name = graphene.String(required=True)
         last_name = graphene.String(required=True)
-        phone_number = graphene.String(required=True)
+        phone_number = graphene.String(required=False)
         user_type = graphene.String()
         referral_code = graphene.String(required=False)
 
     user = graphene.Field(UserType)
     success = graphene.Boolean()
 
-    def mutate(self, info, email, password, first_name, last_name, phone_number, user_type='CUSTOMER', referral_code=None):
+    def mutate(self, info, email, password, first_name, last_name, phone_number=None, user_type='CUSTOMER', referral_code=None):
         email_clean = email.strip().lower()
         if len(first_name) > 30:
             raise Exception('El nombre no puede tener más de 30 caracteres')
@@ -998,13 +998,11 @@ class RegisterUser(graphene.Mutation):
             raise Exception('El apellido no puede tener más de 30 caracteres')
 
         phone_clean = phone_number.strip() if phone_number else None
-        if not phone_clean:
-            raise Exception('El número de teléfono es obligatorio')
 
         if User.objects.filter(email__iexact=email_clean).exists() or User.objects.filter(username__iexact=email_clean).exists():
             raise Exception('El usuario ya existe')
 
-        if User.objects.filter(phone_number=phone_clean).exists():
+        if phone_clean and User.objects.filter(phone_number=phone_clean).exists():
             raise Exception('El número de teléfono ya está registrado por otro usuario')
 
         user = User(
