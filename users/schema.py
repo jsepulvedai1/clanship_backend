@@ -1140,6 +1140,22 @@ class RegisterUser(graphene.Mutation):
             except Exception as e:
                 print(f"Error processing referral code during registration: {e}")
 
+        try:
+            from django.core.mail import send_mail
+            from django.conf import settings
+            subject = 'Nuevo usuario registrado en Clanship'
+            message = f'Se ha registrado un nuevo usuario.\n\nNombre: {user.first_name} {user.last_name}\nEmail: {user.email}\nTeléfono: {user.phone_number}\nTipo: {user.user_type}'
+            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@clanship.cl')
+            send_mail(
+                subject,
+                message,
+                from_email,
+                ['soporte@clanship.cl'],
+                fail_silently=True,
+            )
+        except Exception as e:
+            print(f"Error enviando correo de nuevo registro: {e}")
+
         return RegisterUser(user=user, success=True)
 
 class UpdateAvailability(graphene.Mutation):
