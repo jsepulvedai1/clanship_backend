@@ -1141,20 +1141,28 @@ class RegisterUser(graphene.Mutation):
                 print(f"Error processing referral code during registration: {e}")
 
         try:
+            import threading
             from django.core.mail import send_mail
             from django.conf import settings
             subject = 'Nuevo usuario registrado en Clanship'
             message = f'Se ha registrado un nuevo usuario.\n\nNombre: {user.first_name} {user.last_name}\nEmail: {user.email}\nTeléfono: {user.phone_number}\nTipo: {user.user_type}'
             from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@clanship.cl')
-            send_mail(
-                subject,
-                message,
-                from_email,
-                ['soporte@clanship.cl'],
-                fail_silently=True,
-            )
+            
+            def send_email_async():
+                try:
+                    send_mail(
+                        subject,
+                        message,
+                        from_email,
+                        ['soporte@clanship.cl'],
+                        fail_silently=True,
+                    )
+                except Exception as e:
+                    print(f"Error asíncrono enviando correo: {e}")
+            
+            threading.Thread(target=send_email_async).start()
         except Exception as e:
-            print(f"Error enviando correo de nuevo registro: {e}")
+            print(f"Error iniciando hilo de correo de nuevo registro: {e}")
 
         return RegisterUser(user=user, success=True)
 
