@@ -1140,27 +1140,34 @@ class RegisterUser(graphene.Mutation):
 
         try:
             import threading
-            from django.core.mail import send_mail
             from django.conf import settings
+            import resend
+            
             subject = 'Nuevo usuario registrado en Clanship'
             message = f'Se ha registrado un nuevo usuario.\n\nNombre: {user.first_name} {user.last_name}\nEmail: {user.email}\nTeléfono: {user.phone_number}\nTipo: {user.user_type}'
             from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@clanship.cl')
+            resend_api_key = getattr(settings, 'RESEND_API_KEY', None)
             
             def send_email_async():
                 try:
-                    send_mail(
-                        subject,
-                        message,
-                        from_email,
-                        ['soporte@clanship.cl'],
-                        fail_silently=True,
-                    )
+                    if resend_api_key:
+                        print(f"Intentando enviar correo de registro vía Resend a soporte@clanship.cl...", flush=True)
+                        resend.api_key = resend_api_key
+                        resend.Emails.send({
+                            "from": from_email,
+                            "to": ["soporte@clanship.cl"],
+                            "subject": subject,
+                            "text": message,
+                        })
+                        print("Correo enviado exitosamente vía Resend.", flush=True)
+                    else:
+                        print("Error: RESEND_API_KEY no está configurada. El correo no pudo enviarse.", flush=True)
                 except Exception as e:
-                    print(f"Error asíncrono enviando correo: {e}")
+                    print(f"Error CRÍTICO enviando correo de registro (Resend): {e}", flush=True)
             
             threading.Thread(target=send_email_async).start()
         except Exception as e:
-            print(f"Error iniciando hilo de correo de nuevo registro: {e}")
+            print(f"Error iniciando hilo de correo de nuevo registro: {e}", flush=True)
 
         return RegisterUser(user=user, success=True)
 
