@@ -205,7 +205,12 @@ class ProfessionalDocumentType(DjangoObjectType):
 
     def resolve_file_url(self, info):
         if self.file:
-            return info.context.build_absolute_uri(self.file.url)
+            from django.core.signing import TimestampSigner
+            from django.urls import reverse
+            signer = TimestampSigner()
+            token = signer.sign(str(self.id))
+            path = reverse('secure_document', kwargs={'token': token})
+            return info.context.build_absolute_uri(path)
         return None
 
 class ValidateReferralCodeType(graphene.ObjectType):

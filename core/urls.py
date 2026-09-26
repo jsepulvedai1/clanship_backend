@@ -24,11 +24,14 @@ class CustomGraphQLView(GraphQLView):
 
 from django.conf import settings
 from django.conf.urls.static import static
-from core.views import contact_api_view, app_version_check_view, seasonal_config_api_view
+from core.views import contact_api_view, app_version_check_view, seasonal_config_api_view, secure_document_view
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path("graphql/", csrf_exempt(CustomGraphQLView.as_view(graphiql=True))),
+    
+    # Secure Document Viewer API
+    path('api/v1/secure-document/<str:token>/', secure_document_view, name='secure_document'),
     
     # Contact Form API Endpoint
     path('api/v1/contact/', contact_api_view, name='contact_api'),

@@ -1,11 +1,11 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin
-from .models import Job
+from .models import Job, JobReview
 
 @admin.register(Job)
 class JobAdmin(ModelAdmin):
-    list_display = ('id', 'customer', 'professional', 'scheduled_date', 'status_badge', 'agreed_price', 'created_at')
+    list_display = ('id', 'customer', 'professional', 'scheduled_date', 'status_badge', 'agreed_price', 'is_reviewed', 'created_at')
     list_filter = ('status', 'scheduled_date')
     search_fields = (
         'customer__username', 'customer__first_name', 'customer__last_name',
@@ -29,4 +29,15 @@ class JobAdmin(ModelAdmin):
             color_class,
             obj.get_status_display()
         )
+
+    @admin.display(description="¿Calificado?", boolean=True)
+    def is_reviewed(self, obj):
+        return hasattr(obj, 'review') and obj.review is not None
+
+
+@admin.register(JobReview)
+class JobReviewAdmin(ModelAdmin):
+    list_display = ('id', 'job', 'rating', 'customer', 'professional', 'created_at')
+    list_filter = ('rating',)
+    search_fields = ('comment', 'job__id', 'customer__username', 'professional__username')
 

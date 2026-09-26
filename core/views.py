@@ -202,6 +202,7 @@ def app_version_check_view(request):
         store_url = store_url or ''
         title_custom = db_config.title
         message_custom = db_config.message
+        shorebird_mandatory = db_config.shorebird_mandatory
     else:
         # Fallback a settings si no hay registro creado en BD aún
         if app_type == 'TRADESMAN':
@@ -214,6 +215,7 @@ def app_version_check_view(request):
             store_url = getattr(settings, 'CLIENT_STORE_URL_IOS' if platform == 'ios' else 'CLIENT_STORE_URL_ANDROID', '')
         title_custom = None
         message_custom = None
+        shorebird_mandatory = False
 
     def parse_version(v_str):
         try:
@@ -241,7 +243,8 @@ def app_version_check_view(request):
         'update_recommended': update_recommended,
         'store_url': store_url,
         'title': title_custom or default_title,
-        'message': message_custom or default_message
+        'message': message_custom or default_message,
+        'shorebird_mandatory': shorebird_mandatory
     }
     cache.set(cache_key, response_data, 300)
     return JsonResponse(response_data)
@@ -395,3 +398,28 @@ def clear_seasonal_cache(sender, **kwargs):
     except Exception as e:
         logger.warning(f"Error invalidating seasonal config cache: {e}")
 
+
+from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
+from django.http import FileResponse, HttpResponseForbidden, Http404
+from users.models import ProfessionalDocument
+
+def secure_document_view(request, token):
+    """
+    Sirve documentos de profesionales de forma segura validando un token firmado temporalmente.
+    """
+    signer = TimestampSigner()
+    try:
+        # Token válido por 1 hora (3600 segundos)
+        doc_id = signer.unsign(token, max_age=3600)
+    except SignatureExpired:
+        return HttpResponseForbidden("El enlace ha expirado. Vuelve a cargar el perfil para obtener uno nuevo.")
+    except BadSignature:
+        return HttpResponseForbidden("El enlace es inválido.")
+        
+    try:
+        doc = ProfessionalDocument.objects.get(id=doc_id)
+        if not doc.file:
+            raise Http404("El documento no tiene archivo adjunto.")
+        return FileResponse(doc.file.open('rb'))
+    except ProfessionalDocument.DoesNotExist:
+        raise Http404("Documento no encontrado.")

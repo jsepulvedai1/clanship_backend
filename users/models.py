@@ -1058,6 +1058,11 @@ class AppVersionConfig(models.Model):
         default='Para continuar usando Clanship de manera segura, por favor actualiza la aplicación a la última versión disponible.',
         verbose_name="Mensaje de Bloqueo"
     )
+    shorebird_mandatory = models.BooleanField(
+        default=False,
+        verbose_name="Shorebird Patch Obligatorio",
+        help_text="Si está activo, obliga a descargar el último parche OTA antes de usar la app."
+    )
     is_active = models.BooleanField(
         default=True,
         verbose_name="Control de Versión Activo"
