@@ -803,6 +803,51 @@ class AcceptJobProposal(graphene.Mutation):
         return AcceptJobProposal(success=True, job=job)
 
 
+
+class RenegotiateJobPrice(graphene.Mutation):
+    class Arguments:
+        job_id = graphene.Int(required=True)
+        agreed_price = graphene.Decimal(required=True)
+
+    success = graphene.Boolean()
+    job = graphene.Field(JobType)
+
+    @login_required
+    def mutate(self, info, job_id, agreed_price):
+        user = info.context.user
+        try:
+            job = Job.objects.get(pk=job_id)
+        except Job.DoesNotExist:
+            raise Exception("El trabajo no existe.")
+
+        if job.customer != user:
+            raise Exception("Solo el cliente puede renegociar el valor.")
+
+        if job.status != Job.Status.SCHEDULED:
+            raise Exception("Solo se puede renegociar cuando está propuesto por confirmar.")
+
+        job.agreed_price = agreed_price
+        job.status = Job.Status.REQUESTED
+        job.is_read = False
+        job.save()
+
+        # Notificar al profesional de la contraoferta
+        try:
+            prof = job.professional
+            if prof:
+                cust_name = job.customer.get_full_name() or job.customer.username
+                from core.firebase import send_user_push_notification
+                send_user_push_notification(
+                    user=prof,
+                    title="Nueva contraoferta",
+                    body=f"El cliente {cust_name} ha propuesto un nuevo precio.",
+                    data={"event": "job_updated", "job_id": job.id}
+                )
+        except Exception as e:
+            print(f"Error al enviar notificacion push: {e}")
+
+        return RenegotiateJobPrice(success=True, job=job)
+
 class CancelPublicJobRequest(graphene.Mutation):
     class Arguments:
         public_request_id = graphene.Int(required=True)
@@ -832,6 +877,7 @@ class Mutation(graphene.ObjectType):
     create_public_job_request = CreatePublicJobRequest.Field()
     submit_job_proposal = SubmitJobProposal.Field()
     accept_job_proposal = AcceptJobProposal.Field()
+    renegotiate_job_price = RenegotiateJobPrice.Field()
     cancel_public_job_request = CancelPublicJobRequest.Field()
 
 
