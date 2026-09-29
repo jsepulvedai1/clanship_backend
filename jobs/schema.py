@@ -1,6 +1,6 @@
 import graphene
 from graphene_django import DjangoObjectType
-from .models import Job, JobReview, PublicJobRequest, JobProposal
+from .models import Job, JobReview, PublicJobRequest, JobProposal, JobProposalAttachment
 from users.models import Specialty
 from django.contrib.auth import get_user_model
 from graphql_jwt.decorators import login_required
@@ -32,14 +32,23 @@ def format_clp(amount):
         return f"${amount}"
 
 
+class JobProposalAttachmentType(DjangoObjectType):
+    class Meta:
+        model = JobProposalAttachment
+        fields = "__all__"
+
 class JobProposalType(DjangoObjectType):
     professional_name = graphene.String()
     professional_avatar_url = graphene.String()
     professional_rating = graphene.Float()
+    attachments = graphene.List(JobProposalAttachmentType)
 
     class Meta:
         model = JobProposal
         fields = "__all__"
+
+    def resolve_attachments(self, info):
+        return self.attachments.all()
 
     def resolve_professional_name(self, info):
         return self.professional.get_full_name() or self.professional.username
@@ -692,12 +701,13 @@ class SubmitJobProposal(graphene.Mutation):
         scheduled_date = graphene.Date(required=True)
         scheduled_time = graphene.Time(required=True)
         message = graphene.String(required=False)
+        attachments_base64 = graphene.List(graphene.String, required=False)
 
     success = graphene.Boolean()
     proposal = graphene.Field(JobProposalType)
 
     @login_required
-    def mutate(self, info, public_request_id, estimated_price, scheduled_date, scheduled_time, message=""):
+    def mutate(self, info, public_request_id, estimated_price, scheduled_date, scheduled_time, message="", attachments_base64=None):
         user = info.context.user
         if user.user_type != 'PROFESSIONAL':
             raise Exception("Solo los profesionales pueden enviar propuestas.")
@@ -709,7 +719,9 @@ class SubmitJobProposal(graphene.Mutation):
 
         # Verificar límite de 5 propuestas por solicitud
         if public_request.proposals.count() >= 5:
-            raise Exception("Esta solicitud ya ha alcanzado el límite máximo de 5 cotizaciones.")
+            # Check if this user already has a proposal, if so, they are updating it, which is allowed.
+            if not JobProposal.objects.filter(public_request=public_request, professional=user).exists():
+                raise Exception("Esta solicitud ya ha alcanzado el límite máximo de 5 cotizaciones.")
 
         # Crear o actualizar propuesta del profesional
         proposal, created = JobProposal.objects.update_or_create(
@@ -723,6 +735,40 @@ class SubmitJobProposal(graphene.Mutation):
                 'status': JobProposal.Status.PENDING
             }
         )
+
+        # Procesar attachments
+        if attachments_base64:
+            import base64
+            from django.core.files.base import ContentFile
+            import uuid
+
+            # Opcional: limpiar adjuntos anteriores si se trata de un update
+            if not created:
+                proposal.attachments.all().delete()
+
+            for attachment_b64 in attachments_base64:
+                try:
+                    if ';base64,' in attachment_b64:
+                        header, imgstr = attachment_b64.split(';base64,')
+                        # Extract mimetype from header, e.g., data:image/jpeg or data:application/pdf
+                        mime_type = header.split(':')[1] if ':' in header else ''
+                        ext = mime_type.split('/')[-1] if '/' in mime_type else 'bin'
+                    else:
+                        imgstr = attachment_b64
+                        mime_type = ''
+                        ext = 'bin'
+                        
+                    file_name = f"proposal_{proposal.id}_att_{uuid.uuid4().hex[:8]}.{ext}"
+                    content = ContentFile(base64.b64decode(imgstr), name=file_name)
+                    JobProposalAttachment.objects.create(
+                        proposal=proposal,
+                        file=content,
+                        file_type=mime_type,
+                        file_name=file_name
+                    )
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Error procesando adjunto de cotización: {e}")
 
         # Notificar al cliente por push
         try:

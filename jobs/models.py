@@ -251,3 +251,33 @@ class JobProposal(models.Model):
         return f"Propuesta {self.id} de {self.professional.username} para Solicitud #{self.public_request_id}"
 
 
+class JobProposalAttachment(models.Model):
+    """
+    Archivos adjuntos (fotos, PDFs, etc.) para una cotización/propuesta.
+    """
+    proposal = models.ForeignKey(
+        JobProposal,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+        verbose_name="Cotización/Propuesta"
+    )
+    file = models.FileField(upload_to="proposal_attachments/", verbose_name="Archivo")
+    file_type = models.CharField(
+        max_length=50, 
+        blank=True, 
+        verbose_name="Tipo de archivo (MIME)"
+    )
+    file_name = models.CharField(
+        max_length=255, 
+        blank=True, 
+        verbose_name="Nombre original del archivo"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Adjunto de Propuesta"
+        verbose_name_plural = "Adjuntos de Propuesta"
+
+    def __str__(self):
+        return f"Adjunto {self.id} para Propuesta #{self.proposal_id}"
+
