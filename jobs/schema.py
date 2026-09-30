@@ -33,9 +33,28 @@ def format_clp(amount):
 
 
 class JobProposalAttachmentType(DjangoObjectType):
+    file = graphene.String()
+    file_url = graphene.String()
+
     class Meta:
         model = JobProposalAttachment
         fields = "__all__"
+
+    def resolve_file(self, info):
+        if not self.file:
+            return None
+        try:
+            return info.context.build_absolute_uri(self.file.url)
+        except Exception:
+            url = getattr(self.file, 'url', str(self.file))
+            if url.startswith('http://') or url.startswith('https://'):
+                return url
+            if url.startswith('/'):
+                return f"https://api.clanship.cl{url}"
+            return f"https://api.clanship.cl/{url}"
+
+    def resolve_file_url(self, info):
+        return JobProposalAttachmentType.resolve_file(self, info)
 
 class JobProposalType(DjangoObjectType):
     professional_name = graphene.String()
@@ -691,6 +710,25 @@ class CreatePublicJobRequest(graphene.Mutation):
             status=PublicJobRequest.Status.OPEN
         )
 
+        # Notificar en tiempo real por WebSockets que la solicitud fue creada
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            if channel_layer and user:
+                async_to_sync(channel_layer.group_send)(
+                    f"user_{user.id}",
+                    {
+                        "type": "job_notification",
+                        "event": "public_job_created",
+                        "public_request_id": str(public_request.id),
+                        "message": "Solicitud abierta creada exitosamente",
+                    }
+                )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error enviando websocket de public request creada: {e}")
+
         return CreatePublicJobRequest(success=True, public_request=public_request)
 
 
@@ -785,6 +823,40 @@ class SubmitJobProposal(graphene.Mutation):
         except Exception:
             pass
 
+        # Notificar al cliente y al profesional en tiempo real por WebSockets
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                if cust:
+                    async_to_sync(channel_layer.group_send)(
+                        f"user_{cust.id}",
+                        {
+                            "type": "job_notification",
+                            "event": "job_proposal_received",
+                            "public_request_id": str(public_request.id),
+                            "proposal_id": str(proposal.id),
+                            "professional_name": prof_name,
+                            "estimated_price": float(estimated_price),
+                            "message": f"El profesional {prof_name} ha enviado una cotización de {format_clp(estimated_price)} para '{public_request.title}'.",
+                        }
+                    )
+                if user:
+                    async_to_sync(channel_layer.group_send)(
+                        f"user_{user.id}",
+                        {
+                            "type": "job_notification",
+                            "event": "proposal_submitted",
+                            "public_request_id": str(public_request.id),
+                            "proposal_id": str(proposal.id),
+                            "message": "Cotización enviada exitosamente",
+                        }
+                    )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error enviando websocket de cotización: {e}")
+
         return SubmitJobProposal(success=True, proposal=proposal)
 
 
@@ -845,6 +917,38 @@ class AcceptJobProposal(graphene.Mutation):
             sender=user,
             text=f"¡Hola! He aceptado tu cotización de {format_clp(proposal.estimated_price)} para la visita del {proposal.scheduled_date} a las {proposal.scheduled_time}."
         )
+
+        # Notificar en tiempo real por WebSockets la aceptación
+        try:
+            from channels.layers import get_channel_layer
+            from asgiref.sync import async_to_sync
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                async_to_sync(channel_layer.group_send)(
+                    f"user_{proposal.professional_id}",
+                    {
+                        "type": "job_notification",
+                        "event": "job_proposal_accepted",
+                        "public_request_id": str(public_request.id),
+                        "proposal_id": str(proposal.id),
+                        "job_id": str(job.id),
+                        "message": f"¡Tu cotización para '{public_request.title}' ha sido aceptada!",
+                    }
+                )
+                async_to_sync(channel_layer.group_send)(
+                    f"user_{user.id}",
+                    {
+                        "type": "job_notification",
+                        "event": "job_proposal_accepted",
+                        "public_request_id": str(public_request.id),
+                        "proposal_id": str(proposal.id),
+                        "job_id": str(job.id),
+                        "message": "Cotización aceptada exitosamente",
+                    }
+                )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error enviando websocket de cotización aceptada: {e}")
 
         return AcceptJobProposal(success=True, job=job)
 
