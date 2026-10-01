@@ -5,7 +5,7 @@ from django.urls import path, reverse
 from django.shortcuts import get_object_or_404, redirect
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display, action
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig, UserReport, SeasonalCampaign, AssociateReferral, ReferralRewardLog, ReferralProgramContent
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig, UserReport, SeasonalCampaign, AssociateReferral, ReferralRewardLog, ReferralProgramContent, Banner
 
 @admin.register(SeasonalCampaign)
 class SeasonalCampaignAdmin(ModelAdmin):
@@ -687,3 +687,10 @@ class ReferralProgramContentAdmin(ModelAdmin):
     )
 
 
+
+@admin.register(Banner)
+class BannerAdmin(ModelAdmin):
+    list_display = ('title', 'app_type', 'is_active', 'display_order')
+    list_filter = ('app_type', 'is_active')
+    search_fields = ('title', 'subtitle')
+    list_editable = ('is_active', 'display_order')

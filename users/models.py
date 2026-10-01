@@ -1491,3 +1491,31 @@ class SeasonalCampaign(models.Model):
                 except Exception:
                     pass
 
+
+class Banner(models.Model):
+    class AppType(models.TextChoices):
+        ALL = 'ALL', 'Ambas aplicaciones'
+        CLIENT = 'CLIENT', 'Solo Cliente'
+        TRADESMAN = 'TRADESMAN', 'Solo Especialista'
+
+    title = models.CharField(max_length=100, verbose_name="Título")
+    subtitle = models.CharField(max_length=200, blank=True, verbose_name="Subtítulo")
+    image = models.ImageField(upload_to="banners/", blank=True, null=True, verbose_name="Imagen de Fondo", help_text="Opcional. Si no se sube, se usará el gradiente de colores.")
+    gradient_start = models.CharField(max_length=7, default="#4299e1", verbose_name="Color Gradiente Inicio (Hex)", help_text="Ej: #4299e1")
+    gradient_end = models.CharField(max_length=7, default="#2b6cb0", verbose_name="Color Gradiente Fin (Hex)", help_text="Ej: #2b6cb0")
+    cta_text = models.CharField(max_length=50, default="Ver más", verbose_name="Texto del Botón")
+    external_link = models.URLField(blank=True, null=True, verbose_name="Enlace Externo", help_text="Si se llena, al tocar el botón abrirá este enlace web.")
+    internal_route = models.CharField(max_length=100, blank=True, null=True, verbose_name="Ruta Interna de la App", help_text="Ej: /profile, /settings. Ignorado si hay Enlace Externo.")
+    
+    is_active = models.BooleanField(default=True, verbose_name="Activo")
+    app_type = models.CharField(max_length=20, choices=AppType.choices, default=AppType.ALL, verbose_name="Mostrar en")
+    display_order = models.PositiveIntegerField(default=0, verbose_name="Orden", help_text="Los banners con menor número aparecen primero.")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Creación")
+
+    class Meta:
+        verbose_name = "Banner de Inicio"
+        verbose_name_plural = "Banners de Inicio"
+        ordering = ['display_order', '-created_at']
+
+    def __str__(self):
+        return f"{self.title} ({self.get_app_type_display()})"

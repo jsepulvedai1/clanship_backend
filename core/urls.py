@@ -24,7 +24,7 @@ class CustomGraphQLView(GraphQLView):
 
 from django.conf import settings
 from django.conf.urls.static import static
-from core.views import contact_api_view, app_version_check_view, seasonal_config_api_view, secure_document_view
+from core.views import contact_api_view, app_version_check_view, seasonal_config_api_view, secure_document_view, banners_api_view
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -41,6 +41,7 @@ urlpatterns = [
     
     # Seasonal Campaign & Theming API Endpoint
     path('api/v1/seasonal-config/', seasonal_config_api_view, name='seasonal_config_api'),
+    path('api/v1/banners/', banners_api_view, name='banners_api'),
     
     # Restablecimiento de contraseña
     path(

@@ -423,3 +423,33 @@ def secure_document_view(request, token):
         return FileResponse(doc.file.open('rb'))
     except ProfessionalDocument.DoesNotExist:
         raise Http404("Documento no encontrado.")
+
+def banners_api_view(request):
+    """
+    Endpoint para entregar los banners dinámicos del home.
+    """
+    from users.models import Banner
+    
+    app_type = request.GET.get('app_type', 'CLIENT').upper()
+    
+    banners = Banner.objects.filter(
+        is_active=True,
+        app_type__in=[app_type, 'ALL']
+    ).order_by('display_order', '-created_at')
+    
+    banners_data = []
+    for b in banners:
+        image_url = request.build_absolute_uri(b.image.url) if b.image else None
+        
+        banners_data.append({
+            'title': b.title,
+            'subtitle': b.subtitle,
+            'image_url': image_url,
+            'gradient_start': b.gradient_start,
+            'gradient_end': b.gradient_end,
+            'cta_text': b.cta_text,
+            'external_link': b.external_link,
+            'internal_route': b.internal_route,
+        })
+        
+    return JsonResponse({'banners': banners_data})
