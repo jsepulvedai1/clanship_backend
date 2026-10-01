@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin
-from .models import Job, JobReview
+from .models import Job, JobReview, JobClaim
 
 @admin.register(Job)
 class JobAdmin(ModelAdmin):
@@ -41,3 +41,25 @@ class JobReviewAdmin(ModelAdmin):
     list_filter = ('rating',)
     search_fields = ('comment', 'job__id', 'customer__username', 'professional__username')
 
+
+@admin.register(JobClaim)
+class JobClaimAdmin(ModelAdmin):
+    list_display = ('id', 'job', 'customer', 'status_badge', 'created_at')
+    list_filter = ('status',)
+    search_fields = ('details', 'job__id', 'customer__username')
+    readonly_fields = ('created_at', 'updated_at')
+
+    @admin.display(description="Estado")
+    def status_badge(self, obj):
+        colors = {
+            JobClaim.Status.PENDING: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-200 dark:border-amber-800/30",
+            JobClaim.Status.IN_REVIEW: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800/30",
+            JobClaim.Status.RESOLVED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/30",
+            JobClaim.Status.REJECTED: "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400 border border-rose-200 dark:border-rose-800/30",
+        }
+        color_class = colors.get(obj.status, "bg-gray-100 text-gray-800")
+        return format_html(
+            '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium {}">{}</span>',
+            color_class,
+            obj.get_status_display()
+        )

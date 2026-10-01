@@ -73,6 +73,7 @@ class Message(models.Model):
 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.db import transaction
 
 @receiver(post_save, sender=Message)
 def notify_message_saved(sender, instance, created, **kwargs):
@@ -81,10 +82,13 @@ def notify_message_saved(sender, instance, created, **kwargs):
     No bloquea la transacción del mensaje ni la respuesta HTTP.
     """
     if created:
-        try:
-            from core.tasks import process_chat_message_notifications
-            process_chat_message_notifications.delay(instance.id)
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(f"Could not enqueue chat notification task to Celery: {e}")
+        def dispatch_task():
+            try:
+                from core.tasks import process_chat_message_notifications
+                process_chat_message_notifications.delay(instance.id)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Could not enqueue chat notification task to Celery: {e}")
+                
+        transaction.on_commit(dispatch_task)
 

@@ -48,6 +48,17 @@ class Job(models.Model):
         null=True, blank=True
     )
     address = models.CharField(max_length=255, verbose_name="Dirección de la visita", null=True, blank=True)
+    
+    # Datos de finalización del trabajo
+    final_price = models.DecimalField(
+        max_digits=12, 
+        decimal_places=2, 
+        verbose_name="Precio final cobrado",
+        null=True, blank=True
+    )
+    tradesman_comments = models.TextField(verbose_name="Comentarios del profesional al finalizar", null=True, blank=True)
+    finished_photos = models.JSONField(default=list, blank=True, verbose_name="Fotos del trabajo terminado")
+
     is_read = models.BooleanField(default=False, verbose_name="Leído por el profesional")
     cancellation_reason = models.TextField(null=True, blank=True, verbose_name="Razón de cancelación/rechazo")
     cancelled_by = models.ForeignKey(
@@ -78,6 +89,7 @@ class Job(models.Model):
 
 from django.db.models.signals import post_save
 from django.dispatch import receiver
+from django.db import transaction
 
 @receiver(post_save, sender=Job)
 def notify_job_saved(sender, instance, created, **kwargs):
@@ -85,18 +97,21 @@ def notify_job_saved(sender, instance, created, **kwargs):
     Despacha la tarea asíncrona de Celery para enviar notificaciones WebSocket y FCM.
     No bloquea la transacción de base de datos ni la respuesta HTTP.
     """
-    try:
-        from core.tasks import process_job_saved_notifications
-        process_job_saved_notifications.delay(instance.id, created)
-    except Exception as e:
-        # Fallback de seguridad si Celery no está disponible
-        import logging
-        logging.getLogger(__name__).warning(f"Could not enqueue job notification task to Celery: {e}")
+    def dispatch_task():
         try:
             from core.tasks import process_job_saved_notifications
-            process_job_saved_notifications(instance.id, created)
-        except Exception as fallback_err:
-            logging.getLogger(__name__).error(f"Fallback notification failed: {fallback_err}")
+            process_job_saved_notifications.delay(instance.id, created)
+        except Exception as e:
+            # Fallback de seguridad si Celery no está disponible
+            import logging
+            logging.getLogger(__name__).warning(f"Could not enqueue job notification task to Celery: {e}")
+            try:
+                from core.tasks import process_job_saved_notifications
+                process_job_saved_notifications(instance.id, created)
+            except Exception as fallback_err:
+                logging.getLogger(__name__).error(f"Fallback notification failed: {fallback_err}")
+                
+    transaction.on_commit(dispatch_task)
 
 
 class JobReview(models.Model):
@@ -281,3 +296,48 @@ class JobProposalAttachment(models.Model):
     def __str__(self):
         return f"Adjunto {self.id} para Propuesta #{self.proposal_id}"
 
+
+class JobClaim(models.Model):
+    """
+    Reclamo iniciado por un cliente sobre un trabajo finalizado.
+    """
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', 'Pendiente'
+        IN_REVIEW = 'IN_REVIEW', 'En Revisión'
+        RESOLVED = 'RESOLVED', 'Resuelto'
+        REJECTED = 'REJECTED', 'Rechazado'
+
+    job = models.ForeignKey(
+        Job,
+        on_delete=models.CASCADE,
+        related_name="claims",
+        verbose_name="Trabajo"
+    )
+    customer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="job_claims",
+        verbose_name="Cliente"
+    )
+    details = models.TextField(verbose_name="Detalles del reclamo")
+    
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        verbose_name="Estado del reclamo"
+    )
+    admin_notes = models.TextField(blank=True, verbose_name="Notas internas (Soporte)")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Reclamo de Trabajo"
+        verbose_name_plural = "Reclamos de Trabajos"
+        indexes = [
+            models.Index(fields=['status', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f"Reclamo #{self.id} de {self.customer.username} para Trabajo #{self.job_id}"

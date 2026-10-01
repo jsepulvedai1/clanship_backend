@@ -1,6 +1,6 @@
 import graphene
 from graphene_django import DjangoObjectType
-from .models import Job, JobReview, PublicJobRequest, JobProposal, JobProposalAttachment
+from .models import Job, JobReview, PublicJobRequest, JobProposal, JobProposalAttachment, JobClaim
 from users.models import Specialty
 from django.contrib.auth import get_user_model
 from graphql_jwt.decorators import login_required
@@ -178,13 +178,30 @@ class JobReviewType(DjangoObjectType):
     def resolve_customer_name(self, info):
         return self.customer.get_full_name() or self.customer.username
 
+class JobClaimType(DjangoObjectType):
+    customer_name = graphene.String()
+    status_display = graphene.String()
+
+    class Meta:
+        model = JobClaim
+        fields = "__all__"
+
+    def resolve_customer_name(self, info):
+        return self.customer.get_full_name() or self.customer.username
+        
+    def resolve_status_display(self, info):
+        return self.get_status_display()
+
 
 class JobType(DjangoObjectType):
     additional_photo_url = graphene.String()
+    finished_photos_urls = graphene.List(graphene.String)
     has_unread_messages = graphene.Boolean()
     cancelled_by_user_name = graphene.String()
     has_been_reviewed = graphene.Boolean()
     review = graphene.Field(JobReviewType)
+    has_claim = graphene.Boolean()
+    claim = graphene.Field(JobClaimType)
 
     class Meta:
         model = Job
@@ -194,6 +211,19 @@ class JobType(DjangoObjectType):
         if self.additional_photo:
             return info.context.build_absolute_uri(self.additional_photo.url)
         return None
+
+    def resolve_finished_photos_urls(self, info):
+        urls = []
+        if self.finished_photos:
+            for p in self.finished_photos:
+                if p.startswith('http://') or p.startswith('https://'):
+                    urls.append(p)
+                else:
+                    try:
+                        urls.append(info.context.build_absolute_uri(p))
+                    except Exception:
+                        urls.append(p)
+        return urls
 
     def resolve_has_unread_messages(self, info):
         user = info.context.user
@@ -215,6 +245,12 @@ class JobType(DjangoObjectType):
             return hasattr(self, 'review') and self.review is not None
         except Exception:
             return False
+
+    def resolve_has_claim(self, info):
+        return self.claims.exists()
+        
+    def resolve_claim(self, info):
+        return self.claims.first()
 
     def resolve_review(self, info):
         try:
@@ -351,6 +387,88 @@ class UpdateJobStatus(graphene.Mutation):
         job.save()
 
         return UpdateJobStatus(job=job)
+
+
+class CompleteJob(graphene.Mutation):
+    """
+    Mutación para que el profesional finalice el trabajo.
+    Permite adjuntar el precio final, comentarios y fotos del trabajo terminado.
+    """
+    class Arguments:
+        job_id = graphene.Int(required=True)
+        final_price = graphene.Decimal(required=False)
+        tradesman_comments = graphene.String(required=False)
+        finished_photos_base64 = graphene.List(graphene.String, required=False)
+
+    success = graphene.Boolean()
+    job = graphene.Field(JobType)
+
+    @login_required
+    def mutate(self, info, job_id, final_price=None, tradesman_comments=None, finished_photos_base64=None):
+        user = info.context.user
+        try:
+            job = Job.objects.get(pk=job_id)
+        except Job.DoesNotExist:
+            raise Exception("El trabajo no existe.")
+
+        # Permisos: Solo profesional puede finalizar
+        if job.professional != user:
+            raise Exception("Solo el profesional asignado puede finalizar este trabajo.")
+
+        if job.status not in [Job.Status.AGREED, Job.Status.IN_VISIT, Job.Status.FINISHED]:
+            raise Exception(f"No se puede finalizar un trabajo en estado {job.status}.")
+
+        job.status = Job.Status.FINISHED
+        if final_price is not None:
+            job.final_price = final_price
+        if tradesman_comments is not None:
+            job.tradesman_comments = tradesman_comments
+
+        if finished_photos_base64:
+            import base64
+            from django.core.files.base import ContentFile
+            from django.core.files.storage import default_storage
+            from django.utils import timezone
+            
+            saved_photos_urls = list(job.finished_photos) if job.finished_photos else []
+            for idx, photo_b64 in enumerate(finished_photos_base64):
+                try:
+                    if ';base64,' in photo_b64:
+                        header, imgstr = photo_b64.split(';base64,')
+                        mime_type = header.split(':')[1] if ':' in header else ''
+                        ext = mime_type.split('/')[-1] if '/' in mime_type else 'jpg'
+                        ext = ext.split(';')[0]
+                    else:
+                        imgstr = photo_b64
+                        ext = 'jpg'
+                    file_name = f"job_{job_id}_finished_{int(timezone.now().timestamp())}_{idx}.{ext}"
+                    content = ContentFile(base64.b64decode(imgstr), name=file_name)
+                    saved_path = default_storage.save(f"job_photos/{file_name}", content)
+                    url = default_storage.url(saved_path)
+                    saved_photos_urls.append(url)
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Error saving finished job photo: {e}")
+            job.finished_photos = saved_photos_urls
+
+        job.save()
+
+        # Notificar al cliente que el trabajo fue finalizado
+        try:
+            cust = job.customer
+            if cust:
+                prof_name = job.professional.get_full_name() or job.professional.username
+                from core.tasks import send_user_push_notification_async
+                send_user_push_notification_async.delay(
+                    user_id=cust.id,
+                    title="Trabajo Finalizado",
+                    body=f"{prof_name} ha marcado el trabajo como finalizado. Puedes ver los detalles y dejar una calificación.",
+                    data={"event": "job_updated", "job_id": str(job.id)}
+                )
+        except Exception as e:
+            pass
+
+        return CompleteJob(success=True, job=job)
 
 
 class MarkJobAsRead(graphene.Mutation):
@@ -575,12 +693,12 @@ class ScheduleJobVisit(graphene.Mutation):
             cust = job.customer
             if cust:
                 prof_name = job.professional.get_full_name() or job.professional.username
-                from core.firebase import send_user_push_notification
-                send_user_push_notification(
-                    user=cust,
+                from core.tasks import send_user_push_notification_async
+                send_user_push_notification_async.delay(
+                    user_id=cust.id,
                     title="Propuesta de Visita Programada",
                     body=f"El profesional {prof_name} ha propuesto una visita para el {scheduled_date} a las {scheduled_time}. Por favor valida la agenda.",
-                    data={"event": "job_updated", "job_id": job.id}
+                    data={"event": "job_updated", "job_id": str(job.id)}
                 )
         except Exception as e:
             print(f"Error al enviar notificacion push: {e}")
@@ -796,7 +914,19 @@ class SubmitJobProposal(graphene.Mutation):
                         mime_type = ''
                         ext = 'bin'
                         
-                    file_name = f"proposal_{proposal.id}_att_{uuid.uuid4().hex[:8]}.{ext}"
+                    from django.utils.text import slugify
+                    
+                    # Generamos nombres limpios sin espacios ni caracteres especiales
+                    safe_maestro = slugify(user.first_name or user.username)
+                    safe_project = slugify(public_request.title)
+                    
+                    if ext.lower() == 'pdf':
+                        prefix = "Cotizacion"
+                    else:
+                        prefix = "Adjunto"
+                        
+                    file_name = f"{prefix}_{safe_maestro}_{safe_project}_{uuid.uuid4().hex[:4]}.{ext}"
+                    
                     content = ContentFile(base64.b64decode(imgstr), name=file_name)
                     JobProposalAttachment.objects.create(
                         proposal=proposal,
@@ -813,12 +943,12 @@ class SubmitJobProposal(graphene.Mutation):
             cust = public_request.customer
             if cust:
                 prof_name = user.get_full_name() or user.username
-                from core.firebase import send_user_push_notification
-                send_user_push_notification(
-                    user=cust,
+                from core.tasks import send_user_push_notification_async
+                send_user_push_notification_async.delay(
+                    user_id=cust.id,
                     title="Nueva Cotización Recibida",
                     body=f"El profesional {prof_name} ha enviado una propuesta de {format_clp(estimated_price)} para '{public_request.title}'.",
-                    data={"event": "job_proposal_received", "public_request_id": public_request.id}
+                    data={"event": "job_proposal_received", "public_request_id": str(public_request.id)}
                 )
         except Exception:
             pass
@@ -986,12 +1116,12 @@ class RenegotiateJobPrice(graphene.Mutation):
             prof = job.professional
             if prof:
                 cust_name = job.customer.get_full_name() or job.customer.username
-                from core.firebase import send_user_push_notification
-                send_user_push_notification(
-                    user=prof,
+                from core.tasks import send_user_push_notification_async
+                send_user_push_notification_async.delay(
+                    user_id=prof.id,
                     title="Nueva contraoferta",
                     body=f"El cliente {cust_name} ha propuesto un nuevo precio.",
-                    data={"event": "job_updated", "job_id": job.id}
+                    data={"event": "job_updated", "job_id": str(job.id)}
                 )
         except Exception as e:
             print(f"Error al enviar notificacion push: {e}")
@@ -1016,10 +1146,50 @@ class CancelPublicJobRequest(graphene.Mutation):
 
         return CancelPublicJobRequest(success=True)
 
+class CreateJobClaim(graphene.Mutation):
+    success = graphene.Boolean()
+    message = graphene.String()
+    claim = graphene.Field(JobClaimType)
+
+    class Arguments:
+        job_id = graphene.ID(required=True)
+        details = graphene.String(required=True)
+
+    @login_required
+    def mutate(self, info, job_id, details):
+        user = info.context.user
+
+        try:
+            job = Job.objects.get(id=job_id)
+        except Job.DoesNotExist:
+            return CreateJobClaim(success=False, message="El trabajo no existe.", claim=None)
+
+        if job.customer != user:
+            return CreateJobClaim(success=False, message="No eres el cliente de este trabajo.", claim=None)
+
+        if job.status != Job.Status.FINISHED:
+            return CreateJobClaim(success=False, message="Sólo puedes iniciar un reclamo para trabajos finalizados.", claim=None)
+
+        if job.claims.exists():
+            return CreateJobClaim(success=False, message="Ya existe un reclamo para este trabajo.", claim=None)
+
+        claim = JobClaim.objects.create(
+            job=job,
+            customer=user,
+            details=details,
+            status=JobClaim.Status.PENDING
+        )
+
+        success_message = "Tu reclamo ha sido recibido exitosamente. Será revisado por soporte en un plazo de 24 horas durante días hábiles."
+
+        return CreateJobClaim(success=True, message=success_message, claim=claim)
+
 
 class Mutation(graphene.ObjectType):
     create_job = CreateJob.Field()
+    create_job_claim = CreateJobClaim.Field()
     update_job_status = UpdateJobStatus.Field()
+    complete_job = CompleteJob.Field()
     mark_job_as_read = MarkJobAsRead.Field()
     enrich_job = EnrichJob.Field()
     schedule_job_visit = ScheduleJobVisit.Field()
