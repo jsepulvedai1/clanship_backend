@@ -341,3 +341,24 @@ class JobClaim(models.Model):
 
     def __str__(self):
         return f"Reclamo #{self.id} de {self.customer.username} para Trabajo #{self.job_id}"
+
+
+class JobClaimAttachment(models.Model):
+    """
+    Archivos adjuntos (fotos, etc.) para un reclamo.
+    """
+    claim = models.ForeignKey(
+        JobClaim,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+        verbose_name="Reclamo"
+    )
+    file = models.FileField(upload_to="claim_attachments/", verbose_name="Archivo")
+    file_type = models.CharField(
+        max_length=50, 
+        blank=True, 
+        verbose_name="Tipo de archivo (MIME)"
+    )
+
+    def __str__(self):
+        return f"Adjunto para Reclamo #{self.claim.id}"

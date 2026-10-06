@@ -1,6 +1,6 @@
 import graphene
 from graphene_django import DjangoObjectType
-from .models import Job, JobReview, PublicJobRequest, JobProposal, JobProposalAttachment, JobClaim
+from .models import Job, JobReview, PublicJobRequest, JobProposal, JobProposalAttachment, JobClaim, JobClaimAttachment
 from users.models import Specialty
 from django.contrib.auth import get_user_model
 from graphql_jwt.decorators import login_required
@@ -178,14 +178,42 @@ class JobReviewType(DjangoObjectType):
     def resolve_customer_name(self, info):
         return self.customer.get_full_name() or self.customer.username
 
+
+class JobClaimAttachmentType(DjangoObjectType):
+    file = graphene.String()
+    file_url = graphene.String()
+
+    class Meta:
+        model = JobClaimAttachment
+        fields = "__all__"
+
+    def resolve_file(self, info):
+        if not self.file:
+            return None
+        try:
+            return info.context.build_absolute_uri(self.file.url)
+        except Exception:
+            url = getattr(self.file, 'url', str(self.file))
+            if url.startswith('http://') or url.startswith('https://'):
+                return url
+            if url.startswith('/'):
+                return f"https://api.clanship.cl{url}"
+            return f"https://api.clanship.cl/{url}"
+
+    def resolve_file_url(self, info):
+        return JobClaimAttachmentType.resolve_file(self, info)
+
 class JobClaimType(DjangoObjectType):
     customer_name = graphene.String()
     status_display = graphene.String()
+    attachments = graphene.List(JobClaimAttachmentType)
 
     class Meta:
         model = JobClaim
         fields = "__all__"
 
+    def resolve_attachments(self, info):
+        return self.attachments.all()
     def resolve_customer_name(self, info):
         return self.customer.get_full_name() or self.customer.username
         
@@ -502,9 +530,15 @@ class MarkJobAsRead(graphene.Mutation):
 class Query(graphene.ObjectType):
     job = graphene.Field(JobType, id=graphene.Int(required=True))
     my_jobs = graphene.List(JobType, status=graphene.String())
+    my_job_claims = graphene.List(JobClaimType)
     open_public_job_requests = graphene.List(PublicJobRequestType, specialty_id=graphene.Int(required=False))
     my_public_job_requests = graphene.List(PublicJobRequestType)
     public_job_request_details = graphene.Field(PublicJobRequestType, id=graphene.Int(required=True))
+
+
+    @login_required
+    def resolve_my_job_claims(self, info):
+        return JobClaim.objects.filter(customer=info.context.user).order_by('-created_at')
 
     @login_required
     def resolve_job(self, info, id):
@@ -1015,6 +1049,10 @@ class AcceptJobProposal(graphene.Mutation):
         # Marcar propuesta como aceptada y las demás como rechazadas
         proposal.status = JobProposal.Status.ACCEPTED
         proposal.save()
+        
+        rejected_proposals = public_request.proposals.exclude(pk=proposal.id).select_related('professional')
+        rejected_professionals = [p.professional for p in rejected_proposals]
+        
         public_request.proposals.exclude(pk=proposal.id).update(status=JobProposal.Status.REJECTED)
         public_request.status = PublicJobRequest.Status.ASSIGNED
         public_request.save()
@@ -1052,6 +1090,7 @@ class AcceptJobProposal(graphene.Mutation):
         try:
             from channels.layers import get_channel_layer
             from asgiref.sync import async_to_sync
+            from core.tasks import send_user_push_notification_async
             channel_layer = get_channel_layer()
             if channel_layer:
                 async_to_sync(channel_layer.group_send)(
@@ -1076,6 +1115,27 @@ class AcceptJobProposal(graphene.Mutation):
                         "message": "Cotización aceptada exitosamente",
                     }
                 )
+                
+                # Notificar a los profesionales cuyas cotizaciones no fueron aceptadas
+                for prof in rejected_professionals:
+                    async_to_sync(channel_layer.group_send)(
+                        f"user_{prof.id}",
+                        {
+                            "type": "job_notification",
+                            "event": "job_proposal_rejected_taken",
+                            "public_request_id": str(public_request.id),
+                            "message": f"El trabajo '{public_request.title}' ha sido asignado a otro profesional.",
+                        }
+                    )
+                    send_user_push_notification_async.delay(
+                        user_id=prof.id,
+                        title="Cotización no aceptada",
+                        body=f"El cliente ha aceptado otra cotización para '{public_request.title}'.",
+                        data={
+                            "event": "job_proposal_rejected_taken",
+                            "public_request_id": str(public_request.id),
+                        }
+                    )
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Error enviando websocket de cotización aceptada: {e}")
@@ -1154,9 +1214,10 @@ class CreateJobClaim(graphene.Mutation):
     class Arguments:
         job_id = graphene.ID(required=True)
         details = graphene.String(required=True)
+        attachments_base64 = graphene.List(graphene.String, required=False)
 
     @login_required
-    def mutate(self, info, job_id, details):
+    def mutate(self, info, job_id, details, attachments_base64=None):
         user = info.context.user
 
         try:
@@ -1179,6 +1240,33 @@ class CreateJobClaim(graphene.Mutation):
             details=details,
             status=JobClaim.Status.PENDING
         )
+
+        if attachments_base64:
+            import base64
+            from django.core.files.base import ContentFile
+            import uuid
+
+            for attachment_b64 in attachments_base64:
+                try:
+                    if ';base64,' in attachment_b64:
+                        header, imgstr = attachment_b64.split(';base64,')
+                        mime_type = header.split(':')[1] if ':' in header else ''
+                        ext = mime_type.split('/')[-1] if '/' in mime_type else 'jpg'
+                    else:
+                        imgstr = attachment_b64
+                        mime_type = ''
+                        ext = 'jpg'
+
+                    file_name = f"claim_{claim.id}_{uuid.uuid4().hex[:4]}.{ext}"
+                    content = ContentFile(base64.b64decode(imgstr), name=file_name)
+                    JobClaimAttachment.objects.create(
+                        claim=claim,
+                        file=content,
+                        file_type=mime_type
+                    )
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"Error procesando adjunto de reclamo: {e}")
 
         success_message = "Tu reclamo ha sido recibido exitosamente. Será revisado por soporte en un plazo de 24 horas durante días hábiles."
 

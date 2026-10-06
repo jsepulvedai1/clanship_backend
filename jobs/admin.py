@@ -1,7 +1,8 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin
-from .models import Job, JobReview, JobClaim
+from .models import Job, JobReview, JobClaim, JobClaimAttachment
+from unfold.admin import TabularInline
 
 @admin.register(Job)
 class JobAdmin(ModelAdmin):
@@ -13,6 +14,7 @@ class JobAdmin(ModelAdmin):
         'description'
     )
     readonly_fields = ('created_at', 'updated_at')
+    inlines = [JobClaimAttachmentInline]
 
     @admin.display(description="Estado")
     def status_badge(self, obj):
@@ -42,12 +44,25 @@ class JobReviewAdmin(ModelAdmin):
     search_fields = ('comment', 'job__id', 'customer__username', 'professional__username')
 
 
+
+class JobClaimAttachmentInline(TabularInline):
+    model = JobClaimAttachment
+    extra = 0
+    readonly_fields = ('file_preview',)
+
+    def file_preview(self, obj):
+        if obj.file:
+            return format_html('<a href="{}" target="_blank">Ver Archivo</a>', obj.file.url)
+        return "-"
+    file_preview.short_description = "Archivo"
+
 @admin.register(JobClaim)
 class JobClaimAdmin(ModelAdmin):
     list_display = ('id', 'job', 'customer', 'status_badge', 'created_at')
     list_filter = ('status',)
     search_fields = ('details', 'job__id', 'customer__username')
     readonly_fields = ('created_at', 'updated_at')
+    inlines = [JobClaimAttachmentInline]
 
     @admin.display(description="Estado")
     def status_badge(self, obj):
