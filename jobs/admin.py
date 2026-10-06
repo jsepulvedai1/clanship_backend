@@ -14,7 +14,6 @@ class JobAdmin(ModelAdmin):
         'description'
     )
     readonly_fields = ('created_at', 'updated_at')
-    inlines = [JobClaimAttachmentInline]
 
     @admin.display(description="Estado")
     def status_badge(self, obj):
