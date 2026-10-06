@@ -1973,6 +1973,19 @@ class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
                     payload['app_type'] = app_type
                     payload['session_key'] = session_key
                     response.token = graphql_jwt.utils.jwt_encode(payload)
+                    
+                    # Eliminar todos los refresh tokens antiguos para forzar cierre de sesión en otros dispositivos
+                    try:
+                        from graphql_jwt.refresh_token.models import RefreshToken
+                        new_refresh_token = getattr(response, 'refresh_token', None)
+                        if new_refresh_token:
+                            RefreshToken.objects.filter(user=user).exclude(token=new_refresh_token).delete()
+                        else:
+                            RefreshToken.objects.filter(user=user).delete()
+                    except Exception as e:
+                        import logging
+                        logging.getLogger(__name__).error(f"Error al limpiar refresh tokens: {str(e)}")
+                        
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).error(f"Error en CustomObtainJSONWebToken: {str(e)}")

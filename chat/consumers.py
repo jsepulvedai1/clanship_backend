@@ -165,6 +165,18 @@ class ChatConsumer(AsyncWebsocketConsumer):
             valid_data = graphql_jwt.utils.jwt_decode(token)
             user_model = get_user_model()
             user = user_model.objects.get(username=valid_data['username'])
+            
+            # Validar sesión única
+            session_key = valid_data.get('session_key')
+            app_type = valid_data.get('app_type', 'CLIENT').upper()
+            if session_key:
+                if app_type == 'TRADESMAN':
+                    if user.tradesman_session_key and user.tradesman_session_key != session_key:
+                        return None
+                else:
+                    if user.client_session_key and user.client_session_key != session_key:
+                        return None
+                        
             return user
         except Exception:
             return None

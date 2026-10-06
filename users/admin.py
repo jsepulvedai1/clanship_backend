@@ -124,6 +124,12 @@ class AppVersionConfigAdmin(ModelAdmin):
         ('Mensaje de Bloqueo', {
             'fields': ('title', 'message')
         }),
+        ('Actualizaciones Forzadas (Shorebird)', {
+            'fields': (
+                'shorebird_mandatory',
+                'shorebird_minimum_version',
+            )
+        }),
     )
 
 @admin.register(SystemSetting)
