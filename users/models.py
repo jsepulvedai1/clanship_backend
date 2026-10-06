@@ -1063,6 +1063,11 @@ class AppVersionConfig(models.Model):
         verbose_name="Shorebird Patch Obligatorio",
         help_text="Si está activo, obliga a descargar el último parche OTA antes de usar la app."
     )
+    shorebird_minimum_version = models.IntegerField(
+        default=0,
+        verbose_name="Shorebird Patch Mínimo",
+        help_text="Número de parche mínimo requerido por Shorebird para poder usar la app."
+    )
     is_active = models.BooleanField(
         default=True,
         verbose_name="Control de Versión Activo"
