@@ -696,7 +696,12 @@ class ReferralProgramContentAdmin(ModelAdmin):
 
 @admin.register(Banner)
 class BannerAdmin(ModelAdmin):
-    list_display = ('title', 'app_type', 'is_active', 'display_order')
+    list_display = ('display_title', 'app_type', 'is_active', 'display_order')
     list_filter = ('app_type', 'is_active')
     search_fields = ('title', 'subtitle')
     list_editable = ('is_active', 'display_order')
+
+    @display(description="Título", ordering="title")
+    def display_title(self, obj):
+        return obj.title if obj.title else mark_safe('<span class="text-gray-400 italic">(Sin título)</span>')
+

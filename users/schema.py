@@ -121,7 +121,8 @@ class UserType(DjangoObjectType):
         ).count()
 
     def resolve_reviews_count(self, info):
-        return 0
+        from jobs.models import JobReview
+        return JobReview.objects.filter(professional=self).count()
 
 class SpecialtyType(DjangoObjectType):
     icon_url = graphene.String()
@@ -296,7 +297,7 @@ class ProfessionalProfileType(DjangoObjectType):
         all_docs = self.documents.all()
         if can_see_all:
             return all_docs
-        return [d for d in all_docs if d.is_visible]
+        return [d for d in all_docs if d.is_visible and not d.is_identity_document]
 
     def resolve_requires_plan_upgrade(self, info):
         return self.requires_plan_upgrade
@@ -342,6 +343,8 @@ class AppConfigType(graphene.ObjectType):
     subscriptions_min_version_android = graphene.String()
     subscriptions_blocked_versions_android = graphene.String()
     is_subscriptions_enabled = graphene.Boolean()
+    support_hours = graphene.String()
+    add_photo_icon_url = graphene.String()
 
 
 def attach_job_counts_to_users(users):
@@ -512,6 +515,8 @@ class Query(graphene.ObjectType):
             subscriptions_min_version_android=setting.subscriptions_min_version_android or "",
             subscriptions_blocked_versions_android=setting.subscriptions_blocked_versions_android or "",
             is_subscriptions_enabled=current_platform_enabled,
+            support_hours=setting.support_hours,
+            add_photo_icon_url=setting.add_photo_icon_url,
         )
 
     def resolve_max_specialties_per_tradesman(self, info):
@@ -1508,7 +1513,12 @@ class AddProfessionalDocument(graphene.Mutation):
         import time
         file_name = f"doc_{user.id}_{int(time.time())}.{ext}"
         
-        doc = ProfessionalDocument(profile=profile, name=name, status=ProfessionalDocument.Status.PENDING)
+        doc = ProfessionalDocument(
+            profile=profile,
+            name=name,
+            status=ProfessionalDocument.Status.PENDING,
+            is_visible=False
+        )
         doc.file.save(file_name, ContentFile(base64.b64decode(file_str)), save=True)
 
         # Si el perfil estaba previamente rechazado u observado, resetear a pendiente para nueva revisión
@@ -1540,6 +1550,12 @@ class ToggleDocumentVisibility(graphene.Mutation):
         except ProfessionalDocument.DoesNotExist:
             raise Exception('Documento no encontrado o no pertenece a tu perfil')
             
+        if is_visible and doc.is_identity_document:
+            # Los documentos de identidad (carnet/cédula) nunca deben ser públicos
+            doc.is_visible = False
+            doc.save()
+            return ToggleDocumentVisibility(success=True, document=doc, user=user)
+
         doc.is_visible = is_visible
         doc.save()
         

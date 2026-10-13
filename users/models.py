@@ -537,7 +537,7 @@ class ProfessionalDocument(models.Model):
         verbose_name="Archivo del Documento"
     )
     is_visible = models.BooleanField(
-        default=True,
+        default=False,
         verbose_name="Visible en Perfil Público"
     )
     status = models.CharField(
@@ -560,11 +560,20 @@ class ProfessionalDocument(models.Model):
         verbose_name = "Documento Profesional"
         verbose_name_plural = "Documentos Profesionales"
 
+    @property
+    def is_identity_document(self):
+        name_lower = (self.name or '').lower()
+        identity_keywords = ['carnet', 'cédula', 'cedula', 'identidad', 'dni', 'rut']
+        return any(kw in name_lower for kw in identity_keywords)
+
     def __str__(self):
         user_str = getattr(getattr(self.profile, 'user', None), 'username', 'Sin usuario')
         return f"{self.name} ({self.get_status_display()}) - {user_str}"
 
     def save(self, *args, **kwargs):
+        # El carnet o documentos de identidad nunca deben ser visibles al público
+        if self.is_identity_document:
+            self.is_visible = False
         super().save(*args, **kwargs)
         # Si este documento se rechaza, sincronizar el estado REJECTED en el perfil profesional
         if self.status == self.Status.REJECTED and self.profile:
@@ -599,6 +608,13 @@ class SystemSetting(models.Model):
         default=6,
         verbose_name="Máximo de especialidades por maestro",
         help_text="Número máximo de especialidades/subtags que puede seleccionar un maestro"
+    )
+    add_photo_icon_url = models.URLField(
+        blank=True,
+        null=True,
+        verbose_name="URL de ícono de 'Agregar foto'",
+        help_text="URL para el ícono de reemplazo temporal en la app debido al problema de fuente en Shorebird. Recomendado PNG o JPG transparente.",
+        default="https://e7.pngegg.com/pngimages/851/961/png-clipart-computer-icons-email-attachment-others-text-school-supplies.png"
     )
     nationwide_coverage_mode = models.BooleanField(
         default=False,
@@ -694,6 +710,13 @@ class SystemSetting(models.Model):
         default=EligibleReferralUserType.ALL,
         verbose_name="Tipos de usuarios que suman a la meta",
         help_text="Define si suman a la meta registros de clientes, de maestros o ambos"
+    )
+
+    support_hours = models.CharField(
+        max_length=255,
+        default="Lunes a viernes de 9:00 a 18:00 hrs",
+        verbose_name="Horario de atención de soporte",
+        help_text="Horario de atención que se mostrará en la sección de soporte de ambas aplicaciones."
     )
 
     class Meta:
@@ -1503,7 +1526,7 @@ class Banner(models.Model):
         CLIENT = 'CLIENT', 'Solo Cliente'
         TRADESMAN = 'TRADESMAN', 'Solo Especialista'
 
-    title = models.CharField(max_length=100, verbose_name="Título")
+    title = models.CharField(max_length=100, blank=True, default="", verbose_name="Título")
     subtitle = models.CharField(max_length=200, blank=True, verbose_name="Subtítulo")
     image = models.ImageField(upload_to="banners/", blank=True, null=True, verbose_name="Imagen de Fondo", help_text="Opcional. Si no se sube, se usará el gradiente de colores.")
     gradient_start = models.CharField(max_length=7, default="#4299e1", verbose_name="Color Gradiente Inicio (Hex)", help_text="Ej: #4299e1")
@@ -1523,4 +1546,5 @@ class Banner(models.Model):
         ordering = ['display_order', '-created_at']
 
     def __str__(self):
-        return f"{self.title} ({self.get_app_type_display()})"
+        title_str = self.title if self.title else "(Sin título)"
+        return f"{title_str} ({self.get_app_type_display()})"
