@@ -1,7 +1,8 @@
 import uuid
 import graphene
 from graphene_django import DjangoObjectType
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP, UserDevice, SystemSetting, UserReport, ReferralProgramContent
+from django.conf import settings
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP, UserDevice, SystemSetting, UserReport, ReferralProgramContent, Banner
 import graphql_jwt
 from graphql_jwt.decorators import login_required
 from decimal import Decimal
@@ -332,6 +333,37 @@ class ReferralProgramContentType(graphene.ObjectType):
     registration_code_label = graphene.String()
     registration_code_hint = graphene.String()
 
+
+class BannerType(DjangoObjectType):
+    image_url = graphene.String()
+
+    class Meta:
+        model = Banner
+        fields = (
+            "id",
+            "title",
+            "subtitle",
+            "gradient_start",
+            "gradient_end",
+            "cta_text",
+            "external_link",
+            "internal_route",
+            "is_active",
+            "app_type",
+            "display_order",
+            "created_at",
+        )
+
+    def resolve_image_url(self, info):
+        if self.image:
+            req = getattr(info, 'context', None)
+            url = req.build_absolute_uri(self.image.url) if req else self.image.url
+            if not settings.DEBUG and url and url.startswith('http://'):
+                url = url.replace('http://', 'https://', 1)
+            return url
+        return None
+
+
 class AppConfigType(graphene.ObjectType):
     subscriptions_enabled_ios = graphene.Boolean()
     subscriptions_enabled_android = graphene.Boolean()
@@ -477,11 +509,24 @@ class Query(graphene.ObjectType):
     my_favorites = graphene.List(UserType)
     subscription_plans = graphene.List(SubscriptionPlanType)
     max_specialties_per_tradesman = graphene.Int()
+    banners = graphene.List(
+        BannerType,
+        app_type=graphene.String(),
+        is_active=graphene.Boolean(),
+    )
     app_config = graphene.Field(
         AppConfigType,
         platform=graphene.String(),
         app_version=graphene.String(),
     )
+
+    def resolve_banners(self, info, app_type=None, is_active=None):
+        qs = Banner.objects.all().order_by('display_order', '-created_at')
+        if app_type:
+            qs = qs.filter(app_type__in=[app_type.upper(), 'ALL'])
+        if is_active is not None:
+            qs = qs.filter(is_active=is_active)
+        return qs
 
     def resolve_app_config(self, info, platform=None, app_version=None):
         from .models import SystemSetting

@@ -24,7 +24,11 @@ class CustomGraphQLView(GraphQLView):
 
 from django.conf import settings
 from django.conf.urls.static import static
-from core.views import contact_api_view, app_version_check_view, seasonal_config_api_view, secure_document_view, banners_api_view
+from core.views import (
+    contact_api_view, app_version_check_view, seasonal_config_api_view,
+    secure_document_view, banners_api_view, admin_banners_api_view,
+    admin_banner_toggle_api_view, admin_banners_reorder_api_view
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -42,6 +46,12 @@ urlpatterns = [
     # Seasonal Campaign & Theming API Endpoint
     path('api/v1/seasonal-config/', seasonal_config_api_view, name='seasonal_config_api'),
     path('api/v1/banners/', banners_api_view, name='banners_api'),
+
+    # Admin Banners Management Endpoints (for clanship-admin)
+    path('api/v1/admin/banners/', admin_banners_api_view, name='admin_banners_api'),
+    path('api/v1/admin/banners/<int:banner_id>/', admin_banners_api_view, name='admin_banners_detail_api'),
+    path('api/v1/admin/banners/<int:banner_id>/toggle/', admin_banner_toggle_api_view, name='admin_banner_toggle_api'),
+    path('api/v1/admin/banners/reorder/', admin_banners_reorder_api_view, name='admin_banners_reorder_api'),
     
     # Restablecimiento de contraseña
     path(

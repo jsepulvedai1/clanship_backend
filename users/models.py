@@ -1375,6 +1375,11 @@ class SeasonalCampaign(models.Model):
     )
 
     # Assets visuales y animaciones
+    show_logo_badge = models.BooleanField(
+        default=True,
+        verbose_name="¿Mostrar insignia en logo/avatar?",
+        help_text="Controla si se muestra la insignia festiva (PNG o emoji) sobre el avatar y los logos de la aplicación."
+    )
     logo_badge_icon = models.FileField(upload_to="seasonal/badges/", blank=True, null=True, verbose_name="Insignia para logo/avatar", help_text="PNG transparente o SVG (chupalla, gorro navideño, calabaza)")
     nav_center_icon = models.FileField(upload_to="seasonal/nav_icons/", blank=True, null=True, verbose_name="Icono central de navegación (PNG)", help_text="PNG transparente para reemplazar el icono de explorar/mapa en el menú inferior")
     banner_image = models.ImageField(upload_to="seasonal/banners/", blank=True, null=True, verbose_name="Imagen de banner de fondo", help_text="Imagen opcional para el banner principal")

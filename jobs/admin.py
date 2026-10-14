@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin
-from .models import Job, JobReview, JobClaim, JobClaimAttachment
+from .models import Job, JobReview, JobClaim, JobClaimAttachment, SupportAlert
 from unfold.admin import TabularInline
 
 @admin.register(Job)
@@ -77,3 +77,48 @@ class JobClaimAdmin(ModelAdmin):
             color_class,
             obj.get_status_display()
         )
+
+
+@admin.register(SupportAlert)
+class SupportAlertAdmin(ModelAdmin):
+    list_display = ('id', 'alert_type_badge', 'severity_badge', 'job_link', 'amount_display', 'status_badge', 'customer', 'professional', 'created_at')
+    list_filter = ('alert_type', 'severity', 'status', 'created_at')
+    search_fields = ('title', 'description', 'job__id', 'customer__username', 'professional__username', 'cancellation_reason')
+    readonly_fields = ('created_at', 'updated_at')
+
+    @admin.display(description="Tipo")
+    def alert_type_badge(self, obj):
+        colors = {
+            SupportAlert.AlertType.LOW_CHARGE: "bg-amber-100 text-amber-800 border border-amber-200",
+            SupportAlert.AlertType.JOB_CANCELLED: "bg-rose-100 text-rose-800 border border-rose-200",
+        }
+        color_class = colors.get(obj.alert_type, "bg-gray-100 text-gray-800")
+        return format_html('<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold {}">{}</span>', color_class, obj.get_alert_type_display())
+
+    @admin.display(description="Severidad")
+    def severity_badge(self, obj):
+        colors = {
+            SupportAlert.Severity.INFO: "bg-blue-100 text-blue-800",
+            SupportAlert.Severity.WARNING: "bg-amber-100 text-amber-800",
+            SupportAlert.Severity.CRITICAL: "bg-rose-100 text-rose-800 font-bold",
+        }
+        return format_html('<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {}">{}</span>', colors.get(obj.severity, "bg-gray-100"), obj.get_severity_display())
+
+    @admin.display(description="Estado")
+    def status_badge(self, obj):
+        colors = {
+            SupportAlert.Status.PENDING: "bg-rose-100 text-rose-800",
+            SupportAlert.Status.IN_REVIEW: "bg-amber-100 text-amber-800",
+            SupportAlert.Status.RESOLVED: "bg-emerald-100 text-emerald-800",
+            SupportAlert.Status.DISMISSED: "bg-gray-100 text-gray-800",
+        }
+        return format_html('<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium {}">{}</span>', colors.get(obj.status, "bg-gray-100"), obj.get_status_display())
+
+    @admin.display(description="Trabajo")
+    def job_link(self, obj):
+        return f"Trabajo #{obj.job_id}"
+
+    @admin.display(description="Monto")
+    def amount_display(self, obj):
+        return f"${int(obj.amount):,}" if obj.amount is not None else "-"
+

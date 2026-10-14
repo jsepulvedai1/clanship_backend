@@ -14,13 +14,14 @@ class SeasonalCampaignAdmin(ModelAdmin):
         'season_type',
         'app_type',
         'is_active',
+        'show_logo_badge',
         'display_live_status',
         'start_date',
         'end_date',
         'priority',
         'particle_effect',
     )
-    list_filter = ('is_active', 'season_type', 'app_type', 'particle_effect')
+    list_filter = ('is_active', 'show_logo_badge', 'season_type', 'app_type', 'particle_effect')
     search_fields = ('name', 'greeting_prefix', 'promo_banner_title')
     filter_horizontal = ('featured_tags',)
 
@@ -58,7 +59,7 @@ class SeasonalCampaignAdmin(ModelAdmin):
         }),
         ('Banners, Insignias y Decoraciones', {
             'fields': (
-                'logo_badge_icon',
+                ('show_logo_badge', 'logo_badge_icon'),
                 'nav_center_icon',
                 'banner_image',
                 'stat_cards_bg_image',

@@ -362,3 +362,117 @@ class JobClaimAttachment(models.Model):
 
     def __str__(self):
         return f"Adjunto para Reclamo #{self.claim.id}"
+
+
+class SupportAlert(models.Model):
+    """
+    Alertas operacionales generadas automáticamente para el equipo de soporte.
+    Cubre cobros bajo el umbral mínimo ($15.000) y cancelaciones de trabajos.
+    """
+    class AlertType(models.TextChoices):
+        LOW_CHARGE = 'LOW_CHARGE', 'Cobro menor a $15.000'
+        JOB_CANCELLED = 'JOB_CANCELLED', 'Cancelación de trabajo'
+
+    class Severity(models.TextChoices):
+        INFO = 'INFO', 'Informativa'
+        WARNING = 'WARNING', 'Advertencia'
+        CRITICAL = 'CRITICAL', 'Crítica'
+
+    class Status(models.TextChoices):
+        PENDING = 'PENDING', 'Pendiente'
+        IN_REVIEW = 'IN_REVIEW', 'En Revisión'
+        RESOLVED = 'RESOLVED', 'Resuelto'
+        DISMISSED = 'DISMISSED', 'Descartado'
+
+    job = models.ForeignKey(
+        Job,
+        on_delete=models.CASCADE,
+        related_name="support_alerts",
+        verbose_name="Trabajo relacionado"
+    )
+    alert_type = models.CharField(
+        max_length=30,
+        choices=AlertType.choices,
+        verbose_name="Tipo de alerta",
+        db_index=True
+    )
+    severity = models.CharField(
+        max_length=20,
+        choices=Severity.choices,
+        default=Severity.WARNING,
+        verbose_name="Severidad",
+        db_index=True
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+        verbose_name="Estado de gestión",
+        db_index=True
+    )
+
+    title = models.CharField(max_length=255, verbose_name="Título de la alerta")
+    description = models.TextField(verbose_name="Descripción detallada")
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Monto asociado (CLP)"
+    )
+
+    # Usuarios involucrados para consultas rápidas
+    customer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="alerts_as_customer",
+        verbose_name="Cliente"
+    )
+    professional = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="alerts_as_professional",
+        verbose_name="Profesional"
+    )
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="alerts_cancelled",
+        verbose_name="Cancelado por"
+    )
+    cancellation_reason = models.TextField(null=True, blank=True, verbose_name="Motivo de cancelación")
+
+    # Auditoría y resolución de soporte
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolved_support_alerts",
+        verbose_name="Gestionado por (Soporte)"
+    )
+    resolution_notes = models.TextField(blank=True, null=True, verbose_name="Notas de resolución")
+    resolved_at = models.DateTimeField(null=True, blank=True, verbose_name="Fecha de resolución")
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name="Fecha de creación")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Última actualización")
+
+    class Meta:
+        verbose_name = "Alerta de Soporte"
+        verbose_name_plural = "Alertas de Soporte"
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['status', '-created_at']),
+            models.Index(fields=['alert_type', 'status']),
+            models.Index(fields=['job', 'alert_type']),
+        ]
+
+    def __str__(self):
+        return f"[{self.get_alert_type_display()}] Trabajo #{self.job_id} - {self.status}"
+
