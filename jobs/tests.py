@@ -9,6 +9,13 @@ User = get_user_model()
 
 class PublicJobPushNotificationTestCase(TestCase):
     def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        setting = SystemSetting.get_settings()
+        setting.nationwide_coverage_mode = False
+        setting.save()
+        cache.clear()
+
         # Santiago Centro: aprox (-33.4489, -70.6693)
         self.specialty_gardening = Specialty.objects.create(name="Jardinería")
         self.specialty_electric = Specialty.objects.create(name="Electricidad")
