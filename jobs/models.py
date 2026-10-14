@@ -219,6 +219,29 @@ class PublicJobRequest(models.Model):
         return f"Solicitud Abierta {self.id}: {self.title} ({self.customer.username})"
 
 
+@receiver(post_save, sender=PublicJobRequest)
+def notify_public_job_created(sender, instance, created, **kwargs):
+    """
+    Despacha la tarea asíncrona de Celery para notificar a los profesionales calificados
+    cuando se publica una nueva cotización/solicitud de trabajo abierta.
+    """
+    if created and instance.status == PublicJobRequest.Status.OPEN:
+        def dispatch_task():
+            try:
+                from core.tasks import process_public_job_created_notifications
+                process_public_job_created_notifications.delay(instance.id)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Could not enqueue public job notification task to Celery: {e}")
+                try:
+                    from core.tasks import process_public_job_created_notifications
+                    process_public_job_created_notifications(instance.id)
+                except Exception as fallback_err:
+                    logging.getLogger(__name__).error(f"Fallback public job notification failed: {fallback_err}")
+
+        transaction.on_commit(dispatch_task)
+
+
 class JobProposal(models.Model):
     """
     Postulación / Cotización enviada por un maestro a una solicitud abierta.

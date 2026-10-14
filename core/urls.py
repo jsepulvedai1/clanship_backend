@@ -27,7 +27,8 @@ from django.conf.urls.static import static
 from core.views import (
     contact_api_view, app_version_check_view, seasonal_config_api_view,
     secure_document_view, banners_api_view, admin_banners_api_view,
-    admin_banner_toggle_api_view, admin_banners_reorder_api_view
+    admin_banner_toggle_api_view, admin_banners_reorder_api_view,
+    admin_jobs_api_view
 )
 
 urlpatterns = [
@@ -52,6 +53,10 @@ urlpatterns = [
     path('api/v1/admin/banners/<int:banner_id>/', admin_banners_api_view, name='admin_banners_detail_api'),
     path('api/v1/admin/banners/<int:banner_id>/toggle/', admin_banner_toggle_api_view, name='admin_banner_toggle_api'),
     path('api/v1/admin/banners/reorder/', admin_banners_reorder_api_view, name='admin_banners_reorder_api'),
+
+    # Admin Jobs Management Endpoints (for clanship-admin)
+    path('api/v1/admin/jobs/', admin_jobs_api_view, name='admin_jobs_api'),
+    path('api/v1/admin/jobs/<int:job_id>/', admin_jobs_api_view, name='admin_jobs_detail_api'),
     
     # Restablecimiento de contraseña
     path(

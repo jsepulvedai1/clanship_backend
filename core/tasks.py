@@ -184,3 +184,143 @@ def process_chat_message_notifications(self, message_id):
             self.retry(exc=exc)
         except Exception:
             pass
+
+
+def _calculate_distance_km(lat1, lon1, lat2, lon2):
+    import math
+    try:
+        lat1, lon1, lat2, lon2 = float(lat1), float(lon1), float(lat2), float(lon2)
+        r = 6371.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = (math.sin(dlat / 2.0) ** 2 +
+             math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2.0) ** 2)
+        c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+        return r * c
+    except (ValueError, TypeError):
+        return 0.0
+
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=5)
+def process_public_job_created_notifications(self, public_request_id):
+    """
+    Tarea asíncrona de Celery para notificar a los profesionales/maestros calificados
+    por Push (FCM) y WebSockets cuando un cliente publica una nueva cotización/solicitud abierta.
+    Aplica los mismos filtros de especialidad y radio de distancia geográfica que la app.
+    """
+    from jobs.models import PublicJobRequest
+    from django.contrib.auth import get_user_model
+    from users.models import SystemSetting
+    from django.db.models import Q
+
+    try:
+        pub_req = PublicJobRequest.objects.select_related('customer', 'specialty').filter(
+            pk=public_request_id,
+            status=PublicJobRequest.Status.OPEN
+        ).first()
+
+        if not pub_req:
+            logger.info(f"[Celery] Solicitud pública {public_request_id} no encontrada o no está en estado OPEN.")
+            return
+
+        User = get_user_model()
+
+        # 1. Base: profesionales activos con perfil verificado
+        queryset = User.objects.filter(
+            user_type='PROFESSIONAL',
+            is_active=True,
+            professional_profile__isnull=False
+        ).filter(
+            Q(professional_profile__verification_status='APPROVED') |
+            Q(professional_profile__is_verified=True)
+        ).exclude(id=pub_req.customer_id).select_related('professional_profile').prefetch_related('professional_profile__specialties')
+
+        # 2. Filtrado por especialidad
+        if pub_req.specialty_id:
+            queryset = queryset.filter(
+                Q(professional_profile__specialty_id=pub_req.specialty_id) |
+                Q(professional_profile__specialties__id=pub_req.specialty_id)
+            ).distinct()
+
+        # 3. Filtrado por distancia (radio de cobertura del maestro vs distancia a la solicitud)
+        nationwide_mode = SystemSetting.is_nationwide_coverage_active()
+        eligible_professionals = []
+
+        if not nationwide_mode and pub_req.latitude is not None and pub_req.longitude is not None:
+            req_lat = float(pub_req.latitude)
+            req_lon = float(pub_req.longitude)
+
+            for prof in queryset:
+                prof_profile = prof.professional_profile
+                if prof_profile and prof_profile.latitude is not None and prof_profile.longitude is not None:
+                    prof_lat = float(prof_profile.latitude)
+                    prof_lon = float(prof_profile.longitude)
+                    max_radius = float(prof_profile.service_radius or 30.0)
+                    dist = _calculate_distance_km(prof_lat, prof_lon, req_lat, req_lon)
+                    if dist <= max_radius:
+                        eligible_professionals.append(prof)
+                    else:
+                        logger.debug(
+                            f"[Celery] Prof {prof.id} fuera de radio: dist={dist:.1f}km > radio={max_radius:.1f}km"
+                        )
+                else:
+                    # Si el profesional no tiene coordenadas registradas en su perfil, incluirlo
+                    eligible_professionals.append(prof)
+        else:
+            # Cobertura nacional activa o la solicitud no tiene coordenadas explícitas
+            eligible_professionals = list(queryset)
+
+        logger.info(
+            f"[Celery] Notificando nueva cotización #{pub_req.id} a {len(eligible_professionals)} profesionales calificados."
+        )
+
+        specialty_name = pub_req.specialty.name if pub_req.specialty else (pub_req.custom_specialty or "su especialidad")
+        location_info = f" en {pub_req.address}" if pub_req.address else ""
+        title = f"Nueva cotización disponible ({specialty_name})"
+        body = f"Cliente solicita presupuesto{location_info}: '{pub_req.title}'. ¡Envía tu cotización ahora!"
+
+        push_data = {
+            "event": "new_public_job",
+            "public_request_id": str(pub_req.id),
+            "title": title,
+            "body": body,
+            "specialty": specialty_name,
+            "click_action": "FLUTTER_NOTIFICATION_CLICK"
+        }
+
+        channel_layer = get_channel_layer()
+
+        for prof in eligible_professionals:
+            # Enviar Push Notification
+            try:
+                send_user_push_notification(
+                    user=prof,
+                    title=title,
+                    body=body,
+                    data=push_data
+                )
+            except Exception as push_err:
+                logger.error(f"[Celery] Error enviando push a profesional {prof.id}: {push_err}")
+
+            # Enviar WebSocket en tiempo real
+            if channel_layer:
+                try:
+                    async_to_sync(channel_layer.group_send)(
+                        f"user_{prof.id}",
+                        {
+                            "type": "job_notification",
+                            "event": "public_job_created",
+                            "public_request_id": str(pub_req.id),
+                            "message": f"Nueva cotización disponible: {pub_req.title}",
+                        }
+                    )
+                except Exception as ws_err:
+                    logger.error(f"[Celery] Error enviando websocket a profesional {prof.id}: {ws_err}")
+
+    except Exception as exc:
+        logger.error(f"[Celery] Error procesando notificaciones para solicitud pública {public_request_id}: {exc}")
+        try:
+            self.retry(exc=exc)
+        except Exception:
+            pass
+

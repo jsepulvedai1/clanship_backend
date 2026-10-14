@@ -690,3 +690,175 @@ def admin_banners_reorder_api_view(request):
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
+
+def serialize_job(job, request=None):
+    customer = job.customer
+    professional = job.professional
+    review = getattr(job, 'review', None)
+
+    additional_photo_url = None
+    if job.additional_photo:
+        try:
+            additional_photo_url = request.build_absolute_uri(job.additional_photo.url) if request else job.additional_photo.url
+        except Exception:
+            additional_photo_url = str(job.additional_photo)
+
+    finished_photos_urls = []
+    if job.finished_photos:
+        for p in job.finished_photos:
+            if p.startswith('http://') or p.startswith('https://'):
+                finished_photos_urls.append(p)
+            elif request:
+                try:
+                    finished_photos_urls.append(request.build_absolute_uri(p))
+                except Exception:
+                    finished_photos_urls.append(p)
+            else:
+                finished_photos_urls.append(p)
+
+    prof_profile = getattr(professional, 'professional_profile', None)
+    specialty_name = None
+    if prof_profile and getattr(prof_profile, 'specialty', None):
+        specialty_name = prof_profile.specialty.name
+
+    return {
+        'id': job.id,
+        'customerId': customer.id,
+        'customerName': customer.get_full_name() or customer.username,
+        'customerEmail': customer.email,
+        'customerPhone': getattr(customer, 'phone_number', '') or '',
+        'customerAvatar': customer.avatar.url if (hasattr(customer, 'avatar') and customer.avatar) else None,
+        'professionalId': professional.id,
+        'professionalName': professional.get_full_name() or professional.username,
+        'professionalEmail': professional.email,
+        'professionalPhone': getattr(professional, 'phone_number', '') or '',
+        'professionalAvatar': professional.avatar.url if (hasattr(professional, 'avatar') and professional.avatar) else None,
+        'professionalSpecialty': specialty_name,
+        'scheduledDate': str(job.scheduled_date) if job.scheduled_date else None,
+        'scheduledTime': str(job.scheduled_time) if job.scheduled_time else None,
+        'status': job.status,
+        'description': job.description or '',
+        'enrichedDetails': job.enriched_details,
+        'additionalPhoto': additional_photo_url,
+        'agreedPrice': float(job.agreed_price) if job.agreed_price is not None else None,
+        'finalPrice': float(job.final_price) if job.final_price is not None else None,
+        'tradesmanComments': job.tradesman_comments,
+        'finishedPhotos': finished_photos_urls,
+        'address': job.address or '',
+        'isRead': job.is_read,
+        'cancellationReason': job.cancellation_reason,
+        'cancelledById': job.cancelled_by_id,
+        'cancelledByName': (job.cancelled_by.get_full_name() or job.cancelled_by.username) if job.cancelled_by else None,
+        'review': {
+            'id': review.id,
+            'rating': review.rating,
+            'comment': review.comment,
+            'createdAt': review.created_at.isoformat() if hasattr(review, 'created_at') else None
+        } if review else None,
+        'createdAt': job.created_at.isoformat() if job.created_at else None,
+        'updatedAt': job.updated_at.isoformat() if job.updated_at else None,
+    }
+
+
+@csrf_exempt
+def admin_jobs_api_view(request, job_id=None):
+    """
+    REST API para listado, filtrado y actualización de órdenes de trabajo para clanship-admin.
+    """
+    from jobs.models import Job, SupportAlert
+    from django.db.models import Q
+
+    if not check_admin_permission(request):
+        return JsonResponse({'success': False, 'error': 'No autorizado.'}, status=403)
+
+    if request.method == 'GET':
+        if job_id:
+            try:
+                job = Job.objects.select_related('customer', 'professional__professional_profile__specialty', 'review', 'cancelled_by').get(pk=job_id)
+                return JsonResponse({'success': True, 'job': serialize_job(job, request)})
+            except Job.DoesNotExist:
+                return JsonResponse({'success': False, 'error': 'Trabajo no encontrado.'}, status=404)
+
+        status = request.GET.get('status')
+        search = request.GET.get('search')
+        customer_id = request.GET.get('customer_id')
+        professional_id = request.GET.get('professional_id')
+        user_id = request.GET.get('user_id')
+
+        qs = Job.objects.select_related('customer', 'professional__professional_profile__specialty', 'review', 'cancelled_by').all()
+
+        if status and status.upper() != 'ALL':
+            qs = qs.filter(status=status.upper())
+
+        if customer_id:
+            qs = qs.filter(customer_id=customer_id)
+
+        if professional_id:
+            qs = qs.filter(professional_id=professional_id)
+
+        if user_id:
+            qs = qs.filter(Q(customer_id=user_id) | Q(professional_id=user_id))
+
+        if search:
+            search = search.strip()
+            q_filter = (
+                Q(description__icontains=search) |
+                Q(address__icontains=search) |
+                Q(customer__username__icontains=search) |
+                Q(customer__first_name__icontains=search) |
+                Q(customer__last_name__icontains=search) |
+                Q(customer__email__icontains=search) |
+                Q(customer__phone_number__icontains=search) |
+                Q(professional__username__icontains=search) |
+                Q(professional__first_name__icontains=search) |
+                Q(professional__last_name__icontains=search) |
+                Q(professional__email__icontains=search) |
+                Q(professional__phone_number__icontains=search)
+            )
+            if search.isdigit():
+                q_filter |= Q(id=int(search))
+            qs = qs.filter(q_filter)
+
+        qs = qs.order_by('-created_at')
+
+        limit = request.GET.get('limit')
+        if limit:
+            try:
+                qs = qs[:int(limit)]
+            except ValueError:
+                pass
+
+        jobs_data = [serialize_job(j, request) for j in qs]
+        return JsonResponse({'success': True, 'jobs': jobs_data, 'total': len(jobs_data)})
+
+    elif request.method in ['POST', 'PATCH', 'PUT']:
+        if not job_id:
+            return JsonResponse({'success': False, 'error': 'ID de trabajo requerido.'}, status=400)
+
+        try:
+            job = Job.objects.get(pk=job_id)
+        except Job.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Trabajo no encontrado.'}, status=404)
+
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+        except Exception:
+            data = request.POST.dict()
+
+        new_status = data.get('status')
+        if new_status:
+            new_status = new_status.upper()
+            if new_status in Job.Status.values:
+                job.status = new_status
+
+        if 'cancellation_reason' in data:
+            job.cancellation_reason = data.get('cancellation_reason')
+            if request.user and request.user.is_authenticated:
+                job.cancelled_by = request.user
+
+        job.save()
+        return JsonResponse({'success': True, 'message': 'Trabajo actualizado.', 'job': serialize_job(job, request)})
+
+    return JsonResponse({'success': False, 'error': f'Método {request.method} no permitido.'}, status=405)
+
+
