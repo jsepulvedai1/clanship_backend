@@ -1086,13 +1086,12 @@ class RegisterUser(graphene.Mutation):
         if not phone_clean:
             raise UserFacingError('El número de teléfono es obligatorio', code='PHONE_REQUIRED')
 
-        if User.objects.filter(email__iexact=email_clean).exists() or User.objects.filter(username__iexact=email_clean).exists():
-            raise UserFacingError('El usuario ya existe con este correo electrónico', code='USER_ALREADY_EXISTS')
+        phone_variants = get_phone_variants(phone_clean)
+        if User.objects.filter(phone_number__in=phone_variants).exists():
+            raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
 
-        if phone_clean:
-            phone_variants = get_phone_variants(phone_clean)
-            if User.objects.filter(phone_number__in=phone_variants).exists():
-                raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
+        if User.objects.filter(email__iexact=email_clean).exists() or User.objects.filter(username__iexact=email_clean).exists():
+            raise UserFacingError('El correo electrónico ya se encuentra registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión.', code='USER_ALREADY_EXISTS')
 
         user = User(
             username=email_clean,
