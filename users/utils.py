@@ -31,3 +31,31 @@ def jwt_payload_handler(user, context=None):
         payload['session_key'] = user.client_session_key
 
     return payload
+
+
+def get_phone_variants(phone):
+    """
+    Genera todas las variantes posibles de un número telefónico (con/sin prefijo país +56,
+    con/sin símbolo '+', con/sin código de área) para validar unicidad de forma robusta.
+    """
+    if not phone:
+        return []
+    clean = str(phone).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+    if not clean:
+        return []
+    variants = {clean}
+    if clean.startswith('+'):
+        raw = clean[1:]
+        variants.add(raw)
+        if raw.startswith('56'):
+            variants.add(raw[2:])
+            variants.add('+' + raw[2:])
+    else:
+        variants.add('+' + clean)
+        if clean.startswith('56'):
+            variants.add(clean[2:])
+            variants.add('+56' + clean[2:])
+        elif len(clean) == 9 and clean.startswith('9'):
+            variants.add('+56' + clean)
+            variants.add('56' + clean)
+    return list(variants)

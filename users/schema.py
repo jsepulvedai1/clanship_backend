@@ -12,6 +12,8 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.core.mail import send_mail
+from core.exceptions import UserFacingError
+from .utils import get_phone_variants
 
 
 class UserAddressType(DjangoObjectType):
@@ -162,6 +164,8 @@ class TagType(DjangoObjectType):
 class CheckUserExistenceType(graphene.ObjectType):
     email_exists = graphene.Boolean()
     phone_exists = graphene.Boolean()
+    user_message = graphene.String()
+    message = graphene.String()
 
 class ProfessionalPhotoType(DjangoObjectType):
     image_url = graphene.String()
@@ -594,15 +598,27 @@ class Query(graphene.ObjectType):
     def resolve_check_user_existence(self, info, email=None, phone_number=None):
         email_exists = False
         phone_exists = False
+        user_message = None
         if email and email.strip():
             email_clean = email.strip().lower()
             email_exists = User.objects.filter(
                 Q(email__iexact=email_clean) | Q(username__iexact=email_clean)
             ).exists()
-        if phone_number and phone_number.strip():
-            phone_clean = phone_number.strip()
-            phone_exists = User.objects.filter(phone_number=phone_clean).exists()
-        return CheckUserExistenceType(email_exists=email_exists, phone_exists=phone_exists)
+            if email_exists:
+                user_message = "El correo electrónico ya se encuentra registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión."
+
+        if phone_number and str(phone_number).strip():
+            phone_variants = get_phone_variants(phone_number)
+            phone_exists = User.objects.filter(phone_number__in=phone_variants).exists()
+            if phone_exists:
+                user_message = "El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente."
+
+        return CheckUserExistenceType(
+            email_exists=email_exists,
+            phone_exists=phone_exists,
+            user_message=user_message,
+            message=user_message
+        )
 
     validate_referral_code = graphene.Field(
         ValidateReferralCodeType,
@@ -1006,7 +1022,13 @@ class UpdateProfile(graphene.Mutation):
         user.last_name = last_name
         user.email = email.strip().lower()
         user.username = email.strip().lower()
-        user.phone_number = phone_number
+        if phone_number is not None:
+            clean_phone = phone_number.strip().replace(' ', '').replace('-', '') if phone_number.strip() else None
+            if clean_phone:
+                phone_variants = get_phone_variants(clean_phone)
+                if User.objects.filter(phone_number__in=phone_variants).exclude(id=user.id).exists():
+                    raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
+            user.phone_number = clean_phone
         
         if address is not None:
             user.address = address
@@ -1028,7 +1050,15 @@ class UpdateProfile(graphene.Mutation):
             file_name = f"avatar_{user.id}_{int(time.time())}.{ext}"
             user.avatar.save(file_name, ContentFile(base64.b64decode(imgstr)), save=False)
             
-        user.save()
+        try:
+            user.save()
+        except Exception as e:
+            err_lower = str(e).lower()
+            if 'phone' in err_lower:
+                raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
+            elif 'email' in err_lower or 'username' in err_lower:
+                raise UserFacingError('El correo electrónico ya se encuentra registrado por otro usuario.', code='USER_ALREADY_EXISTS')
+            raise
         
         return UpdateProfile(user=user, success=True)
 
@@ -1048,17 +1078,21 @@ class RegisterUser(graphene.Mutation):
     def mutate(self, info, email, password, first_name, last_name, phone_number=None, user_type='CUSTOMER', referral_code=None):
         email_clean = email.strip().lower()
         if len(first_name) > 30:
-            raise Exception('El nombre no puede tener más de 30 caracteres')
+            raise UserFacingError('El nombre no puede tener más de 30 caracteres', code='NAME_TOO_LONG')
         if len(last_name) > 30:
-            raise Exception('El apellido no puede tener más de 30 caracteres')
+            raise UserFacingError('El apellido no puede tener más de 30 caracteres', code='LAST_NAME_TOO_LONG')
 
-        phone_clean = phone_number.strip() if phone_number else None
+        phone_clean = phone_number.strip().replace(' ', '').replace('-', '') if phone_number else None
+        if not phone_clean:
+            raise UserFacingError('El número de teléfono es obligatorio', code='PHONE_REQUIRED')
 
         if User.objects.filter(email__iexact=email_clean).exists() or User.objects.filter(username__iexact=email_clean).exists():
-            raise Exception('El usuario ya existe')
+            raise UserFacingError('El usuario ya existe con este correo electrónico', code='USER_ALREADY_EXISTS')
 
-        if phone_clean and User.objects.filter(phone_number=phone_clean).exists():
-            raise Exception('El número de teléfono ya está registrado por otro usuario')
+        if phone_clean:
+            phone_variants = get_phone_variants(phone_clean)
+            if User.objects.filter(phone_number__in=phone_variants).exists():
+                raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
 
         user = User(
             username=email_clean,
@@ -1069,7 +1103,15 @@ class RegisterUser(graphene.Mutation):
             user_type=user_type
         )
         user.set_password(password)
-        user.save()
+        try:
+            user.save()
+        except Exception as e:
+            err_lower = str(e).lower()
+            if 'phone' in err_lower:
+                raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
+            elif 'email' in err_lower or 'username' in err_lower:
+                raise UserFacingError('El usuario ya existe con este correo electrónico', code='USER_ALREADY_EXISTS')
+            raise
 
         if user_type == 'PROFESSIONAL':
             from users.models import ProfessionalProfile, SubscriptionPlan

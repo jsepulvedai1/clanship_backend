@@ -22,6 +22,48 @@ class CustomGraphQLView(GraphQLView):
             print(f"=========================================")
         return response
 
+    @staticmethod
+    def format_error(error):
+        formatted = GraphQLView.format_error(error)
+        original = getattr(error, 'original_error', None)
+        
+        user_message = getattr(original, 'user_message', None)
+        code = getattr(original, 'code', None)
+
+        # Si es un error de integridad de base de datos (ej. clave duplicada de teléfono o email)
+        if not user_message and original:
+            orig_name = type(original).__name__
+            orig_str = str(original).lower()
+            if 'integrity' in orig_name.lower() or 'unique' in orig_str:
+                if 'phone' in orig_str:
+                    user_message = 'El número de teléfono ya se encuentra registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión.'
+                    code = 'PHONE_ALREADY_REGISTERED'
+                elif 'email' in orig_str or 'username' in orig_str:
+                    user_message = 'El correo electrónico ya se encuentra registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión.'
+                    code = 'USER_ALREADY_EXISTS'
+
+        # Si el error no es UserFacingError pero es Exception simple (ej: raise Exception('...'))
+        if not user_message and original and isinstance(original, Exception):
+            msg = str(original)
+            technical_terms = ['syntaxerror', 'typeerror', 'attributeerror', 'operationalerror', 'traceback', 'internal server error']
+            if not any(term in msg.lower() for term in technical_terms):
+                user_message = msg
+
+        if user_message:
+            formatted['user_message'] = user_message
+            formatted['message'] = user_message
+            if 'extensions' not in formatted or not isinstance(formatted['extensions'], dict):
+                formatted['extensions'] = {}
+            formatted['extensions']['user_message'] = user_message
+
+        if code:
+            formatted['code'] = code
+            if 'extensions' not in formatted or not isinstance(formatted['extensions'], dict):
+                formatted['extensions'] = {}
+            formatted['extensions']['code'] = code
+
+        return formatted
+
 from django.conf import settings
 from django.conf.urls.static import static
 from core.views import (
@@ -78,3 +120,9 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+handler400 = 'core.views.custom_400_view'
+handler403 = 'core.views.custom_403_view'
+handler404 = 'core.views.custom_404_view'
+handler500 = 'core.views.custom_500_view'
+

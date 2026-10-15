@@ -862,3 +862,39 @@ def admin_jobs_api_view(request, job_id=None):
     return JsonResponse({'success': False, 'error': f'Método {request.method} no permitido.'}, status=405)
 
 
+def custom_400_view(request, exception=None):
+    return JsonResponse({
+        'success': False,
+        'code': 'BAD_REQUEST',
+        'user_message': 'La solicitud no pudo ser procesada. Verifica los datos enviados.',
+        'detail': str(exception) if settings.DEBUG and exception else None
+    }, status=400)
+
+
+def custom_403_view(request, exception=None):
+    return JsonResponse({
+        'success': False,
+        'code': 'FORBIDDEN',
+        'user_message': 'No tienes permisos suficientes para realizar esta acción.',
+        'detail': str(exception) if settings.DEBUG and exception else None
+    }, status=403)
+
+
+def custom_404_view(request, exception=None):
+    return JsonResponse({
+        'success': False,
+        'code': 'NOT_FOUND',
+        'user_message': 'El recurso o servicio que buscas no fue encontrado.',
+        'detail': str(exception) if settings.DEBUG and exception else None
+    }, status=404)
+
+
+def custom_500_view(request):
+    return JsonResponse({
+        'success': False,
+        'code': 'INTERNAL_SERVER_ERROR',
+        'user_message': 'Lo sentimos, ocurrió un problema en el servidor. Por favor intenta nuevamente más tarde.',
+    }, status=500)
+
+
+

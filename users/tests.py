@@ -246,6 +246,53 @@ class RegisterUserPhoneValidationTestCase(TestCase):
         self.assertTrue(res.data['registerUser']['success'])
         self.assertEqual(res.data['registerUser']['user']['phoneNumber'], "+56987654321")
 
+    def test_register_user_duplicate_phone_with_different_format_fails(self):
+        from users.models import User
+        User.objects.create_user(
+            username="existing_variant@example.com",
+            email="existing_variant@example.com",
+            password="Password123!",
+            phone_number="+56912345678"
+        )
+        # Register using variation without +56
+        mutation = '''
+        mutation {
+          registerUser(
+            email: "variant_user@example.com",
+            password: "Password123!",
+            firstName: "Carlos",
+            lastName: "Soto",
+            phoneNumber: "912345678"
+          ) {
+            success
+          }
+        }
+        '''
+        res = schema.execute(mutation)
+        self.assertIsNotNone(res.errors)
+        self.assertIn("El número de teléfono ya está registrado", str(res.errors))
 
-
-
+    def test_check_user_existence_returns_user_message(self):
+        from users.models import User
+        User.objects.create_user(
+            username="existing_check@example.com",
+            email="existing_check@example.com",
+            password="Password123!",
+            phone_number="+56998877665"
+        )
+        query = '''
+        query {
+          checkUserExistence(phoneNumber: "+56998877665") {
+            phoneExists
+            emailExists
+            userMessage
+            message
+          }
+        }
+        '''
+        res = schema.execute(query)
+        self.assertIsNone(res.errors)
+        data = res.data['checkUserExistence']
+        self.assertTrue(data['phoneExists'])
+        self.assertIn("El número de teléfono ya está registrado", data['userMessage'])
+        self.assertEqual(data['userMessage'], data['message'])
