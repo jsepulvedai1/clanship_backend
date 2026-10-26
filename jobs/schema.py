@@ -57,6 +57,8 @@ class JobProposalAttachmentType(DjangoObjectType):
         return JobProposalAttachmentType.resolve_file(self, info)
 
 class JobProposalType(DjangoObjectType):
+    status = graphene.String()
+    status_display = graphene.String()
     professional_name = graphene.String()
     professional_avatar_url = graphene.String()
     professional_rating = graphene.Float()
@@ -65,6 +67,28 @@ class JobProposalType(DjangoObjectType):
     class Meta:
         model = JobProposal
         fields = "__all__"
+
+    def resolve_status(self, info):
+        raw_status = str(self.status or JobProposal.Status.PENDING).upper()
+        if raw_status == JobProposal.Status.PENDING:
+            try:
+                if self.public_request and str(self.public_request.status).upper() in [
+                    PublicJobRequest.Status.ASSIGNED,
+                    PublicJobRequest.Status.CANCELLED,
+                    PublicJobRequest.Status.EXPIRED,
+                ]:
+                    return JobProposal.Status.REJECTED
+            except Exception:
+                pass
+        return raw_status
+
+    def resolve_status_display(self, info):
+        resolved = JobProposalType.resolve_status(self, info)
+        if resolved == JobProposal.Status.ACCEPTED:
+            return "Aprobada"
+        if resolved == JobProposal.Status.REJECTED:
+            return "Rechazada"
+        return "Pendiente"
 
     def resolve_attachments(self, info):
         return self.attachments.all()
@@ -98,6 +122,7 @@ class JobProposalType(DjangoObjectType):
 
 
 class PublicJobRequestType(DjangoObjectType):
+    status = graphene.String()
     photo_url = graphene.String()
     photos_urls = graphene.List(graphene.String)
     desired_date = graphene.String()
@@ -111,6 +136,9 @@ class PublicJobRequestType(DjangoObjectType):
     class Meta:
         model = PublicJobRequest
         fields = "__all__"
+
+    def resolve_status(self, info):
+        return str(self.status or PublicJobRequest.Status.OPEN).upper()
 
     def resolve_photo_url(self, info):
         if self.photo:
@@ -740,6 +768,8 @@ class Query(graphene.ObjectType):
     my_jobs = graphene.List(JobType, status=graphene.String())
     my_job_claims = graphene.List(JobClaimType)
     open_public_job_requests = graphene.List(PublicJobRequestType, specialty_id=graphene.Int(required=False))
+    my_quoted_public_job_requests = graphene.List(PublicJobRequestType, status=graphene.String(required=False))
+    my_job_proposals = graphene.List(JobProposalType, status=graphene.String(required=False))
     my_public_job_requests = graphene.List(PublicJobRequestType)
     public_job_request_details = graphene.Field(PublicJobRequestType, id=graphene.Int(required=True))
     support_alerts = graphene.List(
@@ -795,21 +825,36 @@ class Query(graphene.ObjectType):
     @login_required
     def resolve_open_public_job_requests(self, info, specialty_id=None):
         user = info.context.user
+        from django.db.models import Q
         queryset = PublicJobRequest.objects.filter(
             status=PublicJobRequest.Status.OPEN
         ).select_related('customer', 'specialty').prefetch_related(
-            'proposals__professional__professional_profile'
+            'proposals__professional__professional_profile',
+            'proposals__attachments'
+        )
+
+        # Solicitudes en las que este profesional ya envió una cotización (sin importar si siguen OPEN o ya pasaron a ASSIGNED/CANCELLED/EXPIRED)
+        quoted_ids = list(
+            PublicJobRequest.objects.filter(
+                proposals__professional=user
+            ).values_list('id', flat=True).distinct()
         )
 
         # Si es un profesional, filtrar por sus especialidades y radio de trabajo (service_radius)
         prof_profile = getattr(user, 'professional_profile', None)
         if prof_profile:
             if not prof_profile.is_verified:
+                if quoted_ids:
+                    return PublicJobRequest.objects.filter(id__in=quoted_ids).select_related(
+                        'customer', 'specialty'
+                    ).prefetch_related(
+                        'proposals__professional__professional_profile',
+                        'proposals__attachments'
+                    ).order_by('-created_at')
                 return PublicJobRequest.objects.none()
             if specialty_id:
                 queryset = queryset.filter(specialty_id=specialty_id)
             else:
-                from django.db.models import Q
                 prof_specialty_ids = set()
                 if prof_profile.specialty_id:
                     prof_specialty_ids.add(prof_profile.specialty_id)
@@ -848,6 +893,90 @@ class Query(graphene.ObjectType):
                         # Si la solicitud no tiene coordenadas explícitas, incluirla
                         filtered_ids.append(req.id)
                 queryset = queryset.filter(id__in=filtered_ids)
+
+        if quoted_ids:
+            open_ids = list(queryset.values_list('id', flat=True))
+            combined_ids = list(set(open_ids) | set(quoted_ids))
+            final_qs = PublicJobRequest.objects.filter(id__in=combined_ids).select_related(
+                'customer', 'specialty'
+            ).prefetch_related(
+                'proposals__professional__professional_profile',
+                'proposals__attachments'
+            )
+            if specialty_id:
+                final_qs = final_qs.filter(specialty_id=specialty_id)
+            return final_qs.order_by('-created_at')
+
+        return queryset.order_by('-created_at')
+
+    @login_required
+    def resolve_my_quoted_public_job_requests(self, info, status=None):
+        user = info.context.user
+        proposals_qs = JobProposal.objects.filter(professional=user)
+        if status:
+            normalized_status = status.strip().upper()
+            if normalized_status == JobProposal.Status.REJECTED:
+                from django.db.models import Q
+                proposals_qs = proposals_qs.filter(
+                    Q(status=JobProposal.Status.REJECTED) |
+                    Q(
+                        status=JobProposal.Status.PENDING,
+                        public_request__status__in=[
+                            PublicJobRequest.Status.ASSIGNED,
+                            PublicJobRequest.Status.CANCELLED,
+                            PublicJobRequest.Status.EXPIRED,
+                        ]
+                    )
+                )
+            elif normalized_status == JobProposal.Status.PENDING:
+                proposals_qs = proposals_qs.filter(
+                    status=JobProposal.Status.PENDING,
+                    public_request__status=PublicJobRequest.Status.OPEN
+                )
+            else:
+                proposals_qs = proposals_qs.filter(status=normalized_status)
+
+        request_ids = proposals_qs.values_list('public_request_id', flat=True).distinct()
+        return PublicJobRequest.objects.filter(
+            id__in=request_ids
+        ).select_related('customer', 'specialty').prefetch_related(
+            'proposals__professional__professional_profile',
+            'proposals__attachments'
+        ).order_by('-created_at')
+
+    @login_required
+    def resolve_my_job_proposals(self, info, status=None):
+        user = info.context.user
+        queryset = JobProposal.objects.filter(
+            professional=user
+        ).select_related(
+            'public_request__customer',
+            'public_request__specialty',
+            'professional__professional_profile'
+        ).prefetch_related('attachments')
+
+        if status:
+            normalized_status = status.strip().upper()
+            if normalized_status == JobProposal.Status.REJECTED:
+                from django.db.models import Q
+                queryset = queryset.filter(
+                    Q(status=JobProposal.Status.REJECTED) |
+                    Q(
+                        status=JobProposal.Status.PENDING,
+                        public_request__status__in=[
+                            PublicJobRequest.Status.ASSIGNED,
+                            PublicJobRequest.Status.CANCELLED,
+                            PublicJobRequest.Status.EXPIRED,
+                        ]
+                    )
+                )
+            elif normalized_status == JobProposal.Status.PENDING:
+                queryset = queryset.filter(
+                    status=JobProposal.Status.PENDING,
+                    public_request__status=PublicJobRequest.Status.OPEN
+                )
+            else:
+                queryset = queryset.filter(status=normalized_status)
 
         return queryset.order_by('-created_at')
 
@@ -1604,9 +1733,76 @@ class CancelPublicJobRequest(graphene.Mutation):
         except PublicJobRequest.DoesNotExist:
             raise Exception("Solicitud no encontrada.")
 
-        public_request.delete()
+        # Marcar como CANCELLED en vez de eliminar para preservar el historial de cotizaciones
+        public_request.status = PublicJobRequest.Status.CANCELLED
+        public_request.save(update_fields=['status', 'updated_at'])
+
+        pending_proposals = list(
+            public_request.proposals.filter(status=JobProposal.Status.PENDING).select_related('professional')
+        )
+        public_request.proposals.filter(status=JobProposal.Status.PENDING).update(
+            status=JobProposal.Status.REJECTED
+        )
+
+        # Notificar por WebSocket a los profesionales que habían cotizado
+        try:
+            from core.tasks import send_ws_notification_async
+            for prop in pending_proposals:
+                if prop.professional_id:
+                    send_ws_notification_async.delay(
+                        group_name=f"user_notifications_{prop.professional_id}",
+                        event_type="job_proposal_rejected_taken",
+                        data={
+                            "message": f"La solicitud '{public_request.title}' fue cancelada por el cliente.",
+                            "public_request_id": public_request.id,
+                            "proposal_id": prop.id,
+                            "status": "REJECTED",
+                        }
+                    )
+        except Exception as e:
+            print(f"Error al enviar notificación WS al cancelar solicitud pública: {e}")
 
         return CancelPublicJobRequest(success=True)
+
+
+class RejectJobProposal(graphene.Mutation):
+    class Arguments:
+        proposal_id = graphene.Int(required=True)
+
+    success = graphene.Boolean()
+    proposal = graphene.Field(JobProposalType)
+
+    @login_required
+    def mutate(self, info, proposal_id):
+        user = info.context.user
+        try:
+            proposal = JobProposal.objects.select_related('public_request', 'professional').get(pk=proposal_id)
+        except JobProposal.DoesNotExist:
+            raise Exception("La propuesta no existe.")
+
+        if proposal.public_request.customer != user:
+            raise Exception("No tienes permiso para rechazar esta propuesta.")
+
+        proposal.status = JobProposal.Status.REJECTED
+        proposal.save(update_fields=['status'])
+
+        try:
+            from core.tasks import send_ws_notification_async
+            if proposal.professional_id:
+                send_ws_notification_async.delay(
+                    group_name=f"user_notifications_{proposal.professional_id}",
+                    event_type="job_proposal_rejected_taken",
+                    data={
+                        "message": f"Tu cotización para '{proposal.public_request.title}' no fue seleccionada.",
+                        "public_request_id": proposal.public_request.id,
+                        "proposal_id": proposal.id,
+                        "status": "REJECTED",
+                    }
+                )
+        except Exception as e:
+            print(f"Error al enviar notificación WS al rechazar propuesta: {e}")
+
+        return RejectJobProposal(success=True, proposal=proposal)
 
 class CreateJobClaim(graphene.Mutation):
     success = graphene.Boolean()
@@ -1741,6 +1937,7 @@ class Mutation(graphene.ObjectType):
     create_public_job_request = CreatePublicJobRequest.Field()
     submit_job_proposal = SubmitJobProposal.Field()
     accept_job_proposal = AcceptJobProposal.Field()
+    reject_job_proposal = RejectJobProposal.Field()
     renegotiate_job_price = RenegotiateJobPrice.Field()
     cancel_public_job_request = CancelPublicJobRequest.Field()
     update_support_alert_status = UpdateSupportAlertStatus.Field()

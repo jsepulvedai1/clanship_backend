@@ -307,6 +307,21 @@ class ProfessionalProfileType(DjangoObjectType):
     def resolve_requires_plan_upgrade(self, info):
         return self.requires_plan_upgrade
 
+    def resolve_address(self, info):
+        if self.address:
+            return self.address
+        return getattr(self.user, 'address', None)
+
+    def resolve_latitude(self, info):
+        if self.latitude is not None:
+            return self.latitude
+        return getattr(self.user, 'latitude', None)
+
+    def resolve_longitude(self, info):
+        if self.longitude is not None:
+            return self.longitude
+        return getattr(self.user, 'longitude', None)
+
 
 class PaginatedProfessionalsType(graphene.ObjectType):
     total_count = graphene.Int()
