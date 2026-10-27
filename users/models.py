@@ -250,6 +250,16 @@ class SubscriptionPlan(models.Model):
     def __str__(self):
         return f"{self.name} (${self.price})"
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        from django.core.cache import cache
+        cache.delete('catalog_subscription_plans')
+
+    def delete(self, *args, **kwargs):
+        super().delete(*args, **kwargs)
+        from django.core.cache import cache
+        cache.delete('catalog_subscription_plans')
+
 
 class ProfessionalProfile(models.Model):
     """
