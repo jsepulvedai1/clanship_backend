@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'clans',
     'jobs',
     'chat',
+    'payments',
     
     # GraphQL JWT Refresh Token
     'graphql_jwt.refresh_token.apps.RefreshTokenConfig',
@@ -287,3 +288,10 @@ DEFAULT_FROM_EMAIL = NO_REPLY_FROM_EMAIL
 
 # Cobertura de búsqueda y contratación a nivel nacional (Periodo de prueba Todo Chile)
 NATIONWIDE_COVERAGE_MODE = os.environ.get('NATIONWIDE_COVERAGE_MODE', 'False').lower() in ('true', '1', 'yes')
+
+# ─── Mercado Pago (Chile) ───────────────────────────────────────────────────
+MERCADOPAGO_PUBLIC_KEY = os.environ.get('MERCADOPAGO_PUBLIC_KEY', '')
+MERCADOPAGO_ACCESS_TOKEN = os.environ.get('MERCADOPAGO_ACCESS_TOKEN', '')
+MERCADOPAGO_SITE_ID = os.environ.get('MERCADOPAGO_SITE_ID', 'MLC')
+MERCADOPAGO_CURRENCY = os.environ.get('MERCADOPAGO_CURRENCY', 'CLP')
+BACKEND_BASE_URL = os.environ.get('BACKEND_BASE_URL', 'https://api.clanship.cl')

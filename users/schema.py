@@ -1038,12 +1038,15 @@ class UpdateProfile(graphene.Mutation):
         user.email = email.strip().lower()
         user.username = email.strip().lower()
         if phone_number is not None:
-            clean_phone = phone_number.strip().replace(' ', '').replace('-', '') if phone_number.strip() else None
+            clean_phone = phone_number.strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
             if clean_phone:
+                if len(clean_phone) < 8:
+                    raise UserFacingError('El número de teléfono ingresado no es válido (demasiado corto)', code='PHONE_INVALID')
                 phone_variants = get_phone_variants(clean_phone)
                 if User.objects.filter(phone_number__in=phone_variants).exclude(id=user.id).exists():
                     raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
-            user.phone_number = clean_phone
+                user.phone_number = clean_phone
+            # Si clean_phone viene vacío (""), NUNCA borramos el teléfono existente ni guardamos "" vacío
         
         if address is not None:
             user.address = address
@@ -1097,9 +1100,11 @@ class RegisterUser(graphene.Mutation):
         if len(last_name) > 30:
             raise UserFacingError('El apellido no puede tener más de 30 caracteres', code='LAST_NAME_TOO_LONG')
 
-        phone_clean = phone_number.strip().replace(' ', '').replace('-', '') if phone_number else None
+        phone_clean = phone_number.strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '') if phone_number else None
         if not phone_clean:
             raise UserFacingError('El número de teléfono es obligatorio', code='PHONE_REQUIRED')
+        if len(phone_clean) < 8:
+            raise UserFacingError('El número de teléfono ingresado no es válido (demasiado corto)', code='PHONE_INVALID')
 
         phone_variants = get_phone_variants(phone_clean)
         if User.objects.filter(phone_number__in=phone_variants).exists():
@@ -1977,6 +1982,9 @@ class SubscribeToPlan(graphene.Mutation):
 
     success = graphene.Boolean()
     profile = graphene.Field(ProfessionalProfileType)
+    requires_payment = graphene.Boolean()
+    checkout_url = graphene.String()
+    message = graphene.String()
 
     def mutate(self, info, plan_id):
         user = info.context.user
@@ -2003,12 +2011,34 @@ class SubscribeToPlan(graphene.Mutation):
             if current_tags > plan.service_categories:
                 raise Exception(f'El plan {plan.name} solo permite {plan.service_categories} oficios, pero tienes {current_tags} seleccionados. Por favor, desmarca algunos antes de cambiar de plan.')
 
+        # Si el plan es de pago (> 0), generamos la preferencia de Mercado Pago
+        if plan.price > 0:
+            from payments.services import create_plan_subscription_preference
+            pref_res = create_plan_subscription_preference(user=user, plan=plan)
+            return SubscribeToPlan(
+                success=True,
+                profile=profile,
+                requires_payment=True,
+                checkout_url=pref_res["checkout_url"],
+                message="Preferencia de pago generada exitosamente. Procede al checkout."
+            )
+
+        # Si el plan es gratuito (0.00), lo activamos directamente
         profile.plan = plan
         from django.utils import timezone
+        from datetime import timedelta
         profile.plan_start_date = timezone.now()
-        profile.save()
+        duration = plan.duration_days or 30
+        profile.plan_expires_at = timezone.now() + timedelta(days=duration)
+        profile.save(update_fields=['plan', 'plan_start_date', 'plan_expires_at'])
 
-        return SubscribeToPlan(success=True, profile=profile)
+        return SubscribeToPlan(
+            success=True,
+            profile=profile,
+            requires_payment=False,
+            checkout_url=None,
+            message=f"Plan {plan.name} activado con éxito."
+        )
 
 
 class AddUserAddress(graphene.Mutation):

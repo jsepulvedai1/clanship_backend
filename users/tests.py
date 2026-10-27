@@ -296,3 +296,42 @@ class RegisterUserPhoneValidationTestCase(TestCase):
         self.assertTrue(data['phoneExists'])
         self.assertIn("El número de teléfono ya está registrado", data['userMessage'])
         self.assertEqual(data['userMessage'], data['message'])
+
+    def test_update_profile_empty_phone_does_not_erase_existing_phone(self):
+        from users.models import User
+        user = User.objects.create_user(
+            username="preserve_phone@example.com",
+            email="preserve_phone@example.com",
+            password="Password123!",
+            phone_number="+56911223344"
+        )
+        class MockContext:
+            def __init__(self, user):
+                self.user = user
+
+        mutation = '''
+        mutation {
+          updateProfile(
+            firstName: "Juan",
+            lastName: "Perez",
+            email: "preserve_phone@example.com",
+            phoneNumber: "   "
+          ) {
+            success
+            user {
+              phoneNumber
+            }
+          }
+        }
+        '''
+        res = schema.execute(mutation, context_value=MockContext(user))
+        self.assertIsNone(res.errors)
+        user.refresh_from_db()
+        self.assertEqual(user.phone_number, "+56911223344")
+
+    def test_user_clean_requires_phone_for_non_staff(self):
+        from users.models import User
+        from django.core.exceptions import ValidationError
+        u = User(username="nophone@test.com", email="nophone@test.com", is_staff=False, is_superuser=False)
+        with self.assertRaises(ValidationError):
+            u.clean()

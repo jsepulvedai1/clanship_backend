@@ -2,11 +2,13 @@ import graphene
 import users.schema
 import jobs.schema
 import chat.schema
+import payments.schema
 
 class Query(
     users.schema.Query,
     jobs.schema.Query,
     chat.schema.Query,
+    payments.schema.Query,
     graphene.ObjectType
 ):
     """
@@ -18,6 +20,7 @@ class Mutation(
     users.schema.Mutation,
     jobs.schema.Mutation,
     chat.schema.Mutation,
+    payments.schema.Mutation,
     graphene.ObjectType
 ):
     """

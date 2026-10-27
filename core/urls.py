@@ -72,6 +72,12 @@ from core.views import (
     admin_banner_toggle_api_view, admin_banners_reorder_api_view,
     admin_jobs_api_view
 )
+from payments.views import (
+    mercadopago_webhook,
+    payment_success_view,
+    payment_failure_view,
+    payment_pending_view
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -99,6 +105,12 @@ urlpatterns = [
     # Admin Jobs Management Endpoints (for clanship-admin)
     path('api/v1/admin/jobs/', admin_jobs_api_view, name='admin_jobs_api'),
     path('api/v1/admin/jobs/<int:job_id>/', admin_jobs_api_view, name='admin_jobs_detail_api'),
+    
+    # Mercado Pago Webhooks & Callbacks
+    path('api/payments/mercadopago/webhook/', mercadopago_webhook, name='mercadopago_webhook'),
+    path('api/payments/mercadopago/success/', payment_success_view, name='mercadopago_success'),
+    path('api/payments/mercadopago/failure/', payment_failure_view, name='mercadopago_failure'),
+    path('api/payments/mercadopago/pending/', payment_pending_view, name='mercadopago_pending'),
     
     # Restablecimiento de contraseña
     path(
