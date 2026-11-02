@@ -43,11 +43,14 @@ def create_plan_subscription_preference(user, plan, base_return_url=None):
 
     webhook_url = f"{backend_base_url}/api/payments/mercadopago/webhook/"
 
+    plan_name = plan.name.strip()
+    plan_title = plan_name if plan_name.lower().startswith('plan') else f"Plan {plan_name}"
+
     preference_data = {
         "items": [
             {
                 "id": str(plan.id),
-                "title": f"Suscripción Clanship: Plan {plan.name}",
+                "title": f"Suscripción Clanship: {plan_title}",
                 "description": plan.description or f"Acceso profesional a Clanship ({plan.duration_days} días)",
                 "quantity": 1,
                 "currency_id": getattr(settings, 'MERCADOPAGO_CURRENCY', 'CLP'),

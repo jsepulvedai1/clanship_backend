@@ -335,3 +335,184 @@ class RegisterUserPhoneValidationTestCase(TestCase):
         u = User(username="nophone@test.com", email="nophone@test.com", is_staff=False, is_superuser=False)
         with self.assertRaises(ValidationError):
             u.clean()
+
+
+from unittest.mock import patch
+from users.models import Specialty, SubTag, Tag, SubscriptionPlan
+
+class SocialAuthAndOnboardingTestCase(TestCase):
+    def setUp(self):
+        self.initial_plan = SubscriptionPlan.objects.create(
+            name="Plan Inicial",
+            price=0,
+            duration_days=30,
+            max_completed_jobs=3
+        )
+        self.specialty = Specialty.objects.create(name="Gasfitería")
+        self.tag = Tag.objects.create(name="Instalaciones", specialty=self.specialty)
+        self.subtag = SubTag.objects.create(name="Calefones", tag=self.tag)
+
+    @patch('core.firebase.verify_firebase_token')
+    def test_social_auth_new_tradesman(self, mock_verify):
+        from users.models import User
+        mock_verify.return_value = {
+            'uid': 'google_test_uid_123',
+            'email': 'maestro_google@clanship.cl',
+            'name': 'Pedro Maestro',
+            'picture': 'https://example.com/avatar.jpg',
+            'firebase': {'sign_in_provider': 'google.com'}
+        }
+
+        mutation = '''
+        mutation {
+          socialAuth(idToken: "mock_token_abc", provider: "GOOGLE", appType: "TRADESMAN") {
+            token
+            refreshToken
+            isNewUser
+            isProfileComplete
+            user {
+              email
+              firstName
+              lastName
+              userType
+              authProvider
+              isProfileComplete
+            }
+          }
+        }
+        '''
+        res = schema.execute(mutation)
+        self.assertIsNone(res.errors)
+        data = res.data['socialAuth']
+        self.assertTrue(data['isNewUser'])
+        self.assertFalse(data['isProfileComplete'])
+        self.assertIsNotNone(data['token'])
+        self.assertEqual(data['user']['email'], 'maestro_google@clanship.cl')
+        self.assertEqual(data['user']['firstName'], 'Pedro')
+        self.assertEqual(data['user']['lastName'], 'Maestro')
+        self.assertEqual(data['user']['userType'], 'PROFESSIONAL')
+        self.assertEqual(data['user']['authProvider'], 'GOOGLE')
+
+        u = User.objects.get(email='maestro_google@clanship.cl')
+        self.assertEqual(u.social_uid, 'google_test_uid_123')
+        self.assertFalse(u.is_profile_complete)
+        self.assertIsNotNone(u.professional_profile)
+        self.assertEqual(u.professional_profile.plan.name, 'Plan Inicial')
+
+    def test_complete_tradesman_onboarding_success(self):
+        from users.models import User
+        u = User.objects.create_user(
+            username="onboarding_user@example.com",
+            email="onboarding_user@example.com",
+            first_name="Carlos",
+            last_name="Valenzuela",
+            auth_provider="GOOGLE",
+            social_uid="uid_carlos",
+            is_profile_complete=False
+        )
+
+        class MockContext:
+            def __init__(self, user):
+                self.user = user
+
+        mutation = f'''
+        mutation {{
+          completeTradesmanOnboarding(
+            phoneNumber: "+56977889900",
+            specialtyId: "{self.specialty.id}",
+            subtagIds: ["{self.subtag.id}"],
+            address: "Providencia 1234, Santiago",
+            latitude: -33.42,
+            longitude: -70.61,
+            serviceRadius: 15
+          ) {{
+            success
+            user {{
+              phoneNumber
+              isProfileComplete
+              professionalProfile {{
+                isVerified
+                serviceRadius
+                specialty {{
+                  id
+                  name
+                }}
+              }}
+            }}
+          }}
+        }}
+        '''
+        res = schema.execute(mutation, context_value=MockContext(u))
+        self.assertIsNone(res.errors)
+        data = res.data['completeTradesmanOnboarding']
+        self.assertTrue(data['success'])
+        self.assertEqual(data['user']['phoneNumber'], "+56977889900")
+        self.assertTrue(data['user']['isProfileComplete'])
+        self.assertEqual(data['user']['professionalProfile']['specialty']['name'], "Gasfitería")
+        self.assertEqual(data['user']['professionalProfile']['serviceRadius'], 15)
+
+        u.refresh_from_db()
+        self.assertTrue(u.is_profile_complete)
+        self.assertEqual(u.phone_number, "+56977889900")
+        self.assertEqual(u.professional_profile.specialty, self.specialty)
+        self.assertIn(self.subtag, u.professional_profile.subtags.all())
+
+    def test_complete_tradesman_onboarding_duplicate_phone_fails(self):
+        from users.models import User
+        User.objects.create_user(
+            username="other@example.com",
+            email="other@example.com",
+            phone_number="+56977889900"
+        )
+        u = User.objects.create_user(
+            username="onboarding_user2@example.com",
+            email="onboarding_user2@example.com",
+            auth_provider="GOOGLE",
+            social_uid="uid_carlos_2",
+            is_profile_complete=False
+        )
+
+        class MockContext:
+            def __init__(self, user):
+                self.user = user
+
+        mutation = f'''
+        mutation {{
+          completeTradesmanOnboarding(
+            phoneNumber: "56977889900",
+            specialtyId: "{self.specialty.id}"
+          ) {{
+            success
+          }}
+        }}
+        '''
+        res = schema.execute(mutation, context_value=MockContext(u))
+        self.assertIsNotNone(res.errors)
+        self.assertIn("ya está registrado", str(res.errors))
+
+    def test_minimal_registration_email_flow(self):
+        mutation = '''
+        mutation {
+          registerUser(
+            email: "minimal_tradesman@clanship.cl",
+            password: "SecretPassword123!",
+            firstName: "Luis",
+            lastName: "Gomez",
+            userType: "PROFESSIONAL",
+            minimalRegistration: true
+          ) {
+            success
+            user {
+              email
+              isProfileComplete
+              phoneNumber
+            }
+          }
+        }
+        '''
+        res = schema.execute(mutation)
+        self.assertIsNone(res.errors)
+        data = res.data['registerUser']
+        self.assertTrue(data['success'])
+        self.assertFalse(data['user']['isProfileComplete'])
+        self.assertIsNone(data['user']['phoneNumber'])

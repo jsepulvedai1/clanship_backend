@@ -12,6 +12,29 @@ class User(AbstractUser):
         PROFESSIONAL = 'PROFESSIONAL', 'Profesional'
         ADMIN = 'ADMIN', 'Administrador'
 
+    class AuthProvider(models.TextChoices):
+        EMAIL = 'EMAIL', 'Correo Electrónico'
+        GOOGLE = 'GOOGLE', 'Google'
+        APPLE = 'APPLE', 'Apple'
+
+    auth_provider = models.CharField(
+        max_length=20,
+        choices=AuthProvider.choices,
+        default=AuthProvider.EMAIL,
+        verbose_name="Proveedor de Autenticación"
+    )
+    social_uid = models.CharField(
+        max_length=255,
+        null=True, blank=True,
+        db_index=True,
+        verbose_name="UID Social / Firebase"
+    )
+    is_profile_complete = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name="¿Perfil Inicial Completo?"
+    )
+
     first_name = models.CharField(
         max_length=30,
         verbose_name="Nombre",
@@ -27,7 +50,7 @@ class User(AbstractUser):
         max_length=15, 
         unique=True, 
         verbose_name="Número de Teléfono",
-        null=True, blank=False
+        null=True, blank=True
     )
     user_type = models.CharField(
         max_length=20,
@@ -116,6 +139,8 @@ class User(AbstractUser):
             clean_phone = str(self.phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
             self.phone_number = clean_phone if clean_phone else None
         if not self.is_superuser and not self.is_staff and not self.phone_number:
+            if self.auth_provider in [self.AuthProvider.GOOGLE, self.AuthProvider.APPLE] and not self.is_profile_complete:
+                return
             from django.core.exceptions import ValidationError
             raise ValidationError({'phone_number': 'El número de teléfono es obligatorio para usuarios de Clanship.'})
 

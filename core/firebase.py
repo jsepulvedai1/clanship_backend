@@ -60,6 +60,29 @@ def initialize_firebase():
         return False
 
 
+def verify_firebase_token(id_token):
+    """
+    Verifica un Firebase ID Token (de Google, Apple, etc.) y retorna el payload decodificado.
+    En producción requiere credenciales válidas de Firebase Admin.
+    En entorno local (DEBUG) sin credenciales, decodifica el token para pruebas.
+    """
+    from django.conf import settings
+    is_init = initialize_firebase()
+    if is_init:
+        from firebase_admin import auth
+        return auth.verify_id_token(id_token)
+
+    if settings.DEBUG:
+        import jwt
+        logger.warning("Firebase Admin no tiene credenciales configuradas. Decodificando token en modo DEBUG sin verificar firma.")
+        try:
+            return jwt.decode(id_token, options={"verify_signature": False})
+        except Exception as e:
+            raise ValueError(f"No se pudo decodificar el token de prueba: {e}")
+
+    raise RuntimeError("Firebase Admin no está inicializado en el servidor. Configure FIREBASE_CREDENTIALS_JSON o firebase-credentials.json.")
+
+
 def send_push_notification(fcm_token, title, body, data=None):
     if not fcm_token:
         return False

@@ -42,7 +42,7 @@ class UserType(DjangoObjectType):
             "is_available", "is_emergency", "professional_profile", "first_name", "last_name",
             "active_jobs", "completed_jobs", "scheduled_jobs", "rejected_jobs", "reviews_count",
             "is_favorite", "fcm_token", "saved_addresses", "is_validated",
-            "date_joined", "is_active"
+            "date_joined", "is_active", "auth_provider", "social_uid", "is_profile_complete"
         )
 
     def resolve_is_validated(self, info):
@@ -1089,11 +1089,12 @@ class RegisterUser(graphene.Mutation):
         phone_number = graphene.String(required=False)
         user_type = graphene.String()
         referral_code = graphene.String(required=False)
+        minimal_registration = graphene.Boolean(required=False, default_value=False)
 
     user = graphene.Field(UserType)
     success = graphene.Boolean()
 
-    def mutate(self, info, email, password, first_name, last_name, phone_number=None, user_type='CUSTOMER', referral_code=None):
+    def mutate(self, info, email, password, first_name, last_name, phone_number=None, user_type='CUSTOMER', referral_code=None, minimal_registration=False):
         email_clean = email.strip().lower()
         if len(first_name) > 30:
             raise UserFacingError('El nombre no puede tener más de 30 caracteres', code='NAME_TOO_LONG')
@@ -1101,14 +1102,16 @@ class RegisterUser(graphene.Mutation):
             raise UserFacingError('El apellido no puede tener más de 30 caracteres', code='LAST_NAME_TOO_LONG')
 
         phone_clean = phone_number.strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '') if phone_number else None
-        if not phone_clean:
+        if not phone_clean and not minimal_registration:
             raise UserFacingError('El número de teléfono es obligatorio', code='PHONE_REQUIRED')
-        if len(phone_clean) < 8:
-            raise UserFacingError('El número de teléfono ingresado no es válido (demasiado corto)', code='PHONE_INVALID')
 
-        phone_variants = get_phone_variants(phone_clean)
-        if User.objects.filter(phone_number__in=phone_variants).exists():
-            raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
+        if phone_clean:
+            if len(phone_clean) < 8:
+                raise UserFacingError('El número de teléfono ingresado no es válido (demasiado corto)', code='PHONE_INVALID')
+
+            phone_variants = get_phone_variants(phone_clean)
+            if User.objects.filter(phone_number__in=phone_variants).exists():
+                raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
 
         if User.objects.filter(email__iexact=email_clean).exists() or User.objects.filter(username__iexact=email_clean).exists():
             raise UserFacingError('El correo electrónico ya se encuentra registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión.', code='USER_ALREADY_EXISTS')
@@ -1119,7 +1122,9 @@ class RegisterUser(graphene.Mutation):
             first_name=first_name.strip(),
             last_name=last_name.strip(),
             phone_number=phone_clean,
-            user_type=user_type
+            user_type=user_type,
+            auth_provider=User.AuthProvider.EMAIL,
+            is_profile_complete=bool(phone_clean)
         )
         user.set_password(password)
         try:
@@ -2177,10 +2182,231 @@ class ReportUser(graphene.Mutation):
             raise Exception("Usuario no encontrado.")
 
 
+class SocialAuth(graphene.Mutation):
+    class Arguments:
+        id_token = graphene.String(required=True)
+        provider = graphene.String(required=False, default_value="GOOGLE")
+        app_type = graphene.String(required=False, default_value="TRADESMAN")
+        referral_code = graphene.String(required=False)
+        first_name = graphene.String(required=False)
+        last_name = graphene.String(required=False)
+
+    token = graphene.String()
+    refresh_token = graphene.String()
+    user = graphene.Field(UserType)
+    is_new_user = graphene.Boolean()
+    is_profile_complete = graphene.Boolean()
+    success = graphene.Boolean()
+
+    def mutate(self, info, id_token, provider="GOOGLE", app_type="TRADESMAN", referral_code=None, first_name=None, last_name=None):
+        from core.firebase import verify_firebase_token
+        from users.utils import issue_user_tokens
+        from django.db.models import Q
+
+        try:
+            decoded = verify_firebase_token(id_token)
+        except Exception as e:
+            raise UserFacingError(f'Token de autenticación social inválido: {str(e)}', code='INVALID_SOCIAL_TOKEN')
+
+        uid = decoded.get('uid') or decoded.get('sub') or decoded.get('user_id')
+        if not uid:
+            raise UserFacingError('No se pudo identificar al usuario desde el proveedor social.', code='INVALID_SOCIAL_TOKEN')
+
+        email = (decoded.get('email') or '').strip().lower()
+        full_name = decoded.get('name') or ''
+        picture = decoded.get('picture')
+        firebase_meta = decoded.get('firebase', {})
+        sign_in_provider = firebase_meta.get('sign_in_provider', '')
+
+        # Determinar proveedor
+        prov = User.AuthProvider.GOOGLE
+        if 'apple' in sign_in_provider.lower() or str(provider).upper() == 'APPLE':
+            prov = User.AuthProvider.APPLE
+        elif 'google' in sign_in_provider.lower() or str(provider).upper() == 'GOOGLE':
+            prov = User.AuthProvider.GOOGLE
+
+        # Buscar usuario existente por social_uid o por email
+        user = None
+        if uid:
+            user = User.objects.filter(social_uid=uid).first()
+        if not user and email:
+            user = User.objects.filter(Q(email__iexact=email) | Q(username__iexact=email)).first()
+
+        is_new_user = False
+        target_user_type = User.UserType.PROFESSIONAL if app_type.upper() == 'TRADESMAN' else User.UserType.CUSTOMER
+
+        if user:
+            # Vincular UID social y proveedor si no estaban seteados
+            update_fields = []
+            if not user.social_uid:
+                user.social_uid = uid
+                update_fields.append('social_uid')
+            if user.auth_provider == User.AuthProvider.EMAIL and prov != User.AuthProvider.EMAIL:
+                user.auth_provider = prov
+                update_fields.append('auth_provider')
+            if update_fields:
+                user.save(update_fields=update_fields)
+
+            # Si es profesional pero no tenía perfil profesional inicial
+            if user.user_type == User.UserType.PROFESSIONAL:
+                from users.models import ProfessionalProfile, SubscriptionPlan
+                initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
+                ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
+
+        else:
+            is_new_user = True
+            # Extraer nombres si no vienen en argumentos
+            f_name = (first_name or '').strip()
+            l_name = (last_name or '').strip()
+            if not f_name and not l_name and full_name:
+                parts = full_name.strip().split(' ', 1)
+                f_name = parts[0]
+                l_name = parts[1] if len(parts) > 1 else ''
+
+            username_candidate = email if email else f"{prov.lower()}_{uid[:16]}"
+            # Asegurar unicidad de username
+            counter = 1
+            final_username = username_candidate
+            while User.objects.filter(username__iexact=final_username).exists():
+                final_username = f"{username_candidate}_{counter}"
+                counter += 1
+
+            user = User(
+                username=final_username,
+                email=email,
+                first_name=f_name[:30],
+                last_name=l_name[:30],
+                auth_provider=prov,
+                social_uid=uid,
+                user_type=target_user_type,
+                is_profile_complete=False
+            )
+            user.set_unusable_password()
+            user.save()
+
+            if target_user_type == User.UserType.PROFESSIONAL:
+                from users.models import ProfessionalProfile, SubscriptionPlan
+                initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
+                ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
+
+            # Aplicar referido si se proporcionó en el registro inicial
+            if referral_code and referral_code.strip():
+                clean_ref_code = referral_code.strip().upper()
+                try:
+                    from users.models import SystemSetting, ProfessionalProfile, AssociateReferral
+                    setting = SystemSetting.get_settings()
+                    if setting.referral_program_active:
+                        referrer_profile = ProfessionalProfile.objects.filter(referral_code__iexact=clean_ref_code).select_related('user', 'plan').first()
+                        if referrer_profile and referrer_profile.user and referrer_profile.user_id != user.id:
+                            AssociateReferral.objects.get_or_create(
+                                referrer=referrer_profile.user,
+                                referred_user=user,
+                                defaults={'referral_code_used': clean_ref_code}
+                            )
+                except Exception:
+                    pass
+
+        # Generar tokens de acceso
+        token, refresh_tok = issue_user_tokens(user, app_type=app_type, context=info.context)
+
+        return SocialAuth(
+            token=token,
+            refresh_token=refresh_tok,
+            user=user,
+            is_new_user=is_new_user,
+            is_profile_complete=user.is_profile_complete,
+            success=True
+        )
+
+
+class CompleteTradesmanOnboarding(graphene.Mutation):
+    class Arguments:
+        phone_number = graphene.String(required=True)
+        specialty_id = graphene.ID(required=True)
+        subtag_ids = graphene.List(graphene.ID, required=False)
+        address = graphene.String(required=False)
+        latitude = graphene.Float(required=False)
+        longitude = graphene.Float(required=False)
+        service_radius = graphene.Int(required=False, default_value=10)
+        referral_code = graphene.String(required=False)
+
+    success = graphene.Boolean()
+    user = graphene.Field(UserType)
+
+    def mutate(self, info, phone_number, specialty_id, subtag_ids=None, address=None, latitude=None, longitude=None, service_radius=10, referral_code=None):
+        user = info.context.user
+        if not user or not user.is_authenticated:
+            raise UserFacingError('Debes estar autenticado para completar tu registro.', code='UNAUTHENTICATED')
+
+        phone_clean = str(phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+        if not phone_clean:
+            raise UserFacingError('El número de teléfono es obligatorio.', code='PHONE_REQUIRED')
+        if len(phone_clean) < 8:
+            raise UserFacingError('El número de teléfono ingresado no es válido (demasiado corto).', code='PHONE_INVALID')
+
+        phone_variants = get_phone_variants(phone_clean)
+        if User.objects.filter(phone_number__in=phone_variants).exclude(id=user.id).exists():
+            raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
+
+        user.phone_number = phone_clean
+        if address:
+            user.address = address.strip()
+        if latitude is not None:
+            user.latitude = latitude
+        if longitude is not None:
+            user.longitude = longitude
+        user.is_profile_complete = True
+        user.save()
+
+        from users.models import ProfessionalProfile, Specialty, SubTag, SubscriptionPlan
+        initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
+        profile, _ = ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
+
+        specialty = Specialty.objects.filter(id=specialty_id).first()
+        if not specialty:
+            raise UserFacingError('La especialidad seleccionada no es válida.', code='SPECIALTY_NOT_FOUND')
+
+        profile.specialty = specialty
+        if address:
+            profile.address = address.strip()
+        if latitude is not None:
+            profile.latitude = latitude
+        if longitude is not None:
+            profile.longitude = longitude
+        if service_radius:
+            profile.service_radius = service_radius
+        profile.save()
+
+        if subtag_ids:
+            subtags = SubTag.objects.filter(id__in=subtag_ids)
+            profile.subtags.set(subtags)
+
+        # Procesar código de referido si se proporciona
+        if referral_code and referral_code.strip():
+            clean_ref_code = referral_code.strip().upper()
+            try:
+                from users.models import SystemSetting, AssociateReferral
+                setting = SystemSetting.get_settings()
+                if setting.referral_program_active:
+                    referrer_profile = ProfessionalProfile.objects.filter(referral_code__iexact=clean_ref_code).select_related('user', 'plan').first()
+                    if referrer_profile and referrer_profile.user and referrer_profile.user_id != user.id:
+                        AssociateReferral.objects.get_or_create(
+                            referrer=referrer_profile.user,
+                            referred_user=user,
+                            defaults={'referral_code_used': clean_ref_code}
+                        )
+            except Exception:
+                pass
+
+        return CompleteTradesmanOnboarding(success=True, user=user)
+
+
 class Mutation(graphene.ObjectType):
     token_auth = CustomObtainJSONWebToken.Field()
     verify_token = graphql_jwt.Verify.Field()
     refresh_token = graphql_jwt.Refresh.Field()
+    social_auth = SocialAuth.Field()
+    complete_tradesman_onboarding = CompleteTradesmanOnboarding.Field()
     update_profile = UpdateProfile.Field()
     register_user = RegisterUser.Field()
     toggle_favorite = ToggleFavorite.Field()

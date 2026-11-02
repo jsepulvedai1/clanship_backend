@@ -59,3 +59,40 @@ def get_phone_variants(phone):
             variants.add('+56' + clean)
             variants.add('56' + clean)
     return list(variants)
+
+
+def issue_user_tokens(user, app_type='TRADESMAN', context=None):
+    """
+    Genera tokens de acceso JWT y refresh token para un usuario,
+    actualizando la sesión única según el tipo de aplicación (TRADESMAN o CLIENT).
+    """
+    import uuid
+    from graphql_jwt.shortcuts import get_token, create_refresh_token
+    from graphql_jwt.refresh_token.models import RefreshToken
+
+    app_type_str = str(app_type or 'TRADESMAN').upper()
+    session_key = str(uuid.uuid4())
+
+    if app_type_str == 'TRADESMAN':
+        user.tradesman_session_key = session_key
+        user.save(update_fields=['tradesman_session_key'])
+    else:
+        user.client_session_key = session_key
+        user.save(update_fields=['client_session_key'])
+
+    class AppContext:
+        def __init__(self, base_ctx, app_t):
+            self._app_type = app_t
+            if base_ctx and hasattr(base_ctx, 'headers'):
+                self.headers = base_ctx.headers
+
+    ctx = AppContext(context, app_type_str)
+    token = get_token(user, ctx)
+    refresh_token = create_refresh_token(user)
+
+    try:
+        RefreshToken.objects.filter(user=user).exclude(token=refresh_token.get_token()).delete()
+    except Exception:
+        pass
+
+    return token, refresh_token.get_token()
