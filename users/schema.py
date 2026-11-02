@@ -45,6 +45,20 @@ class UserType(DjangoObjectType):
             "date_joined", "is_active", "auth_provider", "social_uid", "is_profile_complete"
         )
 
+    def resolve_is_profile_complete(self, info):
+        # 1. El número de teléfono es obligatorio para cualquier usuario
+        if not self.phone_number or not str(self.phone_number).strip():
+            return False
+        # 2. Para profesionales/maestros, al menos una especialidad/oficio es obligatorio
+        if self.user_type == User.UserType.PROFESSIONAL:
+            prof = getattr(self, 'professional_profile', None)
+            if not prof:
+                return False
+            has_specialty = bool(prof.specialty_id) or prof.specialties.exists() or prof.tags.exists()
+            if not has_specialty:
+                return False
+        return bool(self.is_profile_complete)
+
     def resolve_is_validated(self, info):
         prof = getattr(self, 'professional_profile', None)
         if prof:
@@ -1113,8 +1127,29 @@ class RegisterUser(graphene.Mutation):
             if User.objects.filter(phone_number__in=phone_variants).exists():
                 raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
 
-        if User.objects.filter(email__iexact=email_clean).exists() or User.objects.filter(username__iexact=email_clean).exists():
+        existing_user = User.objects.filter(Q(email__iexact=email_clean) | Q(username__iexact=email_clean)).first()
+        if existing_user:
+            # Si el usuario dejó su registro incompleto (sin teléfono o sin especialidad)
+            has_phone = bool(existing_user.phone_number and str(existing_user.phone_number).strip())
+            prof = getattr(existing_user, 'professional_profile', None)
+            has_specialty = bool(prof and (prof.specialty_id or prof.specialties.exists() or prof.tags.exists())) if existing_user.user_type == User.UserType.PROFESSIONAL else True
+            is_complete = existing_user.is_profile_complete and has_phone and has_specialty
+
+            if not is_complete:
+                if existing_user.check_password(password):
+                    # Contraseña correcta: reanudar y permitir completar el registro
+                    return RegisterUser(user=existing_user, success=True)
+                else:
+                    raise UserFacingError(
+                        'Ya existe una cuenta con este correo pero su registro está incompleto. Inicia sesión con tu contraseña para completarlo.',
+                        code='INCOMPLETE_REGISTRATION_LOGIN_REQUIRED'
+                    )
+
             raise UserFacingError('El correo electrónico ya se encuentra registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión.', code='USER_ALREADY_EXISTS')
+
+        is_initial_complete = False
+        if user_type == User.UserType.CUSTOMER and bool(phone_clean):
+            is_initial_complete = True
 
         user = User(
             username=email_clean,
@@ -1124,7 +1159,7 @@ class RegisterUser(graphene.Mutation):
             phone_number=phone_clean,
             user_type=user_type,
             auth_provider=User.AuthProvider.EMAIL,
-            is_profile_complete=bool(phone_clean)
+            is_profile_complete=is_initial_complete
         )
         user.set_password(password)
         try:
@@ -2322,7 +2357,9 @@ class SocialAuth(graphene.Mutation):
 class CompleteTradesmanOnboarding(graphene.Mutation):
     class Arguments:
         phone_number = graphene.String(required=True)
-        specialty_id = graphene.ID(required=True)
+        specialty_id = graphene.ID(required=False)
+        specialty_ids = graphene.List(graphene.ID, required=False)
+        tag_ids = graphene.List(graphene.ID, required=False)
         subtag_ids = graphene.List(graphene.ID, required=False)
         address = graphene.String(required=False)
         latitude = graphene.Float(required=False)
@@ -2333,7 +2370,7 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
     success = graphene.Boolean()
     user = graphene.Field(UserType)
 
-    def mutate(self, info, phone_number, specialty_id, subtag_ids=None, address=None, latitude=None, longitude=None, service_radius=10, referral_code=None):
+    def mutate(self, info, phone_number, specialty_id=None, specialty_ids=None, tag_ids=None, subtag_ids=None, address=None, latitude=None, longitude=None, service_radius=10, referral_code=None):
         user = info.context.user
         if not user or not user.is_authenticated:
             raise UserFacingError('Debes estar autenticado para completar tu registro.', code='UNAUTHENTICATED')
@@ -2358,15 +2395,46 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
         user.is_profile_complete = True
         user.save()
 
-        from users.models import ProfessionalProfile, Specialty, SubTag, SubscriptionPlan
+        from users.models import ProfessionalProfile, Specialty, Tag, SubTag, SubscriptionPlan
         initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
         profile, _ = ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
 
-        specialty = Specialty.objects.filter(id=specialty_id).first()
-        if not specialty:
-            raise UserFacingError('La especialidad seleccionada no es válida.', code='SPECIALTY_NOT_FOUND')
+        if specialty_ids:
+            profile.specialties.set(specialty_ids)
+            if not specialty_id and specialty_ids:
+                specialty_id = specialty_ids[0]
 
-        profile.specialty = specialty
+        if specialty_id:
+            specialty = Specialty.objects.filter(id=specialty_id).first()
+            if specialty:
+                profile.specialty = specialty
+                if not profile.specialties.filter(id=specialty.id).exists():
+                    profile.specialties.add(specialty)
+
+        if tag_ids:
+            tags = Tag.objects.filter(id__in=tag_ids)
+            profile.tags.set(tags)
+            if not profile.specialty:
+                first_tag = tags.filter(specialty__isnull=False).first()
+                if first_tag:
+                    profile.specialty = first_tag.specialty
+                    profile.specialties.add(first_tag.specialty)
+
+        if subtag_ids:
+            subtags = SubTag.objects.filter(id__in=subtag_ids)
+            profile.subtags.set(subtags)
+            if not profile.specialty:
+                first_sub = subtags.filter(tag__specialty__isnull=False).first()
+                if first_sub:
+                    profile.specialty = first_sub.tag.specialty
+                    profile.specialties.add(first_sub.tag.specialty)
+
+        if not profile.specialty and profile.specialties.exists():
+            profile.specialty = profile.specialties.first()
+
+        if not profile.specialty and not profile.specialties.exists() and not profile.tags.exists() and not profile.subtags.exists():
+            raise UserFacingError('Debes seleccionar al menos una especialidad o etiqueta de trabajo.', code='SPECIALTY_REQUIRED')
+
         if address:
             profile.address = address.strip()
         if latitude is not None:
@@ -2376,10 +2444,6 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
         if service_radius:
             profile.service_radius = service_radius
         profile.save()
-
-        if subtag_ids:
-            subtags = SubTag.objects.filter(id__in=subtag_ids)
-            profile.subtags.set(subtags)
 
         # Procesar código de referido si se proporciona
         if referral_code and referral_code.strip():
