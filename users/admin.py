@@ -233,17 +233,19 @@ class CustomUserAdmin(ModelAdmin, BaseUserAdmin):
     inlines = [ProfessionalProfileInline]
     fieldsets = BaseUserAdmin.fieldsets + (
         ('Información de Clanship', {'fields': ('phone_number', 'user_type', 'avatar', 'is_available', 'favorite_professionals', 'blocked_users')}),
+        ('Autenticación y Registro', {'fields': ('auth_provider', 'social_uid', 'is_profile_complete')}),
         ('Ubicación', {'fields': ('address', 'latitude', 'longitude')}),
     )
     add_fieldsets = BaseUserAdmin.add_fieldsets + (
         ('Información de Clanship', {'fields': ('phone_number', 'user_type', 'avatar', 'is_available')}),
+        ('Autenticación y Registro', {'fields': ('auth_provider', 'social_uid', 'is_profile_complete')}),
         ('Ubicación', {'fields': ('address', 'latitude', 'longitude')}),
     )
-    list_display = ('user_full_name', 'username', 'email', 'phone_number', 'user_type', 'is_available', 'is_staff', 'avatar')
+    list_display = ('user_full_name', 'username', 'email', 'phone_number', 'user_type', 'auth_provider', 'is_profile_complete', 'is_available', 'is_staff', 'avatar')
     list_display_links = ('user_full_name', 'username')
-    list_filter = ('user_type', 'is_available', 'is_staff', 'is_superuser', 'is_active')
+    list_filter = ('user_type', 'auth_provider', 'is_profile_complete', 'is_available', 'is_staff', 'is_superuser', 'is_active')
     filter_horizontal = ('favorite_professionals', 'blocked_users')
-    search_fields = ('username', 'first_name', 'last_name', 'email', 'phone_number')
+    search_fields = ('username', 'first_name', 'last_name', 'email', 'phone_number', 'social_uid')
 
     @display(description="Nombre y Apellido", ordering="first_name")
     def user_full_name(self, obj):
