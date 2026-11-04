@@ -1640,6 +1640,7 @@ class AddPortfolioPhoto(graphene.Mutation):
         
         photo = ProfessionalPhoto(profile=profile)
         photo.image.save(file_name, ContentFile(base64.b64decode(imgstr)), save=True)
+        user.refresh_from_db()
         
         return AddPortfolioPhoto(success=True, photo=photo, user=user)
 
@@ -1673,6 +1674,7 @@ class DeletePortfolioPhoto(graphene.Mutation):
         if photo.image:
             photo.image.delete(save=False)
         photo.delete()
+        target_user.refresh_from_db()
 
         return DeletePortfolioPhoto(success=True, user=target_user)
 
