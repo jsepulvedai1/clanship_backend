@@ -139,6 +139,8 @@ class User(AbstractUser):
             clean_phone = str(self.phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
             self.phone_number = clean_phone if clean_phone else None
         if not self.is_superuser and not self.is_staff and not self.phone_number:
+            if self.user_type == self.UserType.CUSTOMER and self.address:
+                return
             if self.auth_provider in [self.AuthProvider.GOOGLE, self.AuthProvider.APPLE] and not self.is_profile_complete:
                 return
             from django.core.exceptions import ValidationError
@@ -495,8 +497,21 @@ class ProfessionalProfile(models.Model):
         super().save(*args, **kwargs)
 
         status_changed = (old_is_verified != self.is_verified) or (old_status != self.verification_status) or (old_rejection_reason != self.rejection_reason)
-        if is_new or status_changed:
+        if status_changed:
             self.notify_validation_status()
+
+    @property
+    def is_validated_for_work(self):
+        if self.verification_status == self.VerificationStatus.REJECTED or bool(self.rejection_reason):
+            return False
+        if self.is_verified:
+            return True
+        user = getattr(self, 'user', None)
+        if not user:
+            return False
+        has_phone = bool(user.phone_number and str(user.phone_number).strip())
+        has_specialty = bool(self.specialty_id) or self.specialties.exists() or self.tags.exists() or self.subtags.exists()
+        return bool(user.is_profile_complete and has_phone and has_specialty)
 
     def notify_validation_status(self):
         try:
@@ -507,13 +522,13 @@ class ProfessionalProfile(models.Model):
                 is_rejected = self.verification_status == self.VerificationStatus.REJECTED or bool(self.rejection_reason)
                 if self.is_verified:
                     event = 'profile_validated'
-                    message = '¡Tu perfil profesional ha sido validado! Ya puedes activarte.'
+                    message = '¡Tu documentación ha sido aprobada! Ya cuentas con el ticket azul de Maestro Verificado.'
                 elif is_rejected:
                     event = 'profile_rejected'
                     message = f'Tu registro ha sido observado: {self.rejection_reason}' if self.rejection_reason else 'Tu registro ha sido observado por el equipo de revisión.'
                 else:
                     event = 'profile_unvalidated'
-                    message = 'Tu estado de validación está en revisión.'
+                    message = 'Tu documentación está en revisión por el equipo de soporte.'
 
                 async_to_sync(channel_layer.group_send)(
                     f'user_{self.user_id}',
@@ -522,7 +537,8 @@ class ProfessionalProfile(models.Model):
                         'event': event,
                         'job_id': 0,
                         'message': message,
-                        'is_validated': self.is_verified,
+                        'is_validated': self.is_validated_for_work,
+                        'is_verified': self.is_verified,
                         'verification_status': self.verification_status,
                         'rejection_reason': self.rejection_reason or '',
                     }

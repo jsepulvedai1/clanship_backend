@@ -33,6 +33,7 @@ class UserType(DjangoObjectType):
     saved_addresses = graphene.List(UserAddressType)
     distance = graphene.Float()
     is_validated = graphene.Boolean()
+    is_verified = graphene.Boolean()
 
     class Meta:
         model = User
@@ -41,29 +42,44 @@ class UserType(DjangoObjectType):
             "avatar", "latitude", "longitude", "address", 
             "is_available", "is_emergency", "professional_profile", "first_name", "last_name",
             "active_jobs", "completed_jobs", "scheduled_jobs", "rejected_jobs", "reviews_count",
-            "is_favorite", "fcm_token", "saved_addresses", "is_validated",
+            "is_favorite", "fcm_token", "saved_addresses", "is_validated", "is_verified",
             "date_joined", "is_active", "auth_provider", "social_uid", "is_profile_complete"
         )
 
     def resolve_is_profile_complete(self, info):
-        # 1. El número de teléfono es obligatorio para cualquier usuario
-        if not self.phone_number or not str(self.phone_number).strip():
-            return False
-        # 2. Para profesionales/maestros, al menos una especialidad/oficio es obligatorio
         if self.user_type == User.UserType.PROFESSIONAL:
+            # 1. Para profesionales/maestros, el número de teléfono y al menos una especialidad/oficio son obligatorios
+            if not self.phone_number or not str(self.phone_number).strip():
+                return False
             prof = getattr(self, 'professional_profile', None)
             if not prof:
                 return False
-            has_specialty = bool(prof.specialty_id) or prof.specialties.exists() or prof.tags.exists()
+            has_specialty = bool(prof.specialty_id) or prof.specialties.exists() or prof.tags.exists() or prof.subtags.exists()
             if not has_specialty:
                 return False
+            return bool(self.is_profile_complete)
+        elif self.user_type == User.UserType.CUSTOMER:
+            # Para clientes, no se requiere teléfono ni especialidad, pero sí dirección (o haber completado registro previo)
+            if not self.is_profile_complete:
+                return False
+            has_address = bool(self.address and str(self.address).strip()) or self.saved_addresses.exists()
+            has_phone = bool(self.phone_number and str(self.phone_number).strip())
+            if not has_address and not has_phone:
+                return False
+            return True
         return bool(self.is_profile_complete)
 
     def resolve_is_validated(self, info):
         prof = getattr(self, 'professional_profile', None)
         if prof:
-            return prof.is_verified
+            return bool(prof.is_validated_for_work)
         return True
+
+    def resolve_is_verified(self, info):
+        prof = getattr(self, 'professional_profile', None)
+        if prof:
+            return bool(prof.is_verified)
+        return False
 
     def resolve_distance(self, info):
         return getattr(self, 'distance', 0.0)
@@ -886,10 +902,12 @@ class Query(graphene.ObjectType):
         from math import cos, radians, sin, atan2, sqrt
         from django.db.models import Q
 
-        # Filtramos usuarios que sean profesionales, estén disponibles y tengan ubicación (profesional o de usuario)
+        # Filtramos usuarios que sean profesionales, estén disponibles, no estén rechazados y tengan ubicación (profesional o de usuario)
         queryset = User.objects.filter(
             user_type=User.UserType.PROFESSIONAL,
             is_available=True
+        ).exclude(
+            professional_profile__verification_status=ProfessionalProfile.VerificationStatus.REJECTED
         ).filter(
             Q(professional_profile__latitude__isnull=False, professional_profile__longitude__isnull=False) |
             Q(latitude__isnull=False, longitude__isnull=False)
@@ -1016,8 +1034,14 @@ class Query(graphene.ObjectType):
                     in_radius_results.append(user)
             results = in_radius_results
 
-        # Sort by plan search priority (descending) then distance (ascending)
-        results.sort(key=lambda u: (-get_plan_priority(u), u.distance))
+        # Sort by plan search priority (descending), verified status (descending), then distance (ascending)
+        results.sort(
+            key=lambda u: (
+                -get_plan_priority(u),
+                -(1 if getattr(getattr(u, 'professional_profile', None), 'is_verified', False) else 0),
+                u.distance
+            )
+        )
         return attach_job_counts_to_users(results)
 
 import base64
@@ -1129,11 +1153,15 @@ class RegisterUser(graphene.Mutation):
 
         existing_user = User.objects.filter(Q(email__iexact=email_clean) | Q(username__iexact=email_clean)).first()
         if existing_user:
-            # Si el usuario dejó su registro incompleto (sin teléfono o sin especialidad)
+            # Si el usuario dejó su registro incompleto
             has_phone = bool(existing_user.phone_number and str(existing_user.phone_number).strip())
-            prof = getattr(existing_user, 'professional_profile', None)
-            has_specialty = bool(prof and (prof.specialty_id or prof.specialties.exists() or prof.tags.exists())) if existing_user.user_type == User.UserType.PROFESSIONAL else True
-            is_complete = existing_user.is_profile_complete and has_phone and has_specialty
+            if existing_user.user_type == User.UserType.PROFESSIONAL:
+                prof = getattr(existing_user, 'professional_profile', None)
+                has_specialty = bool(prof and (prof.specialty_id or prof.specialties.exists() or prof.tags.exists()))
+                is_complete = existing_user.is_profile_complete and has_phone and has_specialty
+            else:
+                has_address = bool(existing_user.address and str(existing_user.address).strip()) or existing_user.saved_addresses.exists()
+                is_complete = existing_user.is_profile_complete and (has_address or has_phone)
 
             if not is_complete:
                 if existing_user.check_password(password):
@@ -1175,7 +1203,14 @@ class RegisterUser(graphene.Mutation):
         if user_type == 'PROFESSIONAL':
             from users.models import ProfessionalProfile, SubscriptionPlan
             initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
-            ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
+            ProfessionalProfile.objects.get_or_create(
+                user=user,
+                defaults={
+                    'plan': initial_plan,
+                    'is_verified': False,
+                    'verification_status': ProfessionalProfile.VerificationStatus.PENDING,
+                }
+            )
 
         # Procesamiento de código de asociado / referido
         if referral_code and referral_code.strip():
@@ -1365,11 +1400,17 @@ class UpdateAvailability(graphene.Mutation):
             target_user = request_user
 
         prof = getattr(target_user, 'professional_profile', None)
-        if target_user.user_type == 'PROFESSIONAL' and (not prof or not prof.is_verified) and not is_trusted_admin:
-            target_user.is_available = False
-            target_user.is_emergency = False
-            target_user.save()
-            raise Exception('Tu perfil está en proceso de validación. No puedes activar tu disponibilidad aún.')
+        if target_user.user_type == 'PROFESSIONAL' and not is_trusted_admin:
+            if not prof or prof.verification_status == 'REJECTED' or bool(prof.rejection_reason):
+                target_user.is_available = False
+                target_user.is_emergency = False
+                target_user.save()
+                raise Exception('Tu perfil ha sido rechazado o requiere correcciones antes de activar tu disponibilidad.')
+            if not prof.is_validated_for_work:
+                target_user.is_available = False
+                target_user.is_emergency = False
+                target_user.save()
+                raise Exception('Completa tu registro profesional antes de activar tu disponibilidad.')
 
         target_user.is_available = is_available
         if is_emergency is not None:
@@ -1551,6 +1592,19 @@ class UpdateProfessionalProfile(graphene.Mutation):
             profile.specialty = profile.specialties.first()
             
         profile.save()
+
+        # Si el profesional ya completó teléfono y al menos una especialidad/tag/subtag, marcar su perfil como completo ("validado")
+        if not user.is_profile_complete and bool(user.phone_number and user.phone_number.strip()):
+            has_spec = (
+                bool(profile.specialty_id) or
+                profile.specialties.exists() or
+                profile.tags.exists() or
+                profile.subtags.exists()
+            )
+            if has_spec:
+                user.is_profile_complete = True
+                user.save(update_fields=['is_profile_complete'])
+
         return UpdateProfessionalProfile(success=True, user=user)
 
 class AddPortfolioPhoto(graphene.Mutation):
@@ -2465,12 +2519,68 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
         return CompleteTradesmanOnboarding(success=True, user=user)
 
 
+class CompleteClientOnboarding(graphene.Mutation):
+    class Arguments:
+        address = graphene.String(required=True)
+        latitude = graphene.Float(required=False)
+        longitude = graphene.Float(required=False)
+        phone_number = graphene.String(required=False)
+
+    success = graphene.Boolean()
+    user = graphene.Field(UserType)
+
+    def mutate(self, info, address, latitude=None, longitude=None, phone_number=None):
+        user = info.context.user
+        if not user or not user.is_authenticated:
+            raise UserFacingError('Debes estar autenticado para completar tu registro.', code='UNAUTHENTICATED')
+
+        address_clean = str(address or '').strip()
+        if not address_clean:
+            raise UserFacingError('La dirección es obligatoria.', code='ADDRESS_REQUIRED')
+
+        user.address = address_clean
+        if latitude is not None:
+            user.latitude = Decimal(str(latitude))
+        if longitude is not None:
+            user.longitude = Decimal(str(longitude))
+
+        if phone_number is not None and str(phone_number).strip():
+            phone_clean = str(phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+            if len(phone_clean) < 8:
+                raise UserFacingError('El número de teléfono ingresado no es válido (demasiado corto).', code='PHONE_INVALID')
+            phone_variants = get_phone_variants(phone_clean)
+            if User.objects.filter(phone_number__in=phone_variants).exclude(id=user.id).exists():
+                raise UserFacingError('El número de teléfono ya está registrado por otro usuario.', code='PHONE_ALREADY_REGISTERED')
+            user.phone_number = phone_clean
+
+        user.is_profile_complete = True
+        user.save()
+
+        # Guardar también en direcciones guardadas del usuario (Hogar) si no existe aún
+        try:
+            if latitude is not None and longitude is not None:
+                if not UserAddress.objects.filter(user=user, address__iexact=address_clean).exists():
+                    if UserAddress.objects.filter(user=user).count() < 3:
+                        UserAddress.objects.create(
+                            user=user,
+                            address=address_clean,
+                            latitude=latitude,
+                            longitude=longitude,
+                            alias='Hogar',
+                        )
+        except Exception:
+            pass
+
+        return CompleteClientOnboarding(success=True, user=user)
+
+
 class Mutation(graphene.ObjectType):
     token_auth = CustomObtainJSONWebToken.Field()
     verify_token = graphql_jwt.Verify.Field()
     refresh_token = graphql_jwt.Refresh.Field()
     social_auth = SocialAuth.Field()
     complete_tradesman_onboarding = CompleteTradesmanOnboarding.Field()
+    complete_client_onboarding = CompleteClientOnboarding.Field()
     update_profile = UpdateProfile.Field()
     register_user = RegisterUser.Field()
     toggle_favorite = ToggleFavorite.Field()

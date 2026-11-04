@@ -225,12 +225,15 @@ def process_public_job_created_notifications(self, public_request_id):
 
         User = get_user_model()
 
-        # 1. Base: profesionales activos con perfil verificado
+        # 1. Base: profesionales activos con registro completado ("validados") o verificados, no rechazados
         queryset = User.objects.filter(
             user_type='PROFESSIONAL',
             is_active=True,
             professional_profile__isnull=False
+        ).exclude(
+            professional_profile__verification_status='REJECTED'
         ).filter(
+            Q(is_profile_complete=True) |
             Q(professional_profile__verification_status='APPROVED') |
             Q(professional_profile__is_verified=True)
         ).exclude(id=pub_req.customer_id).select_related('professional_profile').prefetch_related('professional_profile__specialties')

@@ -1,5 +1,5 @@
 from django.test import TestCase
-from users.models import SystemSetting
+from users.models import SystemSetting, User, UserAddress
 from core.schema import schema
 
 class SubscriptionVersionBlockingTestCase(TestCase):
@@ -457,6 +457,61 @@ class SocialAuthAndOnboardingTestCase(TestCase):
         self.assertEqual(u.professional_profile.specialty, self.specialty)
         self.assertIn(self.subtag, u.professional_profile.subtags.all())
 
+    def test_complete_tradesman_onboarding_with_work_tags(self):
+        from users.models import User
+        u = User.objects.create_user(
+            username="onboarding_tags@example.com",
+            email="onboarding_tags@example.com",
+            auth_provider="GOOGLE",
+            social_uid="uid_tags_123",
+            is_profile_complete=False
+        )
+
+        class MockContext:
+            def __init__(self, user):
+                self.user = user
+
+        mutation = f'''
+        mutation {{
+          completeTradesmanOnboarding(
+            phoneNumber: "+56911223344",
+            specialtyIds: ["{self.specialty.id}"],
+            tagIds: ["{self.tag.id}"],
+            subtagIds: ["{self.subtag.id}"],
+            address: "Santiago Centro",
+            latitude: -33.45,
+            longitude: -70.65,
+            serviceRadius: 20
+          ) {{
+            success
+            user {{
+              phoneNumber
+              isProfileComplete
+              professionalProfile {{
+                serviceRadius
+                specialty {{
+                  id
+                  name
+                }}
+              }}
+            }}
+          }}
+        }}
+        '''
+        res = schema.execute(mutation, context_value=MockContext(u))
+        self.assertIsNone(res.errors)
+        data = res.data['completeTradesmanOnboarding']
+        self.assertTrue(data['success'])
+        self.assertEqual(data['user']['phoneNumber'], "+56911223344")
+        self.assertTrue(data['user']['isProfileComplete'])
+        self.assertEqual(data['user']['professionalProfile']['specialty']['name'], "Gasfitería")
+
+        u.refresh_from_db()
+        self.assertTrue(u.is_profile_complete)
+        self.assertIn(self.specialty, u.professional_profile.specialties.all())
+        self.assertIn(self.tag, u.professional_profile.tags.all())
+        self.assertIn(self.subtag, u.professional_profile.subtags.all())
+
     def test_complete_tradesman_onboarding_duplicate_phone_fails(self):
         from users.models import User
         User.objects.create_user(
@@ -516,3 +571,248 @@ class SocialAuthAndOnboardingTestCase(TestCase):
         self.assertTrue(data['success'])
         self.assertFalse(data['user']['isProfileComplete'])
         self.assertIsNone(data['user']['phoneNumber'])
+
+    def test_resume_incomplete_registration_flow(self):
+        # 1. Crear un registro inicial incompleto
+        reg_mutation = '''
+        mutation {
+          registerUser(
+            email: "resume_test@clanship.cl",
+            password: "MySecurePassword123!",
+            firstName: "Pedro",
+            lastName: "Perez",
+            userType: "PROFESSIONAL",
+            minimalRegistration: true
+          ) {
+            success
+            user {
+              isProfileComplete
+            }
+          }
+        }
+        '''
+        res = schema.execute(reg_mutation)
+        self.assertIsNone(res.errors)
+        self.assertTrue(res.data['registerUser']['success'])
+
+        # 2. Si el usuario cerró la app y vuelve a intentar registrarse con la misma contraseña:
+        res2 = schema.execute(reg_mutation)
+        self.assertIsNone(res2.errors)
+        self.assertTrue(res2.data['registerUser']['success'])
+        self.assertFalse(res2.data['registerUser']['user']['isProfileComplete'])
+
+        # 3. Si intenta registrarse con contraseña errónea:
+        wrong_pass_mutation = '''
+        mutation {
+          registerUser(
+            email: "resume_test@clanship.cl",
+            password: "WrongPassword123!",
+            firstName: "Pedro",
+            lastName: "Perez",
+            userType: "PROFESSIONAL",
+            minimalRegistration: true
+          ) {
+            success
+          }
+        }
+        '''
+        res3 = schema.execute(wrong_pass_mutation)
+        self.assertIsNotNone(res3.errors)
+        self.assertIn("registro está incompleto", str(res3.errors))
+
+    def test_resolver_is_profile_complete_for_tradesman(self):
+        from users.models import User, ProfessionalProfile
+        user = User.objects.create_user(
+            username="tradesman_incomplete@clanship.cl",
+            email="tradesman_incomplete@clanship.cl",
+            user_type="PROFESSIONAL",
+            is_profile_complete=True # Marcado True por error o migración previa
+        )
+        ProfessionalProfile.objects.create(user=user, plan=self.initial_plan)
+
+        class MockContext:
+            def __init__(self, user):
+                self.user = user
+
+        query = '''
+        query {
+          me {
+            isProfileComplete
+          }
+        }
+        '''
+        # Sin teléfono ni especialidad: debe ser False
+        res = schema.execute(query, context_value=MockContext(user))
+        self.assertIsNone(res.errors)
+        self.assertFalse(res.data['me']['isProfileComplete'])
+
+        # Agregamos teléfono pero aún sin especialidad: debe seguir siendo False
+        user.phone_number = "+56912345678"
+        user.save()
+        res = schema.execute(query, context_value=MockContext(user))
+        self.assertFalse(res.data['me']['isProfileComplete'])
+
+        # Agregamos especialidad: ahora sí es True
+        prof = user.professional_profile
+        prof.specialty = self.specialty
+        prof.save()
+        res = schema.execute(query, context_value=MockContext(user))
+        self.assertTrue(res.data['me']['isProfileComplete'])
+
+    def test_minimal_registration_client_and_onboarding_flow(self):
+        from users.models import User, UserAddress
+        mutation = '''
+        mutation {
+          registerUser(
+            email: "minimal_client@clanship.cl",
+            password: "SecretPassword123!",
+            firstName: "Maria",
+            lastName: "Soto",
+            userType: "CUSTOMER",
+            minimalRegistration: true
+          ) {
+            success
+            user {
+              email
+              isProfileComplete
+              phoneNumber
+            }
+          }
+        }
+        '''
+        res = schema.execute(mutation)
+        self.assertIsNone(res.errors)
+        data = res.data['registerUser']
+        self.assertTrue(data['success'])
+        self.assertFalse(data['user']['isProfileComplete'])
+        self.assertIsNone(data['user']['phoneNumber'])
+
+        u = User.objects.get(email='minimal_client@clanship.cl')
+
+        class MockContext:
+            def __init__(self, user):
+                self.user = user
+
+        onboarding_mutation = '''
+        mutation {
+          completeClientOnboarding(
+            address: "Av. Apoquindo 4500, Las Condes",
+            latitude: -33.41,
+            longitude: -70.58,
+            phoneNumber: "+56912345678"
+          ) {
+            success
+            user {
+              address
+              phoneNumber
+              isProfileComplete
+            }
+          }
+        }
+        '''
+        res2 = schema.execute(onboarding_mutation, context_value=MockContext(u))
+        self.assertIsNone(res2.errors)
+        onb_data = res2.data['completeClientOnboarding']
+        self.assertTrue(onb_data['success'])
+        self.assertTrue(onb_data['user']['isProfileComplete'])
+        self.assertEqual(onb_data['user']['address'], "Av. Apoquindo 4500, Las Condes")
+        self.assertEqual(onb_data['user']['phoneNumber'], "+56912345678")
+        self.assertTrue(UserAddress.objects.filter(user=u, alias='Hogar').exists())
+
+    def test_professional_validated_after_onboarding_and_verified_after_support_approval(self):
+        """
+        Verifica que al terminar su registro, el maestro queda 'validado' (isValidated=True)
+        y operativo (puede activar su disponibilidad), pero NO 'verificado' (isVerified=False)
+        hasta que soporte apruebe su documentación.
+        """
+        from users.models import User, ProfessionalProfile, Specialty
+
+        spec = Specialty.objects.create(name='Gasfitería Test')
+        u = User.objects.create_user(
+            username='maestro_nuevo@clanship.cl',
+            email='maestro_nuevo@clanship.cl',
+            first_name='Maestro',
+            last_name='Nuevo',
+            user_type=User.UserType.PROFESSIONAL,
+            is_profile_complete=False,
+        )
+
+        class MockContext:
+            def __init__(self, user):
+                self.user = user
+                self.META = {}
+
+        fast_onb = f'''
+        mutation {{
+          completeTradesmanOnboarding(
+            phoneNumber: "+56977889900",
+            specialtyIds: ["{spec.id}"],
+            address: "Providencia, Santiago",
+            latitude: -33.43,
+            longitude: -70.61,
+            serviceRadius: 15
+          ) {{
+            success
+            user {{
+              isProfileComplete
+              isValidated
+              isVerified
+              professionalProfile {{
+                isVerified
+                verificationStatus
+              }}
+            }}
+          }}
+        }}
+        '''
+        res = schema.execute(fast_onb, context_value=MockContext(u))
+        self.assertIsNone(res.errors)
+        user_data = res.data['completeTradesmanOnboarding']['user']
+        self.assertTrue(user_data['isProfileComplete'])
+        self.assertTrue(user_data['isValidated'])
+        self.assertFalse(user_data['isVerified'])
+        self.assertFalse(user_data['professionalProfile']['isVerified'])
+        self.assertEqual(user_data['professionalProfile']['verificationStatus'], 'PENDING')
+
+        # El maestro validado (aunque no verificado) puede activar su disponibilidad
+        u.refresh_from_db()
+        avail_mut = '''
+        mutation {
+          updateAvailability(isAvailable: true) {
+            success
+            user {
+              isAvailable
+            }
+          }
+        }
+        '''
+        res_avail = schema.execute(avail_mut, context_value=MockContext(u))
+        self.assertIsNone(res_avail.errors)
+        self.assertTrue(res_avail.data['updateAvailability']['user']['isAvailable'])
+
+        # Cuando soporte valida su documentación -> queda verificado (ticket azul)
+        prof = u.professional_profile
+        prof.verification_status = ProfessionalProfile.VerificationStatus.APPROVED
+        prof.save()
+
+        me_query = '''
+        query {
+          me {
+            isValidated
+            isVerified
+            professionalProfile {
+              isVerified
+              verificationStatus
+            }
+          }
+        }
+        '''
+        res_me = schema.execute(me_query, context_value=MockContext(u))
+        self.assertIsNone(res_me.errors)
+        me_data = res_me.data['me']
+        self.assertTrue(me_data['isValidated'])
+        self.assertTrue(me_data['isVerified'])
+        self.assertTrue(me_data['professionalProfile']['isVerified'])
+        self.assertEqual(me_data['professionalProfile']['verificationStatus'], 'APPROVED')
+
+

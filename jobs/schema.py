@@ -62,6 +62,7 @@ class JobProposalType(DjangoObjectType):
     professional_name = graphene.String()
     professional_avatar_url = graphene.String()
     professional_rating = graphene.Float()
+    professional_is_verified = graphene.Boolean()
     attachments = graphene.List(JobProposalAttachmentType)
 
     class Meta:
@@ -119,6 +120,10 @@ class JobProposalType(DjangoObjectType):
             except (ValueError, TypeError):
                 pass
         return 0.0
+
+    def resolve_professional_is_verified(self, info):
+        prof_profile = getattr(self.professional, 'professional_profile', None)
+        return bool(prof_profile and prof_profile.is_verified)
 
 
 class PublicJobRequestType(DjangoObjectType):
@@ -843,7 +848,7 @@ class Query(graphene.ObjectType):
         # Si es un profesional, filtrar por sus especialidades y radio de trabajo (service_radius)
         prof_profile = getattr(user, 'professional_profile', None)
         if prof_profile:
-            if not prof_profile.is_verified:
+            if prof_profile.verification_status == 'REJECTED' or bool(prof_profile.rejection_reason) or not prof_profile.is_validated_for_work:
                 if quoted_ids:
                     return PublicJobRequest.objects.filter(id__in=quoted_ids).select_related(
                         'customer', 'specialty'
