@@ -48,7 +48,7 @@ class UserType(DjangoObjectType):
 
     def resolve_is_profile_complete(self, info):
         if self.user_type == User.UserType.PROFESSIONAL:
-            # 1. Para profesionales/maestros, el número de teléfono y al menos una especialidad/oficio son obligatorios
+            # 1. Para profesionales/maestros, el número de teléfono, al menos una especialidad/oficio y la zona de cobertura/dirección son obligatorios
             if not self.phone_number or not str(self.phone_number).strip():
                 return False
             prof = getattr(self, 'professional_profile', None)
@@ -56,6 +56,9 @@ class UserType(DjangoObjectType):
                 return False
             has_specialty = bool(prof.specialty_id) or prof.specialties.exists() or prof.tags.exists() or prof.subtags.exists()
             if not has_specialty:
+                return False
+            has_address = bool((self.address and str(self.address).strip()) or (prof.address and str(prof.address).strip()))
+            if not has_address:
                 return False
             return bool(self.is_profile_complete)
         elif self.user_type == User.UserType.CUSTOMER:
@@ -1092,6 +1095,16 @@ class UpdateProfile(graphene.Mutation):
             user.latitude = Decimal(str(latitude))
         if longitude is not None:
             user.longitude = Decimal(str(longitude))
+
+        if user.user_type == User.UserType.PROFESSIONAL and hasattr(user, 'professional_profile'):
+            prof = user.professional_profile
+            if address is not None:
+                prof.address = address
+            if latitude is not None:
+                prof.latitude = Decimal(str(latitude))
+            if longitude is not None:
+                prof.longitude = Decimal(str(longitude))
+            prof.save()
             
         if avatar_base64:
             # Separar el header (ej. data:image/jpeg;base64,) del contenido real
@@ -1157,8 +1170,9 @@ class RegisterUser(graphene.Mutation):
             has_phone = bool(existing_user.phone_number and str(existing_user.phone_number).strip())
             if existing_user.user_type == User.UserType.PROFESSIONAL:
                 prof = getattr(existing_user, 'professional_profile', None)
-                has_specialty = bool(prof and (prof.specialty_id or prof.specialties.exists() or prof.tags.exists()))
-                is_complete = existing_user.is_profile_complete and has_phone and has_specialty
+                has_specialty = bool(prof and (prof.specialty_id or prof.specialties.exists() or prof.tags.exists() or prof.subtags.exists()))
+                has_address = bool((existing_user.address and str(existing_user.address).strip()) or (prof and prof.address and str(prof.address).strip()))
+                is_complete = existing_user.is_profile_complete and has_phone and has_specialty and has_address
             else:
                 has_address = bool(existing_user.address and str(existing_user.address).strip()) or existing_user.saved_addresses.exists()
                 is_complete = existing_user.is_profile_complete and (has_address or has_phone)
@@ -1545,10 +1559,16 @@ class UpdateProfessionalProfile(graphene.Mutation):
             profile.tiktok_url = tiktok_url
         if address is not None:
             profile.address = address
+            user.address = address
         if latitude is not None:
             profile.latitude = Decimal(str(latitude))
+            user.latitude = Decimal(str(latitude))
         if longitude is not None:
             profile.longitude = Decimal(str(longitude))
+            user.longitude = Decimal(str(longitude))
+        user_addr_fields = [f for f, v in [('address', address), ('latitude', latitude), ('longitude', longitude)] if v is not None]
+        if user_addr_fields:
+            user.save(update_fields=user_addr_fields)
 
         if specialty_id is not None:
             profile.specialty_id = specialty_id
@@ -1593,7 +1613,7 @@ class UpdateProfessionalProfile(graphene.Mutation):
             
         profile.save()
 
-        # Si el profesional ya completó teléfono y al menos una especialidad/tag/subtag, marcar su perfil como completo ("validado")
+        # Si el profesional ya completó teléfono, especialidad y zona de cobertura/dirección, marcar su perfil como completo
         if not user.is_profile_complete and bool(user.phone_number and user.phone_number.strip()):
             has_spec = (
                 bool(profile.specialty_id) or
@@ -1601,7 +1621,8 @@ class UpdateProfessionalProfile(graphene.Mutation):
                 profile.tags.exists() or
                 profile.subtags.exists()
             )
-            if has_spec:
+            has_address = bool((user.address and str(user.address).strip()) or (profile.address and str(profile.address).strip()))
+            if has_spec and has_address:
                 user.is_profile_complete = True
                 user.save(update_fields=['is_profile_complete'])
 
@@ -2349,7 +2370,11 @@ class SocialAuth(graphene.Mutation):
             # Extraer nombres si no vienen en argumentos
             f_name = (first_name or '').strip()
             l_name = (last_name or '').strip()
-            if not f_name and not l_name and full_name:
+            if '@' in f_name or f_name.startswith('apple_'):
+                f_name = ''
+            if '@' in l_name or l_name.startswith('apple_'):
+                l_name = ''
+            if not f_name and not l_name and full_name and '@' not in full_name and not full_name.startswith('apple_'):
                 parts = full_name.strip().split(' ', 1)
                 f_name = parts[0]
                 l_name = parts[1] if len(parts) > 1 else ''
@@ -2440,6 +2465,11 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
         phone_variants = get_phone_variants(phone_clean)
         if User.objects.filter(phone_number__in=phone_variants).exclude(id=user.id).exists():
             raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
+
+        clean_address = str(address).strip() if address else ''
+        existing_address = (user.address and str(user.address).strip()) or (getattr(user, 'professional_profile', None) and user.professional_profile.address and str(user.professional_profile.address).strip())
+        if not clean_address and not existing_address:
+            raise UserFacingError('Debes ingresar tu zona de cobertura o dirección de trabajo.', code='COVERAGE_REQUIRED')
 
         user.phone_number = phone_clean
         if address:

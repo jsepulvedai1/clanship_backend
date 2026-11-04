@@ -545,6 +545,35 @@ class SocialAuthAndOnboardingTestCase(TestCase):
         self.assertIsNotNone(res.errors)
         self.assertIn("ya está registrado", str(res.errors))
 
+    def test_complete_tradesman_onboarding_missing_address_fails(self):
+        from users.models import User
+        u = User.objects.create_user(
+            username="no_address@example.com",
+            email="no_address@example.com",
+            auth_provider="GOOGLE",
+            social_uid="uid_no_address",
+            is_profile_complete=False
+        )
+
+        class MockContext:
+            def __init__(self, user):
+                self.user = user
+
+        mutation = f'''
+        mutation {{
+          completeTradesmanOnboarding(
+            phoneNumber: "56988776655",
+            specialtyId: "{self.specialty.id}",
+            address: ""
+          ) {{
+            success
+          }}
+        }}
+        '''
+        res = schema.execute(mutation, context_value=MockContext(u))
+        self.assertIsNotNone(res.errors)
+        self.assertIn("zona de cobertura", str(res.errors).lower())
+
     def test_minimal_registration_email_flow(self):
         mutation = '''
         mutation {
@@ -652,10 +681,16 @@ class SocialAuthAndOnboardingTestCase(TestCase):
         res = schema.execute(query, context_value=MockContext(user))
         self.assertFalse(res.data['me']['isProfileComplete'])
 
-        # Agregamos especialidad: ahora sí es True
+        # Agregamos especialidad pero aún sin dirección: debe seguir siendo False
         prof = user.professional_profile
         prof.specialty = self.specialty
         prof.save()
+        res = schema.execute(query, context_value=MockContext(user))
+        self.assertFalse(res.data['me']['isProfileComplete'])
+
+        # Agregamos dirección / zona de cobertura: ahora sí es True
+        user.address = "Santiago, Chile"
+        user.save()
         res = schema.execute(query, context_value=MockContext(user))
         self.assertTrue(res.data['me']['isProfileComplete'])
 

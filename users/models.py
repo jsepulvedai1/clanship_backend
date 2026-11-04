@@ -511,7 +511,8 @@ class ProfessionalProfile(models.Model):
             return False
         has_phone = bool(user.phone_number and str(user.phone_number).strip())
         has_specialty = bool(self.specialty_id) or self.specialties.exists() or self.tags.exists() or self.subtags.exists()
-        return bool(user.is_profile_complete and has_phone and has_specialty)
+        has_address = bool((user.address and str(user.address).strip()) or (self.address and str(self.address).strip()))
+        return bool(user.is_profile_complete and has_phone and has_specialty and has_address)
 
     def notify_validation_status(self):
         try:
