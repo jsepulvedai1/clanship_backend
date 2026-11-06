@@ -2447,11 +2447,13 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
         longitude = graphene.Float(required=False)
         service_radius = graphene.Int(required=False, default_value=10)
         referral_code = graphene.String(required=False)
+        first_name = graphene.String(required=False)
+        last_name = graphene.String(required=False)
 
     success = graphene.Boolean()
     user = graphene.Field(UserType)
 
-    def mutate(self, info, phone_number, specialty_id=None, specialty_ids=None, tag_ids=None, subtag_ids=None, address=None, latitude=None, longitude=None, service_radius=10, referral_code=None):
+    def mutate(self, info, phone_number, specialty_id=None, specialty_ids=None, tag_ids=None, subtag_ids=None, address=None, latitude=None, longitude=None, service_radius=10, referral_code=None, first_name=None, last_name=None):
         user = info.context.user
         if not user or not user.is_authenticated:
             raise UserFacingError('Debes estar autenticado para completar tu registro.', code='UNAUTHENTICATED')
@@ -2470,6 +2472,15 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
         existing_address = (user.address and str(user.address).strip()) or (getattr(user, 'professional_profile', None) and user.professional_profile.address and str(user.professional_profile.address).strip())
         if not clean_address and not existing_address:
             raise UserFacingError('Debes ingresar tu zona de cobertura o dirección de trabajo.', code='COVERAGE_REQUIRED')
+
+        if first_name and str(first_name).strip():
+            clean_fn = str(first_name).strip()[:30]
+            if '@' not in clean_fn and not clean_fn.startswith('apple_'):
+                user.first_name = clean_fn
+        if last_name and str(last_name).strip():
+            clean_ln = str(last_name).strip()[:30]
+            if '@' not in clean_ln and not clean_ln.startswith('apple_'):
+                user.last_name = clean_ln
 
         user.phone_number = phone_clean
         if address:
@@ -2557,11 +2568,13 @@ class CompleteClientOnboarding(graphene.Mutation):
         latitude = graphene.Float(required=False)
         longitude = graphene.Float(required=False)
         phone_number = graphene.String(required=False)
+        first_name = graphene.String(required=False)
+        last_name = graphene.String(required=False)
 
     success = graphene.Boolean()
     user = graphene.Field(UserType)
 
-    def mutate(self, info, address, latitude=None, longitude=None, phone_number=None):
+    def mutate(self, info, address, latitude=None, longitude=None, phone_number=None, first_name=None, last_name=None):
         user = info.context.user
         if not user or not user.is_authenticated:
             raise UserFacingError('Debes estar autenticado para completar tu registro.', code='UNAUTHENTICATED')
@@ -2569,6 +2582,15 @@ class CompleteClientOnboarding(graphene.Mutation):
         address_clean = str(address or '').strip()
         if not address_clean:
             raise UserFacingError('La dirección es obligatoria.', code='ADDRESS_REQUIRED')
+
+        if first_name and str(first_name).strip():
+            clean_fn = str(first_name).strip()[:30]
+            if '@' not in clean_fn and not clean_fn.startswith('apple_'):
+                user.first_name = clean_fn
+        if last_name and str(last_name).strip():
+            clean_ln = str(last_name).strip()[:30]
+            if '@' not in clean_ln and not clean_ln.startswith('apple_'):
+                user.last_name = clean_ln
 
         user.address = address_clean
         if latitude is not None:
