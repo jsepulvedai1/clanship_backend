@@ -857,7 +857,203 @@ def admin_jobs_api_view(request, job_id=None):
                 job.cancelled_by = request.user
 
         job.save()
+
+        # Si el trabajo pasa a CANCELLED, generar alerta para registro de soporte
+        if new_status == Job.Status.CANCELLED:
+            try:
+                already_alerted = SupportAlert.objects.filter(
+                    job=job,
+                    alert_type=SupportAlert.AlertType.JOB_CANCELLED
+                ).exists()
+                if not already_alerted:
+                    reason = job.cancellation_reason
+                    reason_msg = f" Motivo: {reason}." if reason else " Sin motivo especificado."
+                    SupportAlert.objects.create(
+                        job=job,
+                        alert_type=SupportAlert.AlertType.JOB_CANCELLED,
+                        severity=SupportAlert.Severity.WARNING,
+                        status=SupportAlert.Status.RESOLVED if (request.user and request.user.is_staff) else SupportAlert.Status.PENDING,
+                        title=f"Trabajo #{job.id} cancelado por Administración",
+                        description=f"El trabajo #{job.id} fue cancelado por administración.{reason_msg}",
+                        amount=job.agreed_price or job.final_price,
+                        customer=job.customer,
+                        professional=job.professional,
+                        cancelled_by=request.user if (request.user and request.user.is_authenticated) else None,
+                        cancellation_reason=reason,
+                    )
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Error creating alert on admin job cancel: {e}")
+
         return JsonResponse({'success': True, 'message': 'Trabajo actualizado.', 'job': serialize_job(job, request)})
+
+    return JsonResponse({'success': False, 'error': f'Método {request.method} no permitido.'}, status=405)
+
+
+def serialize_support_alert(alert, request=None):
+    """
+    Serializa un objeto SupportAlert para respuestas JSON de clanship-admin.
+    """
+    job = alert.job
+    customer = alert.customer or (job.customer if job else None)
+    professional = alert.professional or (job.professional if job else None)
+    cancelled_by = alert.cancelled_by or (job.cancelled_by if job else None)
+    resolved_by = alert.resolved_by
+
+    customer_avatar = customer.avatar.url if (customer and hasattr(customer, 'avatar') and customer.avatar) else None
+    if customer_avatar and request and not customer_avatar.startswith(('http://', 'https://')):
+        customer_avatar = request.build_absolute_uri(customer_avatar)
+
+    professional_avatar = professional.avatar.url if (professional and hasattr(professional, 'avatar') and professional.avatar) else None
+    if professional_avatar and request and not professional_avatar.startswith(('http://', 'https://')):
+        professional_avatar = request.build_absolute_uri(professional_avatar)
+
+    return {
+        'id': alert.id,
+        'jobId': alert.job_id,
+        'alertType': alert.alert_type,
+        'alertTypeDisplay': alert.get_alert_type_display(),
+        'severity': alert.severity,
+        'severityDisplay': alert.get_severity_display(),
+        'status': alert.status,
+        'statusDisplay': alert.get_status_display(),
+        'title': alert.title,
+        'description': alert.description,
+        'amount': float(alert.amount) if alert.amount is not None else None,
+        'customerName': (customer.get_full_name() or customer.username) if customer else None,
+        'customerPhone': getattr(customer, 'phone_number', '') or '',
+        'customerAvatar': customer_avatar,
+        'professionalName': (professional.get_full_name() or professional.username) if professional else None,
+        'professionalPhone': getattr(professional, 'phone_number', '') or '',
+        'professionalAvatar': professional_avatar,
+        'cancelledByName': (cancelled_by.get_full_name() or cancelled_by.username) if cancelled_by else None,
+        'cancellationReason': alert.cancellation_reason or (job.cancellation_reason if job else None),
+        'resolvedByName': (resolved_by.get_full_name() or resolved_by.username) if resolved_by else None,
+        'resolutionNotes': alert.resolution_notes,
+        'resolvedAt': alert.resolved_at.isoformat() if alert.resolved_at else None,
+        'createdAt': alert.created_at.isoformat() if alert.created_at else None,
+        'updatedAt': alert.updated_at.isoformat() if alert.updated_at else None,
+        'jobStatus': job.status if job else None,
+        'jobDescription': job.description if job else None,
+        'jobAgreedPrice': float(job.agreed_price) if (job and job.agreed_price is not None) else None,
+        'jobFinalPrice': float(job.final_price) if (job and job.final_price is not None) else None,
+        'jobAddress': job.address if job else None,
+        'jobScheduledDate': str(job.scheduled_date) if (job and job.scheduled_date) else None,
+        'jobScheduledTime': str(job.scheduled_time) if (job and job.scheduled_time) else None,
+    }
+
+
+@csrf_exempt
+def admin_support_alerts_api_view(request, alert_id=None):
+    """
+    REST API para listado, filtrado y gestión de alertas de soporte para clanship-admin.
+    """
+    from jobs.models import Job, SupportAlert
+    from django.db.models import Q
+    from django.utils import timezone
+
+    if not check_admin_permission(request):
+        return JsonResponse({'success': False, 'error': 'No autorizado.'}, status=403)
+
+    # Auto-sincronizar trabajos cancelados que aún no tengan SupportAlert
+    try:
+        cancelled_without_alert = Job.objects.filter(
+            status=Job.Status.CANCELLED
+        ).exclude(
+            support_alerts__alert_type=SupportAlert.AlertType.JOB_CANCELLED
+        ).select_related('customer', 'professional', 'cancelled_by')
+
+        for c_job in cancelled_without_alert:
+            canceller = c_job.cancelled_by or c_job.professional or c_job.customer
+            canceller_role = "Cliente" if (c_job.customer and canceller == c_job.customer) else "Profesional"
+            canceller_name = (canceller.get_full_name() or canceller.username) if canceller else "Usuario"
+            reason_msg = f" Motivo: {c_job.cancellation_reason}." if c_job.cancellation_reason else " Sin motivo especificado."
+            SupportAlert.objects.create(
+                job=c_job,
+                alert_type=SupportAlert.AlertType.JOB_CANCELLED,
+                severity=SupportAlert.Severity.WARNING,
+                status=SupportAlert.Status.PENDING,
+                title=f"Trabajo #{c_job.id} cancelado por {canceller_role}",
+                description=f"El trabajo #{c_job.id} fue cancelado por el {canceller_role.lower()} {canceller_name}.{reason_msg}",
+                amount=c_job.agreed_price or c_job.final_price,
+                customer=c_job.customer,
+                professional=c_job.professional,
+                cancelled_by=c_job.cancelled_by,
+                cancellation_reason=c_job.cancellation_reason,
+            )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"Error auto-syncing cancelled alerts: {e}")
+
+    if request.method == 'GET':
+        if alert_id:
+            try:
+                alert = SupportAlert.objects.select_related('job', 'customer', 'professional', 'cancelled_by', 'resolved_by').get(pk=alert_id)
+                return JsonResponse({'success': True, 'alert': serialize_support_alert(alert, request)})
+            except SupportAlert.DoesNotExist:
+                return JsonResponse({'success': False, 'error': 'Alerta no encontrada.'}, status=404)
+
+        status = request.GET.get('status')
+        alert_type = request.GET.get('alert_type')
+        search = request.GET.get('search')
+
+        qs = SupportAlert.objects.select_related('job', 'customer', 'professional', 'cancelled_by', 'resolved_by').all().order_by('-created_at')
+
+        if status and status.upper() != 'ALL':
+            qs = qs.filter(status=status.upper())
+
+        if alert_type and alert_type.upper() != 'ALL':
+            qs = qs.filter(alert_type=alert_type.upper())
+
+        if search:
+            search = search.strip()
+            qs = qs.filter(
+                Q(title__icontains=search) |
+                Q(description__icontains=search) |
+                Q(job__id__icontains=search) |
+                Q(customer__username__icontains=search) |
+                Q(customer__first_name__icontains=search) |
+                Q(customer__last_name__icontains=search) |
+                Q(professional__username__icontains=search) |
+                Q(professional__first_name__icontains=search) |
+                Q(professional__last_name__icontains=search)
+            )
+
+        alerts_data = [serialize_support_alert(a, request) for a in qs]
+        return JsonResponse({'success': True, 'alerts': alerts_data, 'total': len(alerts_data)})
+
+    elif request.method in ['POST', 'PATCH', 'PUT']:
+        if not alert_id:
+            return JsonResponse({'success': False, 'error': 'ID de alerta requerido.'}, status=400)
+
+        try:
+            alert = SupportAlert.objects.select_related('job', 'customer', 'professional', 'cancelled_by', 'resolved_by').get(pk=alert_id)
+        except SupportAlert.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Alerta no encontrada.'}, status=404)
+
+        try:
+            data = json.loads(request.body.decode('utf-8'))
+        except Exception:
+            data = request.POST.dict()
+
+        new_status = data.get('status')
+        if new_status:
+            new_status = new_status.upper()
+            if new_status in SupportAlert.Status.values:
+                alert.status = new_status
+                if new_status in [SupportAlert.Status.RESOLVED, SupportAlert.Status.DISMISSED]:
+                    alert.resolved_at = timezone.now()
+                    if request.user and request.user.is_authenticated:
+                        alert.resolved_by = request.user
+                elif new_status == SupportAlert.Status.PENDING:
+                    alert.resolved_at = None
+                    alert.resolved_by = None
+
+        if 'resolution_notes' in data or 'notes' in data:
+            alert.resolution_notes = data.get('resolution_notes') or data.get('notes')
+
+        alert.save()
+        return JsonResponse({'success': True, 'message': 'Alerta actualizada.', 'alert': serialize_support_alert(alert, request)})
 
     return JsonResponse({'success': False, 'error': f'Método {request.method} no permitido.'}, status=405)
 

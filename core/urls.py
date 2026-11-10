@@ -12,6 +12,21 @@ class CustomGraphQLView(GraphQLView):
             body = request.body
         except Exception:
             body = b''
+
+        # Si la petición incluye la cabecera confiable del panel admin, evitar que tokens JWT
+        # expirados o con firma inválida hagan fallar el JSONWebTokenMiddleware de Graphene
+        admin_header = request.META.get('HTTP_X_CLANSHIP_ADMIN', '')
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if admin_header == 'clanship_superadmin_2026' and auth_header:
+            parts = auth_header.split(' ', 1)
+            if len(parts) == 2 and parts[0].upper() in ['JWT', 'BEARER']:
+                try:
+                    import graphql_jwt.utils
+                    graphql_jwt.utils.jwt_decode(parts[1].strip())
+                except Exception:
+                    # Token inválido o expirado en localStorage del admin: descartar cabecera Authorization
+                    # para que JSONWebTokenMiddleware no anule la ejecución del GraphQL
+                    request.META.pop('HTTP_AUTHORIZATION', None)
             
         response = super().dispatch(request, *args, **kwargs)
         if response.status_code == 400:
@@ -70,7 +85,7 @@ from core.views import (
     contact_api_view, app_version_check_view, seasonal_config_api_view,
     secure_document_view, banners_api_view, admin_banners_api_view,
     admin_banner_toggle_api_view, admin_banners_reorder_api_view,
-    admin_jobs_api_view
+    admin_jobs_api_view, admin_support_alerts_api_view
 )
 from payments.views import (
     mercadopago_webhook,
@@ -105,6 +120,10 @@ urlpatterns = [
     # Admin Jobs Management Endpoints (for clanship-admin)
     path('api/v1/admin/jobs/', admin_jobs_api_view, name='admin_jobs_api'),
     path('api/v1/admin/jobs/<int:job_id>/', admin_jobs_api_view, name='admin_jobs_detail_api'),
+
+    # Admin Support Alerts Management Endpoints (for clanship-admin)
+    path('api/v1/admin/support-alerts/', admin_support_alerts_api_view, name='admin_support_alerts_api'),
+    path('api/v1/admin/support-alerts/<int:alert_id>/', admin_support_alerts_api_view, name='admin_support_alerts_detail_api'),
     
     # Mercado Pago Webhooks & Callbacks
     path('api/payments/mercadopago/webhook/', mercadopago_webhook, name='mercadopago_webhook'),

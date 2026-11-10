@@ -690,6 +690,7 @@ class UpdateJobStatus(graphene.Mutation):
         if new_status not in Job.Status.values:
             raise Exception(f"Estado '{new_status}' no es válido.")
 
+        previous_status = job.status
         if user == job.customer or job.status != new_status:
             job.is_read = False
 
@@ -709,9 +710,10 @@ class UpdateJobStatus(graphene.Mutation):
                     alert_type=SupportAlert.AlertType.JOB_CANCELLED
                 ).exists()
                 if not already_alerted:
-                    canceller_role = "Cliente" if user == job.customer else "Profesional"
-                    canceller_name = user.get_full_name() or user.username
-                    severity = SupportAlert.Severity.CRITICAL if job.status == Job.Status.IN_VISIT else SupportAlert.Severity.WARNING
+                    canceller_user = job.cancelled_by or user
+                    canceller_role = "Cliente" if (job.customer and canceller_user == job.customer) else "Profesional"
+                    canceller_name = (canceller_user.get_full_name() or canceller_user.username) if (canceller_user and not getattr(canceller_user, 'is_anonymous', False)) else "Usuario"
+                    severity = SupportAlert.Severity.CRITICAL if previous_status == Job.Status.IN_VISIT else SupportAlert.Severity.WARNING
                     reason_msg = f" Motivo: {cancellation_reason}." if cancellation_reason else " Sin motivo especificado."
                     SupportAlert.objects.create(
                         job=job,
@@ -725,7 +727,7 @@ class UpdateJobStatus(graphene.Mutation):
                         amount=job.agreed_price or job.final_price,
                         customer=job.customer,
                         professional=job.professional,
-                        cancelled_by=user,
+                        cancelled_by=canceller_user if (canceller_user and not getattr(canceller_user, 'is_anonymous', False)) else None,
                         cancellation_reason=cancellation_reason,
                     )
             except Exception as alert_err:
@@ -1141,6 +1143,36 @@ class Query(graphene.ObjectType):
 
         if not is_trusted_admin:
             raise Exception("No autorizado. Se requieren permisos de soporte o administrador.")
+
+        # Asegurar que cualquier trabajo en estado CANCELLED tenga su correspondiente SupportAlert
+        try:
+            cancelled_without_alert = Job.objects.filter(
+                status=Job.Status.CANCELLED
+            ).exclude(
+                support_alerts__alert_type=SupportAlert.AlertType.JOB_CANCELLED
+            ).select_related('customer', 'professional', 'cancelled_by')
+
+            for c_job in cancelled_without_alert:
+                canceller = c_job.cancelled_by or c_job.professional or c_job.customer
+                canceller_role = "Cliente" if (c_job.customer and canceller == c_job.customer) else "Profesional"
+                canceller_name = (canceller.get_full_name() or canceller.username) if canceller else "Usuario"
+                reason_msg = f" Motivo: {c_job.cancellation_reason}." if c_job.cancellation_reason else " Sin motivo especificado."
+                SupportAlert.objects.create(
+                    job=c_job,
+                    alert_type=SupportAlert.AlertType.JOB_CANCELLED,
+                    severity=SupportAlert.Severity.WARNING,
+                    status=SupportAlert.Status.PENDING,
+                    title=f"Trabajo #{c_job.id} cancelado por {canceller_role}",
+                    description=f"El trabajo #{c_job.id} fue cancelado por el {canceller_role.lower()} {canceller_name}.{reason_msg}",
+                    amount=c_job.agreed_price or c_job.final_price,
+                    customer=c_job.customer,
+                    professional=c_job.professional,
+                    cancelled_by=c_job.cancelled_by,
+                    cancellation_reason=c_job.cancellation_reason,
+                )
+        except Exception as sync_err:
+            import logging
+            logging.getLogger(__name__).warning(f"Error auto-syncing cancelled job alerts: {sync_err}")
 
         qs = SupportAlert.objects.select_related(
             'job', 'customer', 'professional', 'cancelled_by', 'resolved_by'
