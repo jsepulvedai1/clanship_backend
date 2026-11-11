@@ -85,7 +85,10 @@ from core.views import (
     contact_api_view, app_version_check_view, seasonal_config_api_view,
     secure_document_view, banners_api_view, admin_banners_api_view,
     admin_banner_toggle_api_view, admin_banners_reorder_api_view,
-    admin_jobs_api_view, admin_support_alerts_api_view
+    admin_jobs_api_view, admin_support_alerts_api_view,
+    admin_welcome_emails_api_view, admin_welcome_email_toggle_api_view,
+    admin_welcome_email_preview_api_view, admin_welcome_email_test_api_view,
+    admin_welcome_email_reset_api_view,
 )
 from payments.views import (
     mercadopago_webhook,
@@ -124,6 +127,14 @@ urlpatterns = [
     # Admin Support Alerts Management Endpoints (for clanship-admin)
     path('api/v1/admin/support-alerts/', admin_support_alerts_api_view, name='admin_support_alerts_api'),
     path('api/v1/admin/support-alerts/<int:alert_id>/', admin_support_alerts_api_view, name='admin_support_alerts_detail_api'),
+
+    # Admin Welcome Emails Management Endpoints (for clanship-admin)
+    path('api/v1/admin/welcome-emails/', admin_welcome_emails_api_view, name='admin_welcome_emails_api'),
+    path('api/v1/admin/welcome-emails/<str:user_type>/', admin_welcome_emails_api_view, name='admin_welcome_emails_detail_api'),
+    path('api/v1/admin/welcome-emails/<str:user_type>/toggle/', admin_welcome_email_toggle_api_view, name='admin_welcome_email_toggle_api'),
+    path('api/v1/admin/welcome-emails/<str:user_type>/preview/', admin_welcome_email_preview_api_view, name='admin_welcome_email_preview_api'),
+    path('api/v1/admin/welcome-emails/<str:user_type>/test/', admin_welcome_email_test_api_view, name='admin_welcome_email_test_api'),
+    path('api/v1/admin/welcome-emails/<str:user_type>/reset/', admin_welcome_email_reset_api_view, name='admin_welcome_email_reset_api'),
     
     # Mercado Pago Webhooks & Callbacks
     path('api/payments/mercadopago/webhook/', mercadopago_webhook, name='mercadopago_webhook'),

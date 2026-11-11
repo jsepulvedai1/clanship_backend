@@ -1374,6 +1374,12 @@ class RegisterUser(graphene.Mutation):
         except Exception as e:
             print(f"Error iniciando hilo de correo de nuevo registro: {e}", flush=True)
 
+        try:
+            from users.welcome_emails import send_welcome_email_async
+            send_welcome_email_async(user)
+        except Exception as e:
+            print(f"Error iniciando hilo de correo de bienvenida: {e}", flush=True)
+
         return RegisterUser(user=user, success=True)
 
 class UpdateAvailability(graphene.Mutation):
@@ -2421,6 +2427,12 @@ class SocialAuth(graphene.Mutation):
                             )
                 except Exception:
                     pass
+
+            try:
+                from users.welcome_emails import send_welcome_email_async
+                send_welcome_email_async(user)
+            except Exception as e:
+                print(f"Error iniciando hilo de correo de bienvenida (SocialAuth): {e}", flush=True)
 
         # Generar tokens de acceso
         token, refresh_tok = issue_user_tokens(user, app_type=app_type, context=info.context)

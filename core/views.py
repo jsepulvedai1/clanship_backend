@@ -1093,4 +1093,260 @@ def custom_500_view(request):
     }, status=500)
 
 
+def _normalize_welcome_user_type(raw_type):
+    if not raw_type:
+        return None
+    normalized = str(raw_type).strip().upper()
+    aliases = {
+        'CUSTOMER': 'CUSTOMER',
+        'CLIENT': 'CUSTOMER',
+        'CLIENTE': 'CUSTOMER',
+        'PROFESSIONAL': 'PROFESSIONAL',
+        'TRADESMAN': 'PROFESSIONAL',
+        'MAESTRO': 'PROFESSIONAL',
+    }
+    return aliases.get(normalized)
+
+
+def serialize_welcome_email_template(tpl):
+    from users.welcome_emails import build_sample_context, render_welcome_email
+
+    sample_ctx = build_sample_context(tpl.user_type)
+    rendered = render_welcome_email(tpl, sample_ctx)
+    return {
+        'id': tpl.id,
+        'user_type': tpl.user_type,
+        'user_type_label': tpl.get_user_type_display(),
+        'is_active': tpl.is_active,
+        'sender_name': tpl.sender_name,
+        'reply_to': tpl.reply_to,
+        'subject': tpl.subject,
+        'preheader': tpl.preheader,
+        'header_bg_color': tpl.header_bg_color,
+        'accent_color': tpl.accent_color,
+        'header_badge': tpl.header_badge,
+        'header_title': tpl.header_title,
+        'header_subtitle': tpl.header_subtitle,
+        'body_html': tpl.body_html,
+        'body_text': tpl.body_text,
+        'cta_text': tpl.cta_text,
+        'cta_url': tpl.cta_url,
+        'footer_text': tpl.footer_text,
+        'use_raw_html': tpl.use_raw_html,
+        'raw_html': tpl.raw_html,
+        'preview_subject': rendered['subject'],
+        'preview_from_email': rendered['from_email'],
+        'preview_html': rendered['html'],
+        'preview_text': rendered['text'],
+        'updated_at': tpl.updated_at.isoformat() if tpl.updated_at else None,
+    }
+
+
+def _parse_json_body(request):
+    try:
+        return json.loads(request.body.decode('utf-8')) if request.body else {}
+    except Exception:
+        return {}
+
+
+@csrf_exempt
+def admin_welcome_emails_api_view(request, user_type=None):
+    """
+    API REST para consultar y editar las plantillas de correo de bienvenida
+    diferenciadas para Cliente (CUSTOMER) y Maestro (PROFESSIONAL).
+    """
+    from users.models import WelcomeEmailTemplate
+    from users.welcome_emails import AVAILABLE_WELCOME_VARIABLES
+
+    if not check_admin_permission(request):
+        return JsonResponse({'success': False, 'error': 'No autorizado.'}, status=403)
+
+    if request.method == 'GET':
+        templates = WelcomeEmailTemplate.ensure_defaults()
+        if user_type:
+            normalized = _normalize_welcome_user_type(user_type)
+            if not normalized:
+                return JsonResponse({'success': False, 'error': 'Tipo de usuario inválido.'}, status=400)
+            return JsonResponse({
+                'success': True,
+                'template': serialize_welcome_email_template(templates[normalized]),
+                'variables': AVAILABLE_WELCOME_VARIABLES,
+            })
+
+        ordered = [templates['CUSTOMER'], templates['PROFESSIONAL']]
+        return JsonResponse({
+            'success': True,
+            'templates': [serialize_welcome_email_template(t) for t in ordered],
+            'variables': AVAILABLE_WELCOME_VARIABLES,
+        })
+
+    elif request.method in ['POST', 'PUT', 'PATCH']:
+        data = _parse_json_body(request)
+        normalized = _normalize_welcome_user_type(user_type or data.get('user_type'))
+        if not normalized:
+            return JsonResponse({'success': False, 'error': 'Tipo de usuario inválido (use CUSTOMER o PROFESSIONAL).'}, status=400)
+
+        tpl = WelcomeEmailTemplate.get_for_user_type(normalized)
+
+        editable_str_fields = [
+            'sender_name', 'reply_to', 'subject', 'preheader',
+            'header_bg_color', 'accent_color', 'header_badge',
+            'header_title', 'header_subtitle', 'body_html', 'body_text',
+            'cta_text', 'cta_url', 'footer_text', 'raw_html',
+        ]
+        for field in editable_str_fields:
+            if field in data:
+                setattr(tpl, field, '' if data[field] is None else str(data[field]))
+
+        if 'is_active' in data:
+            val = data['is_active']
+            tpl.is_active = val if isinstance(val, bool) else str(val).lower() in ('true', '1', 'yes')
+
+        if 'use_raw_html' in data:
+            val = data['use_raw_html']
+            tpl.use_raw_html = val if isinstance(val, bool) else str(val).lower() in ('true', '1', 'yes')
+
+        if not (tpl.subject or '').strip():
+            return JsonResponse({'success': False, 'error': 'El asunto del correo no puede estar vacío.'}, status=400)
+
+        tpl.save()
+        return JsonResponse({
+            'success': True,
+            'message': f'Plantilla de bienvenida para {tpl.get_user_type_display()} guardada con éxito.',
+            'template': serialize_welcome_email_template(tpl),
+        })
+
+    return JsonResponse({'success': False, 'error': f'Método {request.method} no permitido.'}, status=405)
+
+
+@csrf_exempt
+@require_POST
+def admin_welcome_email_toggle_api_view(request, user_type):
+    from users.models import WelcomeEmailTemplate
+
+    if not check_admin_permission(request):
+        return JsonResponse({'success': False, 'error': 'No autorizado.'}, status=403)
+
+    normalized = _normalize_welcome_user_type(user_type)
+    if not normalized:
+        return JsonResponse({'success': False, 'error': 'Tipo de usuario inválido.'}, status=400)
+
+    tpl = WelcomeEmailTemplate.get_for_user_type(normalized)
+    data = _parse_json_body(request)
+    if 'is_active' in data:
+        val = data['is_active']
+        tpl.is_active = val if isinstance(val, bool) else str(val).lower() in ('true', '1', 'yes')
+    else:
+        tpl.is_active = not tpl.is_active
+    tpl.save(update_fields=['is_active', 'updated_at'])
+
+    return JsonResponse({
+        'success': True,
+        'is_active': tpl.is_active,
+        'message': f'Correo de bienvenida para {tpl.get_user_type_display()} {"activado" if tpl.is_active else "desactivado"}.',
+        'template': serialize_welcome_email_template(tpl),
+    })
+
+
+def _extract_welcome_payload(data, tpl):
+    fields = (
+        'sender_name', 'reply_to', 'subject', 'preheader',
+        'header_bg_color', 'accent_color', 'header_badge',
+        'header_title', 'header_subtitle', 'body_html', 'body_text',
+        'cta_text', 'cta_url', 'footer_text', 'use_raw_html', 'raw_html',
+    )
+    return {f: data.get(f, getattr(tpl, f)) for f in fields}
+
+
+@csrf_exempt
+@require_POST
+def admin_welcome_email_preview_api_view(request, user_type):
+    from users.models import WelcomeEmailTemplate
+    from users.welcome_emails import build_sample_context, render_welcome_email
+
+    if not check_admin_permission(request):
+        return JsonResponse({'success': False, 'error': 'No autorizado.'}, status=403)
+
+    normalized = _normalize_welcome_user_type(user_type)
+    if not normalized:
+        return JsonResponse({'success': False, 'error': 'Tipo de usuario inválido.'}, status=400)
+
+    tpl = WelcomeEmailTemplate.get_for_user_type(normalized)
+    data = _parse_json_body(request)
+    merged = _extract_welcome_payload(data, tpl)
+
+    rendered = render_welcome_email(merged, build_sample_context(normalized))
+    return JsonResponse({
+        'success': True,
+        'preview': rendered,
+    })
+
+
+@csrf_exempt
+@require_POST
+def admin_welcome_email_test_api_view(request, user_type):
+    from users.models import WelcomeEmailTemplate
+    from users.welcome_emails import send_test_welcome_email
+
+    if not check_admin_permission(request):
+        return JsonResponse({'success': False, 'error': 'No autorizado.'}, status=403)
+
+    normalized = _normalize_welcome_user_type(user_type)
+    if not normalized:
+        return JsonResponse({'success': False, 'error': 'Tipo de usuario inválido.'}, status=400)
+
+    data = _parse_json_body(request)
+    to_email = (data.get('to_email') or '').strip()
+    if not to_email or '@' not in to_email:
+        return JsonResponse({'success': False, 'error': 'Ingresa un correo de destino válido.'}, status=400)
+
+    tpl = WelcomeEmailTemplate.get_for_user_type(normalized)
+    payload = _extract_welcome_payload(data, tpl)
+
+    try:
+        result = send_test_welcome_email(payload, normalized, to_email)
+        if result.get('sent'):
+            return JsonResponse({
+                'success': True,
+                'message': f'Correo de prueba ({tpl.get_user_type_display()}) enviado a {to_email}.',
+                'id': result.get('id'),
+            })
+        return JsonResponse({
+            'success': False,
+            'error': result.get('error') or 'No se pudo enviar el correo de prueba.',
+        }, status=400)
+    except Exception as exc:
+        return JsonResponse({
+            'success': False,
+            'error': f'Error enviando correo de prueba: {str(exc)}',
+        }, status=500)
+
+
+@csrf_exempt
+@require_POST
+def admin_welcome_email_reset_api_view(request, user_type):
+    from users.models import WelcomeEmailTemplate
+
+    if not check_admin_permission(request):
+        return JsonResponse({'success': False, 'error': 'No autorizado.'}, status=403)
+
+    normalized = _normalize_welcome_user_type(user_type)
+    if not normalized:
+        return JsonResponse({'success': False, 'error': 'Tipo de usuario inválido.'}, status=400)
+
+    tpl = WelcomeEmailTemplate.get_for_user_type(normalized)
+    defaults = WelcomeEmailTemplate.get_default_data(normalized)
+    for field, value in defaults.items():
+        if field == 'is_active':
+            continue
+        setattr(tpl, field, value)
+    tpl.save()
+
+    return JsonResponse({
+        'success': True,
+        'message': f'Plantilla de {tpl.get_user_type_display()} restaurada a valores predeterminados.',
+        'template': serialize_welcome_email_template(tpl),
+    })
+
+
 

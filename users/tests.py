@@ -1,4 +1,4 @@
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from users.models import SystemSetting, User, UserAddress
 from core.schema import schema
 
@@ -849,5 +849,251 @@ class SocialAuthAndOnboardingTestCase(TestCase):
         self.assertTrue(me_data['isVerified'])
         self.assertTrue(me_data['professionalProfile']['isVerified'])
         self.assertEqual(me_data['professionalProfile']['verificationStatus'], 'APPROVED')
+
+
+class WelcomeEmailTestCase(TestCase):
+    def setUp(self):
+        from users.models import WelcomeEmailTemplate
+        self.templates = WelcomeEmailTemplate.ensure_defaults()
+        self.admin_headers = {'HTTP_X_CLANSHIP_ADMIN': 'clanship_superadmin_2026'}
+
+    def test_defaults_exist_and_differentiate_customer_and_professional(self):
+        customer_tpl = self.templates['CUSTOMER']
+        prof_tpl = self.templates['PROFESSIONAL']
+        self.assertTrue(customer_tpl.is_active)
+        self.assertTrue(prof_tpl.is_active)
+        self.assertNotEqual(customer_tpl.subject, prof_tpl.subject)
+        self.assertNotEqual(customer_tpl.body_html, prof_tpl.body_html)
+        self.assertIn('Cliente', customer_tpl.get_user_type_display())
+        self.assertIn('Maestro', prof_tpl.get_user_type_display())
+
+    def test_render_welcome_email_escapes_html_in_user_fields(self):
+        from users.welcome_emails import build_welcome_context, render_welcome_email
+        u = User.objects.create(
+            username='xss@test.cl',
+            email='xss@test.cl',
+            first_name='<script>alert(1)</script>',
+            last_name='Perez',
+            user_type=User.UserType.CUSTOMER,
+        )
+        rendered = render_welcome_email(self.templates['CUSTOMER'], build_welcome_context(u))
+        self.assertNotIn('<script>alert(1)</script>', rendered['html'].lower())
+        self.assertIn('&lt;script&gt;', rendered['html'].lower())
+        self.assertIn('xss@test.cl', rendered['html'])
+
+    @override_settings(RESEND_API_KEY='re_test_key')
+    @patch('resend.Emails.send')
+    def test_register_user_sends_differentiated_welcome_email_and_respects_toggle(self, mock_resend_send):
+        mock_resend_send.return_value = {'id': 'msg_123'}
+
+        # 1. Registro Cliente (activo)
+        mutation_client = '''
+        mutation {
+          registerUser(
+            email: "nuevo.cliente@test.cl",
+            password: "Password123!",
+            firstName: "Andrea",
+            lastName: "Soto",
+            phoneNumber: "+56911223344",
+            userType: "CUSTOMER"
+          ) {
+            success
+          }
+        }
+        '''
+        with patch('users.welcome_emails.threading.Thread') as mock_thread:
+            mock_thread.side_effect = lambda target, daemon=True: type('T', (), {'start': staticmethod(target)})()
+            res = schema.execute(mutation_client)
+        self.assertIsNone(res.errors)
+        self.assertTrue(res.data['registerUser']['success'])
+
+        welcome_calls = [
+            call.args[0] for call in mock_resend_send.call_args_list
+            if call.args[0].get('to') == ['nuevo.cliente@test.cl']
+        ]
+        self.assertEqual(len(welcome_calls), 1)
+        self.assertIn('Andrea', welcome_calls[0]['subject'])
+        self.assertIn('BIENVENIDO A CLANSHIP', welcome_calls[0]['html'])
+
+        # 2. Registro Maestro (activo)
+        mock_resend_send.reset_mock()
+        mutation_prof = '''
+        mutation {
+          registerUser(
+            email: "nuevo.maestro@test.cl",
+            password: "Password123!",
+            firstName: "Pedro",
+            lastName: "Lagos",
+            phoneNumber: "+56955667788",
+            userType: "PROFESSIONAL"
+          ) {
+            success
+          }
+        }
+        '''
+        with patch('users.welcome_emails.threading.Thread') as mock_thread:
+            mock_thread.side_effect = lambda target, daemon=True: type('T', (), {'start': staticmethod(target)})()
+            res2 = schema.execute(mutation_prof)
+        self.assertIsNone(res2.errors)
+        self.assertTrue(res2.data['registerUser']['success'])
+
+        welcome_prof_calls = [
+            call.args[0] for call in mock_resend_send.call_args_list
+            if call.args[0].get('to') == ['nuevo.maestro@test.cl']
+        ]
+        self.assertEqual(len(welcome_prof_calls), 1)
+        self.assertIn('Maestros Clanship', welcome_prof_calls[0]['subject'])
+        self.assertIn('COMUNIDAD DE MAESTROS', welcome_prof_calls[0]['html'])
+
+        # 3. Desactivar plantilla de Cliente -> no debe enviarse correo de bienvenida al cliente
+        mock_resend_send.reset_mock()
+        tpl_cust = self.templates['CUSTOMER']
+        tpl_cust.is_active = False
+        tpl_cust.save()
+
+        mutation_client_2 = '''
+        mutation {
+          registerUser(
+            email: "cliente.apagado@test.cl",
+            password: "Password123!",
+            firstName: "Luis",
+            lastName: "Mora",
+            phoneNumber: "+56999887766",
+            userType: "CUSTOMER"
+          ) {
+            success
+          }
+        }
+        '''
+        with patch('users.welcome_emails.threading.Thread') as mock_thread:
+            mock_thread.side_effect = lambda target, daemon=True: type('T', (), {'start': staticmethod(target)})()
+            res3 = schema.execute(mutation_client_2)
+        self.assertIsNone(res3.errors)
+        disabled_calls = [
+            call.args[0] for call in mock_resend_send.call_args_list
+            if call.args[0].get('to') == ['cliente.apagado@test.cl']
+        ]
+        self.assertEqual(len(disabled_calls), 0)
+
+    @override_settings(RESEND_API_KEY='re_test_key')
+    @patch('resend.Emails.send')
+    @patch('core.firebase.verify_firebase_token')
+    def test_social_auth_sends_welcome_email_only_for_new_user(self, mock_verify, mock_resend_send):
+        mock_resend_send.return_value = {'id': 'msg_social_1'}
+        mock_verify.return_value = {
+            'uid': 'google_welcome_uid_1',
+            'email': 'social.maestro@test.cl',
+            'name': 'Javiera Núñez',
+            'firebase': {'sign_in_provider': 'google.com'},
+        }
+        mutation = '''
+        mutation {
+          socialAuth(idToken: "tok_123", provider: "GOOGLE", appType: "TRADESMAN") {
+            success
+            isNewUser
+          }
+        }
+        '''
+        with patch('users.welcome_emails.threading.Thread') as mock_thread:
+            mock_thread.side_effect = lambda target, daemon=True: type('T', (), {'start': staticmethod(target)})()
+            res = schema.execute(mutation)
+        self.assertIsNone(res.errors)
+        self.assertTrue(res.data['socialAuth']['isNewUser'])
+        self.assertEqual(mock_resend_send.call_count, 1)
+        self.assertEqual(mock_resend_send.call_args[0][0]['to'], ['social.maestro@test.cl'])
+        self.assertIn('COMUNIDAD DE MAESTROS', mock_resend_send.call_args[0][0]['html'])
+
+        # Segundo login no debe reenviar bienvenida
+        mock_resend_send.reset_mock()
+        with patch('users.welcome_emails.threading.Thread') as mock_thread:
+            mock_thread.side_effect = lambda target, daemon=True: type('T', (), {'start': staticmethod(target)})()
+            res2 = schema.execute(mutation)
+        self.assertIsNone(res2.errors)
+        self.assertFalse(res2.data['socialAuth']['isNewUser'])
+        self.assertEqual(mock_resend_send.call_count, 0)
+
+    @override_settings(RESEND_API_KEY='re_test_key')
+    @patch('resend.Emails.send')
+    def test_admin_welcome_email_api_endpoints(self, mock_resend_send):
+        import json
+        mock_resend_send.return_value = {'id': 'msg_test_999'}
+
+        # Sin permiso admin -> 403
+        unauth = self.client.get('/api/v1/admin/welcome-emails/')
+        self.assertEqual(unauth.status_code, 403)
+
+        # GET listado
+        res_get = self.client.get('/api/v1/admin/welcome-emails/', **self.admin_headers)
+        self.assertEqual(res_get.status_code, 200)
+        data = res_get.json()
+        self.assertTrue(data['success'])
+        self.assertEqual(len(data['templates']), 2)
+
+        # POST actualizar plantilla CUSTOMER completamente
+        payload = {
+            'is_active': True,
+            'sender_name': 'Clanship VIP',
+            'reply_to': 'hola@clanship.cl',
+            'subject': 'Hola {first_name}, asunto editado',
+            'header_title': 'Título editado para {first_name}',
+            'body_html': '<p>Contenido completamente editado para {email}.</p>',
+            'cta_text': 'Entrar ahora',
+            'cta_url': 'https://clanship.cl/app',
+            'footer_text': 'Pie editado {year}',
+        }
+        res_post = self.client.post(
+            '/api/v1/admin/welcome-emails/CUSTOMER/',
+            data=json.dumps(payload),
+            content_type='application/json',
+            **self.admin_headers,
+        )
+        self.assertEqual(res_post.status_code, 200)
+        updated = res_post.json()['template']
+        self.assertEqual(updated['sender_name'], 'Clanship VIP')
+        self.assertEqual(updated['subject'], 'Hola {first_name}, asunto editado')
+        self.assertIn('Contenido completamente editado', updated['preview_html'])
+
+        # POST toggle activar/desactivar
+        res_toggle = self.client.post(
+            '/api/v1/admin/welcome-emails/CUSTOMER/toggle/',
+            data=json.dumps({}),
+            content_type='application/json',
+            **self.admin_headers,
+        )
+        self.assertEqual(res_toggle.status_code, 200)
+        self.assertFalse(res_toggle.json()['is_active'])
+
+        # POST preview sin guardar
+        res_prev = self.client.post(
+            '/api/v1/admin/welcome-emails/PROFESSIONAL/preview/',
+            data=json.dumps({'subject': 'Borrador {first_name}', 'body_html': '<p>Texto borrador</p>'}),
+            content_type='application/json',
+            **self.admin_headers,
+        )
+        self.assertEqual(res_prev.status_code, 200)
+        self.assertEqual(res_prev.json()['preview']['subject'], 'Borrador Matías')
+        self.assertIn('Texto borrador', res_prev.json()['preview']['html'])
+
+        # POST enviar correo de prueba
+        res_test = self.client.post(
+            '/api/v1/admin/welcome-emails/PROFESSIONAL/test/',
+            data=json.dumps({'to_email': 'gestor@clanship.cl'}),
+            content_type='application/json',
+            **self.admin_headers,
+        )
+        self.assertEqual(res_test.status_code, 200)
+        self.assertTrue(res_test.json()['success'])
+        self.assertEqual(mock_resend_send.call_args[0][0]['to'], ['gestor@clanship.cl'])
+
+        # POST reset
+        res_reset = self.client.post(
+            '/api/v1/admin/welcome-emails/CUSTOMER/reset/',
+            data=json.dumps({}),
+            content_type='application/json',
+            **self.admin_headers,
+        )
+        self.assertEqual(res_reset.status_code, 200)
+        self.assertIn('Encuentra maestros de confianza', res_reset.json()['template']['subject'])
+
 
 

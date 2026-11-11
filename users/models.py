@@ -1617,3 +1617,196 @@ class Banner(models.Model):
     def __str__(self):
         title_str = self.title if self.title else "(Sin título)"
         return f"{title_str} ({self.get_app_type_display()})"
+
+
+class WelcomeEmailTemplate(models.Model):
+    """
+    Plantilla editable de correo de bienvenida para nuevos usuarios registrados,
+    diferenciada por tipo de usuario (Cliente vs Maestro/Profesional) y activable/desactivable desde el gestor.
+    """
+    class UserType(models.TextChoices):
+        CUSTOMER = 'CUSTOMER', 'Cliente'
+        PROFESSIONAL = 'PROFESSIONAL', 'Maestro / Profesional'
+
+    user_type = models.CharField(
+        max_length=20,
+        choices=UserType.choices,
+        unique=True,
+        verbose_name="Tipo de Usuario"
+    )
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name="Envío activo",
+        help_text="Activa o desactiva el envío automático de este correo al registrarse"
+    )
+    sender_name = models.CharField(
+        max_length=120,
+        default="Equipo Clanship",
+        verbose_name="Nombre del remitente"
+    )
+    reply_to = models.EmailField(
+        blank=True,
+        default="soporte@clanship.cl",
+        verbose_name="Correo de respuesta (Reply-To)"
+    )
+    subject = models.CharField(
+        max_length=255,
+        verbose_name="Asunto del correo"
+    )
+    preheader = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Texto de vista previa (Preheader)"
+    )
+    header_bg_color = models.CharField(
+        max_length=20,
+        default="#0D2B45",
+        verbose_name="Color de fondo del encabezado"
+    )
+    accent_color = models.CharField(
+        max_length=20,
+        default="#5D87FF",
+        verbose_name="Color de acento / botón"
+    )
+    header_badge = models.CharField(
+        max_length=80,
+        blank=True,
+        default="",
+        verbose_name="Etiqueta superior"
+    )
+    header_title = models.CharField(
+        max_length=255,
+        verbose_name="Título del encabezado"
+    )
+    header_subtitle = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Subtítulo del encabezado"
+    )
+    body_html = models.TextField(
+        verbose_name="Cuerpo del correo (HTML o texto)"
+    )
+    body_text = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Versión en texto plano (opcional)"
+    )
+    cta_text = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        verbose_name="Texto del botón (CTA)"
+    )
+    cta_url = models.CharField(
+        max_length=500,
+        blank=True,
+        default="https://clanship.cl",
+        verbose_name="Enlace del botón (CTA)"
+    )
+    footer_text = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Texto del pie de página"
+    )
+    use_raw_html = models.BooleanField(
+        default=False,
+        verbose_name="Usar HTML completo personalizado",
+        help_text="Si está activo, se enviará el contenido de 'HTML completo personalizado' tal cual (con sustitución de variables)."
+    )
+    raw_html = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="HTML completo personalizado"
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Última actualización")
+
+    class Meta:
+        verbose_name = "Correo de Bienvenida"
+        verbose_name_plural = "Correos de Bienvenida"
+        ordering = ['user_type']
+
+    def __str__(self):
+        status = "Activo" if self.is_active else "Desactivado"
+        return f"Bienvenida {self.get_user_type_display()} ({status})"
+
+    @classmethod
+    def get_default_data(cls, user_type):
+        if user_type == cls.UserType.PROFESSIONAL:
+            return {
+                'is_active': True,
+                'sender_name': 'Equipo Clanship',
+                'reply_to': 'soporte@clanship.cl',
+                'subject': '¡Bienvenido a la red de Maestros Clanship, {first_name}!',
+                'preheader': 'Tu cuenta de Maestro ya está creada. Completa tu perfil y comienza a recibir solicitudes.',
+                'header_bg_color': '#0D2B45',
+                'accent_color': '#F59E0B',
+                'header_badge': 'COMUNIDAD DE MAESTROS',
+                'header_title': '¡Bienvenido a Clanship, {first_name}!',
+                'header_subtitle': 'Nos alegra sumarte a nuestra red de especialistas verificados.',
+                'body_html': (
+                    '<p>Hola <strong>{first_name}</strong>,</p>'
+                    '<p>Tu registro como <strong>Maestro en Clanship</strong> se ha completado con éxito con el correo <strong>{email}</strong>.</p>'
+                    '<p>Para empezar a recibir solicitudes de trabajo de clientes en tu zona, te recomendamos seguir estos primeros pasos dentro de la app:</p>'
+                    '<ul>'
+                    '<li><strong>Completa tus especialidades y zona de cobertura</strong> para aparecer en las búsquedas correctas.</li>'
+                    '<li><strong>Sube tus documentos de acreditación</strong> para obtener el sello de Maestro Verificado y generar mayor confianza.</li>'
+                    '<li><strong>Activa tu disponibilidad</strong> cuando estés listo para atender nuevos requerimientos.</li>'
+                    '</ul>'
+                    '<p>Estamos aquí para ayudarte a hacer crecer tu trabajo independiente.</p>'
+                ),
+                'body_text': '',
+                'cta_text': 'Conocer más en Clanship',
+                'cta_url': 'https://clanship.cl',
+                'footer_text': '¿Necesitas ayuda con tu acreditación o perfil? Escríbenos a {support_email}.\n© {year} Clanship. Todos los derechos reservados.',
+                'use_raw_html': False,
+                'raw_html': '',
+            }
+        return {
+            'is_active': True,
+            'sender_name': 'Equipo Clanship',
+            'reply_to': 'soporte@clanship.cl',
+            'subject': '¡Bienvenido a Clanship, {first_name}! Encuentra maestros de confianza',
+            'preheader': 'Tu cuenta de Cliente ya está lista para cotizar y contratar especialistas.',
+            'header_bg_color': '#0D2B45',
+            'accent_color': '#5D87FF',
+            'header_badge': 'BIENVENIDO A CLANSHIP',
+            'header_title': '¡Hola {first_name}, bienvenido a Clanship!',
+            'header_subtitle': 'Encuentra maestros verificados para tu hogar o proyecto de forma rápida y segura.',
+            'body_html': (
+                '<p>Hola <strong>{first_name}</strong>,</p>'
+                '<p>Gracias por registrarte en <strong>Clanship</strong> con tu correo <strong>{email}</strong>.</p>'
+                '<p>Desde ahora ya puedes:</p>'
+                '<ul>'
+                '<li><strong>Explorar maestros por especialidad</strong> cerca de tu dirección.</li>'
+                '<li><strong>Publicar solicitudes y recibir propuestas</strong> de especialistas disponibles.</li>'
+                '<li><strong>Chatear y coordinar visitas</strong> directamente desde la aplicación.</li>'
+                '</ul>'
+                '<p>¡Esperamos ayudarte a resolver tu próximo proyecto con total confianza!</p>'
+            ),
+            'body_text': '',
+            'cta_text': 'Visitar Clanship',
+            'cta_url': 'https://clanship.cl',
+            'footer_text': '¿Tienes dudas o necesitas soporte? Contáctanos en {support_email}.\n© {year} Clanship. Todos los derechos reservados.',
+            'use_raw_html': False,
+            'raw_html': '',
+        }
+
+    @classmethod
+    def ensure_defaults(cls):
+        templates = {}
+        for ut in [cls.UserType.CUSTOMER, cls.UserType.PROFESSIONAL]:
+            defaults = cls.get_default_data(ut)
+            obj, _ = cls.objects.get_or_create(user_type=ut, defaults=defaults)
+            templates[ut] = obj
+        return templates
+
+    @classmethod
+    def get_for_user_type(cls, user_type):
+        if user_type not in [cls.UserType.CUSTOMER, cls.UserType.PROFESSIONAL]:
+            return None
+        defaults = cls.get_default_data(user_type)
+        obj, _ = cls.objects.get_or_create(user_type=user_type, defaults=defaults)
+        return obj

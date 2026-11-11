@@ -5,7 +5,7 @@ from django.urls import path, reverse
 from django.shortcuts import get_object_or_404, redirect
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display, action
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig, UserReport, SeasonalCampaign, AssociateReferral, ReferralRewardLog, ReferralProgramContent, Banner
+from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig, UserReport, SeasonalCampaign, AssociateReferral, ReferralRewardLog, ReferralProgramContent, Banner, WelcomeEmailTemplate
 
 @admin.register(SeasonalCampaign)
 class SeasonalCampaignAdmin(ModelAdmin):
@@ -707,4 +707,30 @@ class BannerAdmin(ModelAdmin):
     @display(description="Título", ordering="title")
     def display_title(self, obj):
         return obj.title if obj.title else mark_safe('<span class="text-gray-400 italic">(Sin título)</span>')
+
+
+@admin.register(WelcomeEmailTemplate)
+class WelcomeEmailTemplateAdmin(ModelAdmin):
+    list_display = ('user_type', 'is_active', 'subject', 'sender_name', 'updated_at')
+    list_editable = ('is_active',)
+    list_filter = ('user_type', 'is_active', 'use_raw_html')
+    fieldsets = (
+        ('Estado y Remitente', {
+            'fields': ('user_type', 'is_active', ('sender_name', 'reply_to'))
+        }),
+        ('Asunto y Vista Previa', {
+            'fields': ('subject', 'preheader')
+        }),
+        ('Encabezado del Correo', {
+            'fields': (('header_bg_color', 'accent_color'), 'header_badge', 'header_title', 'header_subtitle')
+        }),
+        ('Contenido del Correo', {
+            'fields': ('body_html', 'body_text', ('cta_text', 'cta_url'), 'footer_text'),
+            'description': 'Variables disponibles: {first_name}, {last_name}, {full_name}, {email}, {phone_number}, {user_type}, {support_email}, {year}'
+        }),
+        ('Modo HTML Completo (Avanzado)', {
+            'fields': ('use_raw_html', 'raw_html'),
+            'classes': ('collapse',)
+        }),
+    )
 
