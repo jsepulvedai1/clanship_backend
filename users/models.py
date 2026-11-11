@@ -1739,23 +1739,35 @@ class WelcomeEmailTemplate(models.Model):
                 'is_active': True,
                 'sender_name': 'Equipo Clanship',
                 'reply_to': 'soporte@clanship.cl',
-                'subject': '¡Bienvenido a la red de Maestros Clanship, {first_name}!',
-                'preheader': 'Tu cuenta de Maestro ya está creada. Completa tu perfil y comienza a recibir solicitudes.',
+                'subject': '¡Bienvenido(a) a la red de Maestros Clanship, {first_name}!',
+                'preheader': 'Te damos una cordial bienvenida a ClanChip. Completa tu perfil y destaca frente a los clientes.',
                 'header_bg_color': '#0D2B45',
                 'accent_color': '#F59E0B',
                 'header_badge': 'COMUNIDAD DE MAESTROS',
-                'header_title': '¡Bienvenido a Clanship, {first_name}!',
-                'header_subtitle': 'Nos alegra sumarte a nuestra red de especialistas verificados.',
+                'header_title': 'BIENVENIDO(A)',
+                'header_subtitle': 'Clanship Especialistas',
                 'body_html': (
-                    '<p>Hola <strong>{first_name}</strong>,</p>'
-                    '<p>Tu registro como <strong>Maestro en Clanship</strong> se ha completado con éxito con el correo <strong>{email}</strong>.</p>'
-                    '<p>Para empezar a recibir solicitudes de trabajo de clientes en tu zona, te recomendamos seguir estos primeros pasos dentro de la app:</p>'
+                    '<p>Hola, {first_name}</p>'
+                    '<p>Te damos una cordial bienvenida a <strong>ClanChip</strong>. Nos alegra que te hayas sumado como profesional en esta etapa de lanzamiento en Santiago.</p>'
+                    '<p>Queremos contarte en qué fase nos encontramos: actualmente estamos reuniendo y ordenando los datos de maestros, técnicos y profesionales para consolidar una base sólida en la Región Metropolitana, tal como lo hicimos en Los Lagos, Los Ríos, Ñuble y La Araucanía. Una vez que tengamos una oferta completa de especialistas inscritos, iniciaremos una campaña publicitaria enfocada en atraer clientes. Lo hacemos en este orden para asegurar que, cuando lleguen los usuarios, encuentren disponibilidad inmediata y tú recibas solicitudes de trabajo de forma constante desde el inicio.</p>'
+                    '<p><strong>Servicio 100% gratuito durante esta etapa</strong></p>'
+                    '<p>Mientras trabajamos en la captación de usuarios y en activar la demanda, el servicio no tendrá costo alguno para ti: <strong>sin cobros de registro, sin membresías y sin comisiones hasta por lo menos marzo del próximo año</strong>, garantizando que la plataforma esté funcionando con movimiento regular antes de cualquier cambio.</p>'
+                    '<p><strong>Completa tu perfil para destacar frente a los clientes</strong></p>'
+                    '<p>El registro inicial que realizaste fue un paso rápido. Para que los usuarios puedan encontrarte con facilidad y confíen en tus servicios al momento de solicitar un trabajo, es fundamental que completes tu perfil en la aplicación:</p>'
                     '<ul>'
-                    '<li><strong>Completa tus especialidades y zona de cobertura</strong> para aparecer en las búsquedas correctas.</li>'
-                    '<li><strong>Sube tus documentos de acreditación</strong> para obtener el sello de Maestro Verificado y generar mayor confianza.</li>'
-                    '<li><strong>Activa tu disponibilidad</strong> cuando estés listo para atender nuevos requerimientos.</li>'
+                    '<li><strong>Foto de perfil:</strong> Sube una imagen clara y profesional.</li>'
+                    '<li><strong>Cédula de identidad:</strong> Permite verificar tu cuenta y brinda seguridad a los clientes (en caso de empresas, puedes adjuntar el e-RUT).</li>'
+                    '<li><strong>Documentación y certificados:</strong> Agrega cursos, acreditaciones, incluso títulos que respalden tu oficio o profesión (puedes dejarlos visibles en tu perfil para dar mayor respaldo a tu oferta).</li>'
                     '</ul>'
-                    '<p>Estamos aquí para ayudarte a hacer crecer tu trabajo independiente.</p>'
+                    '<p><em>Los perfiles verificados y con información completa tienen mayor visibilidad y preferencia cuando los clientes buscan un especialista.</em></p>'
+                    '<p><strong>¿Qué haremos nosotros para apoyarte?</strong></p>'
+                    '<ul>'
+                    '<li><strong>Acompañamiento continuo:</strong> Estamos atentos a cualquier duda o consulta que tengas, por simple que sea, a través de WhatsApp o correo electrónico para ayudarte a potenciar tu perfil.</li>'
+                    '<li><strong>Difusión:</strong> Desde ya comenzaremos a promocionar y visibilizar los servicios de la plataforma sin costo para ti.</li>'
+                    '<li><strong>Comunicación directa:</strong> Te avisaremos oportunamente en cuanto activemos la campaña masiva para usuarios y clientes.</li>'
+                    '</ul>'
+                    '<p>Mientras tanto, te invitamos a dejar tu perfil listo en la aplicación y a compartir la plataforma con colegas y amigos que también quieran ofrecer sus oficios o servicios.</p>'
+                    '<p><em>(Si algún servicio u oficio de los que realizas no aparece en el listado de la app, avísanos para agregarlo de inmediato).</em></p>'
                 ),
                 'body_text': '',
                 'cta_text': 'Conocer más en Clanship',
