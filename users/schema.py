@@ -47,7 +47,7 @@ class UserType(DjangoObjectType):
         )
 
     def resolve_is_profile_complete(self, info):
-        if self.user_type == User.UserType.PROFESSIONAL:
+        if self.user_type == User.UserType.PROFESSIONAL or hasattr(self, 'professional_profile'):
             # 1. Para profesionales/maestros, el número de teléfono, al menos una especialidad/oficio y la zona de cobertura/dirección son obligatorios
             if not self.phone_number or not str(self.phone_number).strip():
                 return False
@@ -905,9 +905,15 @@ class Query(graphene.ObjectType):
         from math import cos, radians, sin, atan2, sqrt
         from django.db.models import Q
 
+        # Auto-corregir usuarios que tengan perfil profesional pero hayan quedado con user_type='CUSTOMER'
+        User.objects.filter(
+            user_type=User.UserType.CUSTOMER,
+            professional_profile__isnull=False
+        ).update(user_type=User.UserType.PROFESSIONAL)
+
         # Filtramos usuarios que sean profesionales, estén disponibles, no estén rechazados y tengan ubicación (profesional o de usuario)
         queryset = User.objects.filter(
-            user_type=User.UserType.PROFESSIONAL,
+            Q(user_type=User.UserType.PROFESSIONAL) | Q(professional_profile__isnull=False),
             is_available=True
         ).exclude(
             professional_profile__verification_status=ProfessionalProfile.VerificationStatus.REJECTED
@@ -917,7 +923,10 @@ class Query(graphene.ObjectType):
         )
 
         if specialty_id:
-            queryset = queryset.filter(professional_profile__specialty_id=specialty_id)
+            queryset = queryset.filter(
+                Q(professional_profile__specialty_id=specialty_id) |
+                Q(professional_profile__specialties__id=specialty_id)
+            ).distinct()
 
         if tag_ids:
             queryset = queryset.filter(professional_profile__tags__id__in=tag_ids).distinct()
@@ -948,6 +957,8 @@ class Query(graphene.ObjectType):
                 Q(username__icontains=query) |
                 Q(professional_profile__specialty__name__icontains=query) |
                 Q(professional_profile__specialty__synonyms__icontains=query) |
+                Q(professional_profile__specialties__name__icontains=query) |
+                Q(professional_profile__specialties__synonyms__icontains=query) |
                 Q(professional_profile__bio__icontains=query) |
                 Q(professional_profile__tags__in=matching_tags) |
                 Q(professional_profile__subtags__in=matching_subtags)
@@ -1166,6 +1177,21 @@ class RegisterUser(graphene.Mutation):
 
         existing_user = User.objects.filter(Q(email__iexact=email_clean) | Q(username__iexact=email_clean)).first()
         if existing_user:
+            # Si el usuario intenta registrarse como PROFESSIONAL pero existía como CUSTOMER, evaluar completitud como profesional
+            if user_type == User.UserType.PROFESSIONAL and existing_user.user_type == User.UserType.CUSTOMER:
+                existing_user.user_type = User.UserType.PROFESSIONAL
+                existing_user.save(update_fields=['user_type'])
+                from users.models import ProfessionalProfile, SubscriptionPlan
+                initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
+                ProfessionalProfile.objects.get_or_create(
+                    user=existing_user,
+                    defaults={
+                        'plan': initial_plan,
+                        'is_verified': False,
+                        'verification_status': ProfessionalProfile.VerificationStatus.PENDING,
+                    }
+                )
+
             # Si el usuario dejó su registro incompleto
             has_phone = bool(existing_user.phone_number and str(existing_user.phone_number).strip())
             if existing_user.user_type == User.UserType.PROFESSIONAL:
@@ -1420,6 +1446,8 @@ class UpdateAvailability(graphene.Mutation):
             target_user = request_user
 
         prof = getattr(target_user, 'professional_profile', None)
+        if prof and target_user.user_type == User.UserType.CUSTOMER:
+            target_user.user_type = User.UserType.PROFESSIONAL
         if target_user.user_type == 'PROFESSIONAL' and not is_trusted_admin:
             if not prof or prof.verification_status == 'REJECTED' or bool(prof.rejection_reason):
                 target_user.is_available = False
@@ -1460,7 +1488,13 @@ class ToggleFavorite(graphene.Mutation):
             raise Exception('No autenticado')
         
         try:
-            professional = User.objects.get(id=professional_id, user_type=User.UserType.PROFESSIONAL)
+            professional = User.objects.get(
+                Q(user_type=User.UserType.PROFESSIONAL) | Q(professional_profile__isnull=False),
+                id=professional_id
+            )
+            if professional.user_type == User.UserType.CUSTOMER:
+                professional.user_type = User.UserType.PROFESSIONAL
+                professional.save(update_fields=['user_type'])
         except User.DoesNotExist:
             raise Exception('Profesional no encontrado')
 
@@ -1546,6 +1580,10 @@ class UpdateProfessionalProfile(graphene.Mutation):
         if user.is_anonymous:
             raise Exception('No autenticado')
         
+        if user.user_type == User.UserType.CUSTOMER and hasattr(user, 'professional_profile'):
+            user.user_type = User.UserType.PROFESSIONAL
+            user.save(update_fields=['user_type'])
+
         if user.user_type != User.UserType.PROFESSIONAL:
             raise Exception('El usuario no es un profesional')
             
@@ -1647,6 +1685,10 @@ class AddPortfolioPhoto(graphene.Mutation):
         if user.is_anonymous:
             raise Exception('No autenticado')
             
+        if user.user_type == User.UserType.CUSTOMER and hasattr(user, 'professional_profile'):
+            user.user_type = User.UserType.PROFESSIONAL
+            user.save(update_fields=['user_type'])
+
         if user.user_type != User.UserType.PROFESSIONAL:
             raise Exception('El usuario no es un profesional')
             
@@ -1719,6 +1761,10 @@ class AddProfessionalDocument(graphene.Mutation):
         if user.is_anonymous:
             raise Exception('No autenticado')
             
+        if user.user_type == User.UserType.CUSTOMER and hasattr(user, 'professional_profile'):
+            user.user_type = User.UserType.PROFESSIONAL
+            user.save(update_fields=['user_type'])
+
         if user.user_type != User.UserType.PROFESSIONAL:
             raise Exception('El usuario no es un profesional')
             
@@ -1919,6 +1965,10 @@ class VerifyTradesman(graphene.Mutation):
         if not profile:
             raise Exception("El usuario no posee un perfil profesional.")
 
+        if target_user.user_type == User.UserType.CUSTOMER:
+            target_user.user_type = User.UserType.PROFESSIONAL
+            target_user.save(update_fields=['user_type'])
+
         action_upper = action.upper().strip()
         if action_upper == 'APPROVE':
             profile.is_verified = True
@@ -2113,6 +2163,9 @@ class SubscribeToPlan(graphene.Mutation):
         user = info.context.user
         if user.is_anonymous:
             raise Exception('No autenticado')
+        if user.user_type == User.UserType.CUSTOMER and hasattr(user, 'professional_profile'):
+            user.user_type = User.UserType.PROFESSIONAL
+            user.save(update_fields=['user_type'])
         if user.user_type != User.UserType.PROFESSIONAL:
             raise Exception('El usuario debe ser un profesional')
 
@@ -2234,7 +2287,14 @@ class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
                 if user:
                     if app_type == 'TRADESMAN':
                         user.tradesman_session_key = session_key
-                        user.save(update_fields=['tradesman_session_key'])
+                        update_fields = ['tradesman_session_key']
+                        if user.user_type == User.UserType.CUSTOMER:
+                            user.user_type = User.UserType.PROFESSIONAL
+                            update_fields.append('user_type')
+                            from users.models import ProfessionalProfile, SubscriptionPlan
+                            initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
+                            ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
+                        user.save(update_fields=update_fields)
                     else:
                         user.client_session_key = session_key
                         user.save(update_fields=['client_session_key'])
@@ -2362,11 +2422,14 @@ class SocialAuth(graphene.Mutation):
             if user.auth_provider == User.AuthProvider.EMAIL and prov != User.AuthProvider.EMAIL:
                 user.auth_provider = prov
                 update_fields.append('auth_provider')
+            if target_user_type == User.UserType.PROFESSIONAL and user.user_type == User.UserType.CUSTOMER:
+                user.user_type = User.UserType.PROFESSIONAL
+                update_fields.append('user_type')
             if update_fields:
                 user.save(update_fields=update_fields)
 
             # Si es profesional pero no tenía perfil profesional inicial
-            if user.user_type == User.UserType.PROFESSIONAL:
+            if user.user_type == User.UserType.PROFESSIONAL or target_user_type == User.UserType.PROFESSIONAL:
                 from users.models import ProfessionalProfile, SubscriptionPlan
                 initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
                 ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
@@ -2442,7 +2505,7 @@ class SocialAuth(graphene.Mutation):
             refresh_token=refresh_tok,
             user=user,
             is_new_user=is_new_user,
-            is_profile_complete=user.is_profile_complete,
+            is_profile_complete=UserType.resolve_is_profile_complete(user, info),
             success=True
         )
 
@@ -2501,6 +2564,8 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
             user.latitude = latitude
         if longitude is not None:
             user.longitude = longitude
+        if user.user_type == User.UserType.CUSTOMER:
+            user.user_type = User.UserType.PROFESSIONAL
         user.is_profile_complete = True
         user.save()
 

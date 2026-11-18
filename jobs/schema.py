@@ -573,7 +573,13 @@ class CreateJob(graphene.Mutation):
 
         # Validar que el profesional existe y tiene el rol adecuado
         try:
-            professional = User.objects.get(pk=professional_id, user_type='PROFESSIONAL')
+            professional = User.objects.get(
+                Q(user_type='PROFESSIONAL') | Q(professional_profile__isnull=False),
+                pk=professional_id
+            )
+            if professional.user_type == 'CUSTOMER':
+                professional.user_type = 'PROFESSIONAL'
+                professional.save(update_fields=['user_type'])
         except User.DoesNotExist:
             raise Exception("El profesional no existe o no tiene un perfil válido.")
         # Validar que la ubicación del cliente esté dentro del radio de cobertura del profesional
@@ -1673,6 +1679,9 @@ class SubmitJobProposal(graphene.Mutation):
     @login_required
     def mutate(self, info, public_request_id, estimated_price, scheduled_date, scheduled_time, message="", attachments_base64=None):
         user = info.context.user
+        if user.user_type == 'CUSTOMER' and hasattr(user, 'professional_profile'):
+            user.user_type = 'PROFESSIONAL'
+            user.save(update_fields=['user_type'])
         if user.user_type != 'PROFESSIONAL':
             raise Exception("Solo los profesionales pueden enviar propuestas.")
 

@@ -496,6 +496,13 @@ class ProfessionalProfile(models.Model):
             self.plan = plan
         super().save(*args, **kwargs)
 
+        try:
+            if self.user and self.user.user_type == User.UserType.CUSTOMER:
+                self.user.user_type = User.UserType.PROFESSIONAL
+                self.user.save(update_fields=['user_type'])
+        except Exception:
+            pass
+
         status_changed = (old_is_verified != self.is_verified) or (old_status != self.verification_status) or (old_rejection_reason != self.rejection_reason)
         if status_changed:
             self.notify_validation_status()
