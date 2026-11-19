@@ -19,6 +19,17 @@ def jwt_payload_handler(user, context=None):
 
     payload['app_type'] = app_type
 
+    platform = None
+    if context:
+        if hasattr(context, '_platform') and context._platform:
+            platform = str(context._platform).upper()
+        elif hasattr(context, 'headers'):
+            header_platform = context.headers.get('X-Platform') or context.headers.get('Platform')
+            if header_platform:
+                platform = str(header_platform).upper()
+    if platform:
+        payload['platform'] = platform
+
     if app_type == 'TRADESMAN':
         if not user.tradesman_session_key:
             user.tradesman_session_key = str(uuid.uuid4())
@@ -61,7 +72,7 @@ def get_phone_variants(phone):
     return list(variants)
 
 
-def issue_user_tokens(user, app_type='TRADESMAN', context=None):
+def issue_user_tokens(user, app_type='TRADESMAN', platform=None, context=None):
     """
     Genera tokens de acceso JWT y refresh token para un usuario,
     actualizando la sesión única según el tipo de aplicación (TRADESMAN o CLIENT).
@@ -73,20 +84,36 @@ def issue_user_tokens(user, app_type='TRADESMAN', context=None):
     app_type_str = str(app_type or 'TRADESMAN').upper()
     session_key = str(uuid.uuid4())
 
+    platform_str = str(platform).upper() if platform else None
+    if not platform_str and context:
+        platform_str = getattr(context, '_platform', None)
+
+    update_fields = []
     if app_type_str == 'TRADESMAN':
         user.tradesman_session_key = session_key
-        user.save(update_fields=['tradesman_session_key'])
+        update_fields.append('tradesman_session_key')
     else:
         user.client_session_key = session_key
-        user.save(update_fields=['client_session_key'])
+        update_fields.append('client_session_key')
+
+    if platform_str in ['IOS', 'ANDROID', 'WEB']:
+        user.last_platform = platform_str
+        update_fields.append('last_platform')
+
+    from django.utils import timezone
+    user.last_active_at = timezone.now()
+    update_fields.append('last_active_at')
+
+    user.save(update_fields=update_fields)
 
     class AppContext:
-        def __init__(self, base_ctx, app_t):
+        def __init__(self, base_ctx, app_t, plat=None):
             self._app_type = app_t
+            self._platform = plat
             if base_ctx and hasattr(base_ctx, 'headers'):
                 self.headers = base_ctx.headers
 
-    ctx = AppContext(context, app_type_str)
+    ctx = AppContext(context, app_type_str, platform_str)
     token = get_token(user, ctx)
     refresh_token = create_refresh_token(user)
 

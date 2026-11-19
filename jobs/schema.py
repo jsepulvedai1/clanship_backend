@@ -884,7 +884,7 @@ class MarkJobAsRead(graphene.Mutation):
 
 class Query(graphene.ObjectType):
     job = graphene.Field(JobType, id=graphene.Int(required=True))
-    my_jobs = graphene.List(JobType, status=graphene.String())
+    my_jobs = graphene.List(JobType, status=graphene.String(required=False), role=graphene.String(required=False))
     my_job_claims = graphene.List(JobClaimType)
     open_public_job_requests = graphene.List(PublicJobRequestType, specialty_id=graphene.Int(required=False))
     my_quoted_public_job_requests = graphene.List(PublicJobRequestType, status=graphene.String(required=False))
@@ -941,12 +941,44 @@ class Query(graphene.ObjectType):
             return None
 
     @login_required
-    def resolve_my_jobs(self, info, status=None):
+    def resolve_my_jobs(self, info, status=None, role=None):
         user = info.context.user
+        request = getattr(info, 'context', None)
         from django.db.models import Q
-        queryset = Job.objects.filter(
-            Q(customer=user) | Q(professional=user)
-        ).select_related(
+
+        # Determinar rol según argumento explícito o app_type del request/token
+        target_role = (role or '').strip().upper()
+        if not target_role:
+            app_type = getattr(request, '_app_type', None)
+            if not app_type and request and hasattr(request, 'META'):
+                auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+                if auth_header and (' ' in auth_header):
+                    parts = auth_header.split(' ', 1)
+                    if parts[0].upper() in ['JWT', 'BEARER']:
+                        try:
+                            import graphql_jwt.utils
+                            payload = graphql_jwt.utils.jwt_decode(parts[1].strip())
+                            app_type = payload.get('app_type')
+                        except Exception:
+                            pass
+                if not app_type:
+                    header_app_type = request.META.get('HTTP_X_APP_TYPE') or request.META.get('HTTP_APP_TYPE')
+                    if header_app_type:
+                        app_type = str(header_app_type).upper()
+
+            if app_type == 'TRADESMAN':
+                target_role = 'PROFESSIONAL'
+            elif app_type == 'CLIENT':
+                target_role = 'CUSTOMER'
+
+        if target_role == 'CUSTOMER':
+            queryset = Job.objects.filter(customer=user)
+        elif target_role in ['PROFESSIONAL', 'TRADESMAN']:
+            queryset = Job.objects.filter(professional=user)
+        else:
+            queryset = Job.objects.filter(Q(customer=user) | Q(professional=user))
+
+        queryset = queryset.select_related(
             'customer', 'professional__professional_profile', 'review', 'cancelled_by'
         )
         if status:

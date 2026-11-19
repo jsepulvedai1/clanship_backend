@@ -850,6 +850,78 @@ class SocialAuthAndOnboardingTestCase(TestCase):
         self.assertTrue(me_data['professionalProfile']['isVerified'])
         self.assertEqual(me_data['professionalProfile']['verificationStatus'], 'APPROVED')
 
+    def test_customer_completing_tradesman_onboarding_becomes_professional_and_appears_in_search(self):
+        """
+        Verifica que si un usuario existía previamente como CUSTOMER (por ejemplo, creó cuenta en
+        la app de clientes) y luego entra a la app de maestros y completa el onboarding,
+        su user_type pasa a PROFESSIONAL y aparece en nearbyProfessionals.
+        """
+        from users.models import User, Specialty
+
+        spec = Specialty.objects.create(name='Eventos Test')
+        u = User.objects.create_user(
+            username='andresbaileyv@gmail.com',
+            email='andresbaileyv@gmail.com',
+            first_name='Andres',
+            last_name='Bailey',
+            user_type=User.UserType.CUSTOMER,
+            is_available=True,
+            is_profile_complete=True,
+        )
+
+        class MockContext:
+            def __init__(self, user):
+                self.user = user
+                self.META = {}
+
+        onb_mutation = f'''
+        mutation {{
+          completeTradesmanOnboarding(
+            phoneNumber: "+56998248744",
+            specialtyIds: ["{spec.id}"],
+            address: "Carén 7380, Clara Estrella, Lo Espejo",
+            latitude: -33.518127654,
+            longitude: -70.678879922,
+            serviceRadius: 10
+          ) {{
+            success
+            user {{
+              id
+              userType
+              isProfileComplete
+            }}
+          }}
+        }}
+        '''
+        res = schema.execute(onb_mutation, context_value=MockContext(u))
+        self.assertIsNone(res.errors)
+        self.assertTrue(res.data['completeTradesmanOnboarding']['success'])
+        self.assertEqual(res.data['completeTradesmanOnboarding']['user']['userType'], 'PROFESSIONAL')
+
+        u.refresh_from_db()
+        self.assertEqual(u.user_type, User.UserType.PROFESSIONAL)
+
+        search_query = '''
+        query {
+          nearbyProfessionals(
+            latitude: -33.518127654,
+            longitude: -70.678879922,
+            radiusKm: 20,
+            query: "Andres"
+          ) {
+            id
+            email
+            userType
+          }
+        }
+        '''
+        res_search = schema.execute(search_query, context_value=MockContext(u))
+        self.assertIsNone(res_search.errors)
+        results = res_search.data['nearbyProfessionals']
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]['email'], 'andresbaileyv@gmail.com')
+        self.assertEqual(results[0]['userType'], 'PROFESSIONAL')
+
 
 class WelcomeEmailTestCase(TestCase):
     def setUp(self):

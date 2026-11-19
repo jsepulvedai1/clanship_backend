@@ -108,20 +108,33 @@ class GetOrCreateChatRoom(graphene.Mutation):
     @login_required
     def mutate(self, info, professional_id, job_id=None):
         user = info.context.user
-        
+
         if job_id:
             from jobs.models import Job
             try:
-                job = Job.objects.get(pk=job_id)
+                job = Job.objects.select_related('customer', 'professional').get(pk=job_id)
             except Job.DoesNotExist:
                 raise Exception("El trabajo no existe.")
+
+            if job.customer != user and job.professional != user:
+                raise Exception("No perteneces a este trabajo.")
+
+            # Si ya existe una sala vinculada directamente a este trabajo
+            if hasattr(job, 'chat_room') and job.chat_room:
+                return GetOrCreateChatRoom(room=job.chat_room)
+
+            # Buscar o crear la sala usando siempre customer y professional del trabajo
             room, created = ChatRoom.objects.get_or_create(
-                customer=user,
+                customer=job.customer,
                 professional=job.professional,
             )
-            room.job = job
-            room.save()
+            if room.job != job:
+                room.job = job
+                room.save()
             return GetOrCreateChatRoom(room=room)
+
+        if user.id == professional_id:
+            raise Exception("No puedes crear una sala de chat contigo mismo.")
 
         try:
             professional = User.objects.get(pk=professional_id, user_type='PROFESSIONAL')
@@ -154,20 +167,31 @@ class GetOrCreateChatRoomWithCustomer(graphene.Mutation):
         user = info.context.user
         if user.user_type != 'PROFESSIONAL':
             raise Exception("Solo los profesionales pueden iniciar un chat con un cliente usando esta mutación.")
-            
+
         if job_id:
             from jobs.models import Job
             try:
-                job = Job.objects.get(pk=job_id)
+                job = Job.objects.select_related('customer', 'professional').get(pk=job_id)
             except Job.DoesNotExist:
                 raise Exception("El trabajo no existe.")
+
+            if job.customer != user and job.professional != user:
+                raise Exception("No perteneces a este trabajo.")
+
+            if hasattr(job, 'chat_room') and job.chat_room:
+                return GetOrCreateChatRoomWithCustomer(room=job.chat_room)
+
             room, created = ChatRoom.objects.get_or_create(
                 customer=job.customer,
-                professional=user,
+                professional=job.professional,
             )
-            room.job = job
-            room.save()
+            if room.job != job:
+                room.job = job
+                room.save()
             return GetOrCreateChatRoomWithCustomer(room=room)
+
+        if user.id == customer_id:
+            raise Exception("No puedes crear una sala de chat contigo mismo.")
 
         try:
             customer = User.objects.get(pk=customer_id)

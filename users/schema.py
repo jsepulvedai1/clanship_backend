@@ -43,7 +43,8 @@ class UserType(DjangoObjectType):
             "is_available", "is_emergency", "professional_profile", "first_name", "last_name",
             "active_jobs", "completed_jobs", "scheduled_jobs", "rejected_jobs", "reviews_count",
             "is_favorite", "fcm_token", "saved_addresses", "is_validated", "is_verified",
-            "date_joined", "is_active", "auth_provider", "social_uid", "is_profile_complete"
+            "date_joined", "is_active", "auth_provider", "social_uid", "is_profile_complete",
+            "last_platform", "last_active_at"
         )
 
     def resolve_is_profile_complete(self, info):
@@ -2264,6 +2265,7 @@ class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
         username = graphene.String(required=True)
         password = graphene.String(required=True)
         app_type = graphene.String(required=False, default_value="CLIENT")
+        platform = graphene.String(required=False)
 
     @classmethod
     def mutate(cls, root, info, **kwargs):
@@ -2271,37 +2273,58 @@ class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
             kwargs['username'] = kwargs['username'].strip().lower()
 
         app_type = kwargs.get('app_type', 'CLIENT').upper()
+        raw_platform = kwargs.get('platform')
+        platform_val = None
+        if raw_platform:
+            p_upper = str(raw_platform).strip().upper()
+            if p_upper in ['IOS', 'ANDROID', 'WEB']:
+                platform_val = p_upper
+        elif hasattr(info, 'context') and info.context is not None:
+            platform_val = getattr(info.context, '_platform', None)
+
         session_key = str(uuid.uuid4())
 
         if hasattr(info, 'context') and info.context is not None:
             setattr(info.context, '_app_type', app_type)
-
+            if platform_val:
+                setattr(info.context, '_platform', platform_val)
 
         response = super().mutate(root, info, **kwargs)
 
         if response and getattr(response, 'token', None):
             try:
                 from django.db.models import Q
+                from django.utils import timezone
                 username = kwargs.get('username')
                 user = User.objects.filter(Q(username__iexact=username) | Q(email__iexact=username)).first()
                 if user:
+                    update_fields = []
                     if app_type == 'TRADESMAN':
                         user.tradesman_session_key = session_key
-                        update_fields = ['tradesman_session_key']
+                        update_fields.append('tradesman_session_key')
                         if user.user_type == User.UserType.CUSTOMER:
                             user.user_type = User.UserType.PROFESSIONAL
                             update_fields.append('user_type')
                             from users.models import ProfessionalProfile, SubscriptionPlan
                             initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
                             ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
-                        user.save(update_fields=update_fields)
                     else:
                         user.client_session_key = session_key
-                        user.save(update_fields=['client_session_key'])
+                        update_fields.append('client_session_key')
+
+                    if platform_val:
+                        user.last_platform = platform_val
+                        update_fields.append('last_platform')
+                    user.last_active_at = timezone.now()
+                    update_fields.append('last_active_at')
+
+                    user.save(update_fields=update_fields)
 
                     payload = graphql_jwt.utils.jwt_payload(user, info.context)
                     payload['app_type'] = app_type
                     payload['session_key'] = session_key
+                    if platform_val:
+                        payload['platform'] = platform_val
                     response.token = graphql_jwt.utils.jwt_encode(payload)
                     
                     # Eliminar todos los refresh tokens antiguos para forzar cierre de sesión en otros dispositivos
@@ -2365,6 +2388,7 @@ class SocialAuth(graphene.Mutation):
         id_token = graphene.String(required=True)
         provider = graphene.String(required=False, default_value="GOOGLE")
         app_type = graphene.String(required=False, default_value="TRADESMAN")
+        platform = graphene.String(required=False)
         referral_code = graphene.String(required=False)
         first_name = graphene.String(required=False)
         last_name = graphene.String(required=False)
@@ -2376,7 +2400,7 @@ class SocialAuth(graphene.Mutation):
     is_profile_complete = graphene.Boolean()
     success = graphene.Boolean()
 
-    def mutate(self, info, id_token, provider="GOOGLE", app_type="TRADESMAN", referral_code=None, first_name=None, last_name=None):
+    def mutate(self, info, id_token, provider="GOOGLE", app_type="TRADESMAN", platform=None, referral_code=None, first_name=None, last_name=None):
         from core.firebase import verify_firebase_token
         from users.utils import issue_user_tokens
         from django.db.models import Q
@@ -2498,7 +2522,10 @@ class SocialAuth(graphene.Mutation):
                 print(f"Error iniciando hilo de correo de bienvenida (SocialAuth): {e}", flush=True)
 
         # Generar tokens de acceso
-        token, refresh_tok = issue_user_tokens(user, app_type=app_type, context=info.context)
+        plat_str = platform
+        if not plat_str and hasattr(info, 'context'):
+            plat_str = getattr(info.context, '_platform', None)
+        token, refresh_tok = issue_user_tokens(user, app_type=app_type, platform=plat_str, context=info.context)
 
         return SocialAuth(
             token=token,

@@ -233,19 +233,39 @@ class CustomUserAdmin(ModelAdmin, BaseUserAdmin):
     inlines = [ProfessionalProfileInline]
     fieldsets = BaseUserAdmin.fieldsets + (
         ('Información de Clanship', {'fields': ('phone_number', 'user_type', 'avatar', 'is_available', 'favorite_professionals', 'blocked_users')}),
-        ('Autenticación y Registro', {'fields': ('auth_provider', 'social_uid', 'is_profile_complete')}),
+        ('Autenticación y Registro', {'fields': ('auth_provider', 'social_uid', 'is_profile_complete', 'last_platform', 'last_active_at')}),
         ('Ubicación', {'fields': ('address', 'latitude', 'longitude')}),
     )
+    readonly_fields = getattr(BaseUserAdmin, 'readonly_fields', ()) + ('last_platform', 'last_active_at')
     add_fieldsets = BaseUserAdmin.add_fieldsets + (
         ('Información de Clanship', {'fields': ('phone_number', 'user_type', 'avatar', 'is_available')}),
         ('Autenticación y Registro', {'fields': ('auth_provider', 'social_uid', 'is_profile_complete')}),
         ('Ubicación', {'fields': ('address', 'latitude', 'longitude')}),
     )
-    list_display = ('user_full_name', 'username', 'email', 'phone_number', 'user_type', 'auth_provider', 'is_profile_complete', 'is_available', 'is_staff', 'avatar')
+    list_display = ('user_full_name', 'username', 'email', 'phone_number', 'user_type', 'platform_badge', 'last_active_formatted', 'auth_provider', 'is_profile_complete', 'is_available', 'is_staff', 'avatar')
     list_display_links = ('user_full_name', 'username')
-    list_filter = ('user_type', 'auth_provider', 'is_profile_complete', 'is_available', 'is_staff', 'is_superuser', 'is_active')
+    list_filter = ('last_platform', 'user_type', 'auth_provider', 'is_profile_complete', 'is_available', 'is_staff', 'is_superuser', 'is_active')
     filter_horizontal = ('favorite_professionals', 'blocked_users')
     search_fields = ('username', 'first_name', 'last_name', 'email', 'phone_number', 'social_uid')
+
+    @display(description="Plataforma", ordering="last_platform")
+    def platform_badge(self, obj):
+        if not obj.last_platform:
+            return "-"
+        plat = obj.last_platform.upper()
+        if plat == 'IOS':
+            return "🍎 iOS"
+        elif plat == 'ANDROID':
+            return "🤖 Android"
+        elif plat == 'WEB':
+            return "🌐 Web"
+        return plat
+
+    @display(description="Última Actividad", ordering="last_active_at")
+    def last_active_formatted(self, obj):
+        if not obj.last_active_at:
+            return "-"
+        return obj.last_active_at.strftime("%d/%m/%Y %H:%M")
 
     @display(description="Nombre y Apellido", ordering="first_name")
     def user_full_name(self, obj):

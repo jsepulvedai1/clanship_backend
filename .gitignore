@@ -158,3 +158,5 @@ Thumbs.db
 
 # Firebase configuration credentials file
 firebase-credentials.json
+
+.DS_Store

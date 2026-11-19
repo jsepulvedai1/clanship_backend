@@ -123,6 +123,18 @@ class User(AbstractUser):
         verbose_name="Clave de Sesión Maestro Activa",
         db_index=True
     )
+    last_platform = models.CharField(
+        max_length=20,
+        null=True, blank=True,
+        choices=[('IOS', 'iOS'), ('ANDROID', 'Android'), ('WEB', 'Web')],
+        verbose_name="Última Plataforma",
+        help_text="Sistema operativo del dispositivo desde el cual se navegó por última vez (iOS / Android)"
+    )
+    last_active_at = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Última Actividad",
+        help_text="Fecha y hora de la última interacción o navegación en la app"
+    )
 
     def get_full_name(self):
         full_name = f"{self.first_name} {self.last_name}".strip()
