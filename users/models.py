@@ -1183,9 +1183,20 @@ class AppVersionConfig(models.Model):
         return f"{self.get_app_type_display()} - Mínima: {self.min_version} | Última: {self.latest_version}"
 
 
-from django.db.models.signals import m2m_changed
+from django.db.models.signals import m2m_changed, post_save, post_delete
 from django.core.exceptions import ValidationError
+from django.core.cache import cache
 from django.dispatch import receiver
+
+
+def _invalidate_catalog_cache(**kwargs):
+    """Limpia el caché del catálogo cuando cambian especialidades, etiquetas o sub-etiquetas."""
+    cache.delete_many(['catalog_specialties', 'catalog_tags', 'catalog_subtags'])
+
+
+for _catalog_model in (Specialty, Tag, SubTag):
+    post_save.connect(_invalidate_catalog_cache, sender=_catalog_model)
+    post_delete.connect(_invalidate_catalog_cache, sender=_catalog_model)
 
 @receiver(m2m_changed, sender=ProfessionalProfile.subtags.through)
 def limit_subtags_and_sync_tags(sender, instance, action, **kwargs):
