@@ -88,7 +88,7 @@ from core.views import (
     admin_jobs_api_view, admin_support_alerts_api_view,
     admin_welcome_emails_api_view, admin_welcome_email_toggle_api_view,
     admin_welcome_email_preview_api_view, admin_welcome_email_test_api_view,
-    admin_welcome_email_reset_api_view,
+    admin_welcome_email_reset_api_view, admin_user_api_view,
 )
 from payments.views import (
     mercadopago_webhook,
@@ -135,6 +135,10 @@ urlpatterns = [
     path('api/v1/admin/welcome-emails/<str:user_type>/preview/', admin_welcome_email_preview_api_view, name='admin_welcome_email_preview_api'),
     path('api/v1/admin/welcome-emails/<str:user_type>/test/', admin_welcome_email_test_api_view, name='admin_welcome_email_test_api'),
     path('api/v1/admin/welcome-emails/<str:user_type>/reset/', admin_welcome_email_reset_api_view, name='admin_welcome_email_reset_api'),
+
+    # Admin Users Contact & Profile Management Endpoints (for clanship-admin)
+    path('api/v1/admin/users/<int:user_id>/', admin_user_api_view, name='admin_user_api'),
+    path('api/v1/admin/users/<int:user_id>/contact/', admin_user_api_view, name='admin_user_contact_api'),
     
     # Mercado Pago Webhooks & Callbacks
     path('api/payments/mercadopago/webhook/', mercadopago_webhook, name='mercadopago_webhook'),

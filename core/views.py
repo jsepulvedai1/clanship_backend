@@ -1349,4 +1349,143 @@ def admin_welcome_email_reset_api_view(request, user_type):
     })
 
 
+def serialize_admin_user(u):
+    prof = getattr(u, 'professional_profile', None)
+    data = {
+        'id': u.id,
+        'username': u.username or '',
+        'email': u.email or '',
+        'phoneNumber': u.phone_number or '',
+        'phone_number': u.phone_number or '',
+        'firstName': u.first_name or '',
+        'lastName': u.last_name or '',
+        'userType': u.user_type,
+        'address': u.address or '',
+        'latitude': float(u.latitude) if u.latitude is not None else None,
+        'longitude': float(u.longitude) if u.longitude is not None else None,
+        'isActive': bool(u.is_active),
+        'isAvailable': bool(u.is_available),
+        'isEmergency': bool(u.is_emergency),
+    }
+    if prof is not None:
+        data['professionalProfile'] = {
+            'id': prof.id,
+            'specialtyId': prof.specialty_id,
+            'specialtyName': prof.specialty.name if prof.specialty else None,
+            'planId': prof.plan_id,
+            'planName': prof.plan.name if prof.plan else None,
+            'bio': prof.bio or '',
+            'hourlyRate': float(prof.hourly_rate) if prof.hourly_rate is not None else None,
+            'serviceRadius': prof.service_radius,
+            'rating': float(prof.rating) if prof.rating is not None else 0.0,
+            'referralCode': prof.referral_code or '',
+            'address': prof.address or '',
+            'facebookUrl': prof.facebook_url or '',
+            'instagramUrl': prof.instagram_url or '',
+            'tiktokUrl': prof.tiktok_url or '',
+        }
+    return data
+
+
+@csrf_exempt
+def admin_user_api_view(request, user_id):
+    """
+    REST API administrativa para consultar y actualizar correo, teléfono y datos de perfil
+    de cualquier cliente o maestro desde clanship-admin.
+    """
+    from core.exceptions import UserFacingError
+    from users.utils import UNSET, admin_update_user_fields
+
+    if not check_admin_permission(request):
+        return JsonResponse({'success': False, 'error': 'No autorizado.'}, status=403)
+
+    try:
+        target_user = User.objects.select_related(
+            'professional_profile__specialty',
+            'professional_profile__plan'
+        ).get(id=user_id)
+    except (User.DoesNotExist, ValueError):
+        return JsonResponse({'success': False, 'error': 'Usuario no encontrado.'}, status=404)
+
+    if request.method == 'GET':
+        return JsonResponse({
+            'success': True,
+            'user': serialize_admin_user(target_user),
+        })
+
+    if request.method not in ['POST', 'PUT', 'PATCH']:
+        return JsonResponse({'success': False, 'error': f'Método {request.method} no permitido.'}, status=405)
+
+    try:
+        data = json.loads(request.body.decode('utf-8')) if request.body else {}
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'Formato JSON inválido.'}, status=400)
+
+    def pick(*keys):
+        for k in keys:
+            if k in data:
+                return data[k]
+        return UNSET
+
+    def pick_bool(*keys):
+        val = pick(*keys)
+        if val is UNSET:
+            return UNSET
+        if isinstance(val, str):
+            return val.lower() in ['true', '1', 'yes', 'on']
+        return bool(val)
+
+    clear_phone_raw = pick_bool('clear_phone', 'clearPhone')
+    clear_email_raw = pick_bool('clear_email', 'clearEmail')
+
+    try:
+        admin_update_user_fields(
+            target_user,
+            email=pick('email'),
+            clear_email=bool(clear_email_raw) if clear_email_raw is not UNSET else False,
+            phone_number=pick('phone_number', 'phoneNumber'),
+            clear_phone=bool(clear_phone_raw) if clear_phone_raw is not UNSET else False,
+            first_name=pick('first_name', 'firstName'),
+            last_name=pick('last_name', 'lastName'),
+            username=pick('username'),
+            address=pick('address'),
+            latitude=pick('latitude'),
+            longitude=pick('longitude'),
+            is_active=pick_bool('is_active', 'isActive'),
+            is_available=pick_bool('is_available', 'isAvailable'),
+            is_emergency=pick_bool('is_emergency', 'isEmergency'),
+            user_type=pick('user_type', 'userType'),
+            bio=pick('bio'),
+            hourly_rate=pick('hourly_rate', 'hourlyRate'),
+            service_radius=pick('service_radius', 'serviceRadius'),
+            rating=pick('rating'),
+            specialty_id=pick('specialty_id', 'specialtyId'),
+            plan_id=pick('plan_id', 'planId'),
+            referral_code=pick('referral_code', 'referralCode'),
+            facebook_url=pick('facebook_url', 'facebookUrl'),
+            instagram_url=pick('instagram_url', 'instagramUrl'),
+            tiktok_url=pick('tiktok_url', 'tiktokUrl'),
+        )
+    except UserFacingError as e:
+        return JsonResponse({
+            'success': False,
+            'error': e.user_message,
+            'code': e.code,
+        }, status=400)
+    except Exception as e:
+        logger.error(f"Error en admin_user_api_view para user {user_id}: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': 'Ocurrió un error al actualizar los datos del usuario.',
+        }, status=500)
+
+    target_user.refresh_from_db()
+    return JsonResponse({
+        'success': True,
+        'message': f'Datos de {target_user.get_full_name() or target_user.username} actualizados correctamente.',
+        'user': serialize_admin_user(target_user),
+    })
+
+
+
 
