@@ -147,23 +147,16 @@ class User(AbstractUser):
 
     def clean(self):
         super().clean()
-        if self.phone_number:
+        if self.phone_number is not None:
             clean_phone = str(self.phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
             self.phone_number = clean_phone if clean_phone else None
-        if not self.is_superuser and not self.is_staff and not self.phone_number:
-            if self.user_type == self.UserType.CUSTOMER and self.address:
-                return
-            if self.auth_provider in [self.AuthProvider.GOOGLE, self.AuthProvider.APPLE] and not self.is_profile_complete:
-                return
-            from django.core.exceptions import ValidationError
-            raise ValidationError({'phone_number': 'El número de teléfono es obligatorio para usuarios de Clanship.'})
 
     def save(self, *args, **kwargs):
         if self.first_name:
             self.first_name = self.first_name.strip().title()
         if self.last_name:
             self.last_name = self.last_name.strip().title()
-        if self.phone_number:
+        if self.phone_number is not None:
             clean_phone = str(self.phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
             self.phone_number = clean_phone if clean_phone else None
         super().save(*args, **kwargs)

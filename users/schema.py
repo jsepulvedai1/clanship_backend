@@ -1068,6 +1068,7 @@ class UpdateProfile(graphene.Mutation):
         last_name = graphene.String(required=True)
         email = graphene.String(required=True)
         phone_number = graphene.String()
+        clear_phone = graphene.Boolean(required=False, default_value=False)
         address = graphene.String()
         latitude = graphene.Float()
         longitude = graphene.Float()
@@ -1076,7 +1077,7 @@ class UpdateProfile(graphene.Mutation):
     user = graphene.Field(UserType)
     success = graphene.Boolean()
 
-    def mutate(self, info, first_name, last_name, email, phone_number=None, address=None, latitude=None, longitude=None, avatar_base64=None):
+    def mutate(self, info, first_name, last_name, email, phone_number=None, clear_phone=False, address=None, latitude=None, longitude=None, avatar_base64=None):
         user = info.context.user
         if user.is_anonymous:
             raise Exception('No autenticado')
@@ -1090,7 +1091,9 @@ class UpdateProfile(graphene.Mutation):
         user.last_name = last_name
         user.email = email.strip().lower()
         user.username = email.strip().lower()
-        if phone_number is not None:
+        if clear_phone:
+            user.phone_number = None
+        elif phone_number is not None:
             clean_phone = phone_number.strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
             if clean_phone:
                 if len(clean_phone) < 8:
@@ -1099,7 +1102,7 @@ class UpdateProfile(graphene.Mutation):
                 if User.objects.filter(phone_number__in=phone_variants).exclude(id=user.id).exists():
                     raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
                 user.phone_number = clean_phone
-            # Si clean_phone viene vacío (""), NUNCA borramos el teléfono existente ni guardamos "" vacío
+            # Si clean_phone viene vacío (""), no borramos el teléfono existente salvo que clear_phone=True
         
         if address is not None:
             user.address = address
@@ -1165,8 +1168,7 @@ class RegisterUser(graphene.Mutation):
             raise UserFacingError('El apellido no puede tener más de 30 caracteres', code='LAST_NAME_TOO_LONG')
 
         phone_clean = phone_number.strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '') if phone_number else None
-        if not phone_clean and not minimal_registration:
-            raise UserFacingError('El número de teléfono es obligatorio', code='PHONE_REQUIRED')
+        phone_clean = phone_clean or None
 
         if phone_clean:
             if len(phone_clean) < 8:
@@ -2539,7 +2541,7 @@ class SocialAuth(graphene.Mutation):
 
 class CompleteTradesmanOnboarding(graphene.Mutation):
     class Arguments:
-        phone_number = graphene.String(required=True)
+        phone_number = graphene.String(required=False)
         specialty_id = graphene.ID(required=False)
         specialty_ids = graphene.List(graphene.ID, required=False)
         tag_ids = graphene.List(graphene.ID, required=False)
@@ -2555,20 +2557,19 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
     success = graphene.Boolean()
     user = graphene.Field(UserType)
 
-    def mutate(self, info, phone_number, specialty_id=None, specialty_ids=None, tag_ids=None, subtag_ids=None, address=None, latitude=None, longitude=None, service_radius=10, referral_code=None, first_name=None, last_name=None):
+    def mutate(self, info, phone_number=None, specialty_id=None, specialty_ids=None, tag_ids=None, subtag_ids=None, address=None, latitude=None, longitude=None, service_radius=10, referral_code=None, first_name=None, last_name=None):
         user = info.context.user
         if not user or not user.is_authenticated:
             raise UserFacingError('Debes estar autenticado para completar tu registro.', code='UNAUTHENTICATED')
 
-        phone_clean = str(phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
-        if not phone_clean:
-            raise UserFacingError('El número de teléfono es obligatorio.', code='PHONE_REQUIRED')
-        if len(phone_clean) < 8:
-            raise UserFacingError('El número de teléfono ingresado no es válido (demasiado corto).', code='PHONE_INVALID')
+        phone_clean = str(phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '') if phone_number else ''
+        if phone_clean:
+            if len(phone_clean) < 8:
+                raise UserFacingError('El número de teléfono ingresado no es válido (demasiado corto).', code='PHONE_INVALID')
 
-        phone_variants = get_phone_variants(phone_clean)
-        if User.objects.filter(phone_number__in=phone_variants).exclude(id=user.id).exists():
-            raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
+            phone_variants = get_phone_variants(phone_clean)
+            if User.objects.filter(phone_number__in=phone_variants).exclude(id=user.id).exists():
+                raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
 
         clean_address = str(address).strip() if address else ''
         existing_address = (user.address and str(user.address).strip()) or (getattr(user, 'professional_profile', None) and user.professional_profile.address and str(user.professional_profile.address).strip())
@@ -2584,7 +2585,8 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
             if '@' not in clean_ln and not clean_ln.startswith('apple_'):
                 user.last_name = clean_ln
 
-        user.phone_number = phone_clean
+        if phone_clean:
+            user.phone_number = phone_clean
         if address:
             user.address = address.strip()
         if latitude is not None:

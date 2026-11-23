@@ -93,15 +93,15 @@ def contact_api_view(request):
         return JsonResponse({'success': False, 'message': 'Formato JSON inválido.'}, status=400)
 
     # 3. Trampa antispam Honeypot en servidor
-    website_hp = data.get('website_hp', '')
-    if website_hp and website_hp.strip() != '':
+    website_hp = str(data.get('website_hp') or '').strip()
+    if website_hp:
         # Spam detectado, simular éxito en silencio sin enviar email
         return JsonResponse({'success': True, 'message': 'Mensaje procesado.'}, status=200)
 
-    name = data.get('name', '').strip()
-    email = data.get('email', '').strip()
-    phone = data.get('phone', '').strip()
-    message = data.get('message', '').strip()
+    name = str(data.get('name') or '').strip()
+    email = str(data.get('email') or '').strip()
+    phone = str(data.get('phone') or '').strip()
+    message = str(data.get('message') or '').strip()
     source_page = data.get('source_page', '/contacto')
     utm_source = data.get('utm_source')
     utm_medium = data.get('utm_medium')
@@ -157,7 +157,7 @@ def contact_api_view(request):
         try:
             msg = EmailMultiAlternatives(
                 subject=subject,
-                body=f"Nombre: {name}\nCorreo: {email}\nTeléfono: {phone}\nMensaje:\n{message}",
+                body=f"Nombre: {name}\nCorreo: {email}\nTeléfono: {phone or 'No especificado'}\nMensaje:\n{message}",
                 from_email=from_email,
                 to=[recipient_email],
                 reply_to=[email],
