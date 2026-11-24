@@ -6,6 +6,7 @@ from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, Professio
 import graphql_jwt
 from graphql_jwt.decorators import login_required
 from decimal import Decimal
+from django.db import transaction
 from django.db.models import Q, Count
 from django.core.cache import cache
 from django.contrib.auth.tokens import default_token_generator
@@ -1155,6 +1156,46 @@ class UpdateProfile(graphene.Mutation):
         
         return UpdateProfile(user=user, success=True)
 
+def _send_registration_emails(user):
+    """Send internal support notification and user welcome email asynchronously."""
+    try:
+        import threading
+        from django.conf import settings
+        import resend
+
+        subject = 'Nuevo usuario registrado en Clanship'
+        message = f'Se ha registrado un nuevo usuario.\n\nNombre: {user.first_name} {user.last_name}\nEmail: {user.email}\nTeléfono: {user.phone_number}\nTipo: {user.user_type}'
+        from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@clanship.cl')
+        resend_api_key = getattr(settings, 'RESEND_API_KEY', None)
+
+        def send_email_async():
+            try:
+                if resend_api_key:
+                    print("Intentando enviar correo de registro vía Resend a soporte@clanship.cl...", flush=True)
+                    resend.api_key = resend_api_key
+                    resend.Emails.send({
+                        "from": from_email,
+                        "to": ["soporte@clanship.cl"],
+                        "subject": subject,
+                        "text": message,
+                    })
+                    print("Correo enviado exitosamente vía Resend.", flush=True)
+                else:
+                    print("Error: RESEND_API_KEY no está configurada. El correo no pudo enviarse.", flush=True)
+            except Exception as e:
+                print(f"Error CRÍTICO enviando correo de registro (Resend): {e}", flush=True)
+
+        threading.Thread(target=send_email_async).start()
+    except Exception as e:
+        print(f"Error iniciando hilo de correo de nuevo registro: {e}", flush=True)
+
+    try:
+        from users.welcome_emails import send_welcome_email_async
+        send_welcome_email_async(user)
+    except Exception as e:
+        print(f"Error iniciando hilo de correo de bienvenida: {e}", flush=True)
+
+
 class RegisterUser(graphene.Mutation):
     class Arguments:
         email = graphene.String(required=True)
@@ -1381,42 +1422,7 @@ class RegisterUser(graphene.Mutation):
             except Exception as e:
                 print(f"Error processing referral code during registration: {e}")
 
-        try:
-            import threading
-            from django.conf import settings
-            import resend
-            
-            subject = 'Nuevo usuario registrado en Clanship'
-            message = f'Se ha registrado un nuevo usuario.\n\nNombre: {user.first_name} {user.last_name}\nEmail: {user.email}\nTeléfono: {user.phone_number}\nTipo: {user.user_type}'
-            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@clanship.cl')
-            resend_api_key = getattr(settings, 'RESEND_API_KEY', None)
-            
-            def send_email_async():
-                try:
-                    if resend_api_key:
-                        print(f"Intentando enviar correo de registro vía Resend a soporte@clanship.cl...", flush=True)
-                        resend.api_key = resend_api_key
-                        resend.Emails.send({
-                            "from": from_email,
-                            "to": ["soporte@clanship.cl"],
-                            "subject": subject,
-                            "text": message,
-                        })
-                        print("Correo enviado exitosamente vía Resend.", flush=True)
-                    else:
-                        print("Error: RESEND_API_KEY no está configurada. El correo no pudo enviarse.", flush=True)
-                except Exception as e:
-                    print(f"Error CRÍTICO enviando correo de registro (Resend): {e}", flush=True)
-            
-            threading.Thread(target=send_email_async).start()
-        except Exception as e:
-            print(f"Error iniciando hilo de correo de nuevo registro: {e}", flush=True)
-
-        try:
-            from users.welcome_emails import send_welcome_email_async
-            send_welcome_email_async(user)
-        except Exception as e:
-            print(f"Error iniciando hilo de correo de bienvenida: {e}", flush=True)
+        _send_registration_emails(user)
 
         return RegisterUser(user=user, success=True)
 
@@ -2548,6 +2554,133 @@ class SocialAuth(graphene.Mutation):
         )
 
 
+def _apply_tradesman_onboarding(
+    user,
+    *,
+    phone_number=None,
+    specialty_id=None,
+    specialty_ids=None,
+    tag_ids=None,
+    subtag_ids=None,
+    address=None,
+    latitude=None,
+    longitude=None,
+    service_radius=10,
+    referral_code=None,
+    first_name=None,
+    last_name=None,
+):
+    """Validate and apply tradesman onboarding fields to an existing or newly created User."""
+    phone_clean = str(phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '') if phone_number else ''
+    if phone_clean:
+        if len(phone_clean) < 8:
+            raise UserFacingError('El número de teléfono ingresado no es válido (demasiado corto).', code='PHONE_INVALID')
+
+        phone_variants = get_phone_variants(phone_clean)
+        if User.objects.filter(phone_number__in=phone_variants).exclude(id=user.id).exists():
+            raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
+
+    clean_address = str(address).strip() if address else ''
+    existing_address = (user.address and str(user.address).strip()) or (getattr(user, 'professional_profile', None) and user.professional_profile.address and str(user.professional_profile.address).strip())
+    if not clean_address and not existing_address:
+        raise UserFacingError('Debes ingresar tu zona de cobertura o dirección de trabajo.', code='COVERAGE_REQUIRED')
+
+    if first_name and str(first_name).strip():
+        clean_fn = str(first_name).strip()[:30]
+        if '@' not in clean_fn and not clean_fn.startswith('apple_'):
+            user.first_name = clean_fn
+    if last_name and str(last_name).strip():
+        clean_ln = str(last_name).strip()[:30]
+        if '@' not in clean_ln and not clean_ln.startswith('apple_'):
+            user.last_name = clean_ln
+
+    if phone_clean:
+        user.phone_number = phone_clean
+    if address:
+        user.address = address.strip()
+    if latitude is not None:
+        user.latitude = latitude
+    if longitude is not None:
+        user.longitude = longitude
+    if user.user_type == User.UserType.CUSTOMER:
+        user.user_type = User.UserType.PROFESSIONAL
+    user.is_profile_complete = True
+    user.save()
+
+    from users.models import ProfessionalProfile, Specialty, Tag, SubTag, SubscriptionPlan
+    initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
+    profile, _ = ProfessionalProfile.objects.get_or_create(
+        user=user,
+        defaults={
+            'plan': initial_plan,
+            'is_verified': False,
+            'verification_status': ProfessionalProfile.VerificationStatus.PENDING,
+        },
+    )
+
+    if specialty_ids:
+        profile.specialties.set(specialty_ids)
+        if not specialty_id and specialty_ids:
+            specialty_id = specialty_ids[0]
+
+    if specialty_id:
+        specialty = Specialty.objects.filter(id=specialty_id).first()
+        if specialty:
+            profile.specialty = specialty
+            if not profile.specialties.filter(id=specialty.id).exists():
+                profile.specialties.add(specialty)
+
+    if tag_ids:
+        tags = Tag.objects.filter(id__in=tag_ids)
+        profile.tags.set(tags)
+        if not profile.specialty:
+            first_tag = tags.filter(specialty__isnull=False).first()
+            if first_tag:
+                profile.specialty = first_tag.specialty
+                profile.specialties.add(first_tag.specialty)
+
+    if subtag_ids:
+        subtags = SubTag.objects.filter(id__in=subtag_ids)
+        profile.subtags.set(subtags)
+        if not profile.specialty:
+            first_sub = subtags.filter(tag__specialty__isnull=False).first()
+            if first_sub:
+                profile.specialty = first_sub.tag.specialty
+                profile.specialties.add(first_sub.tag.specialty)
+
+    if not profile.specialty and profile.specialties.exists():
+        profile.specialty = profile.specialties.first()
+
+    if not profile.specialty and not profile.specialties.exists() and not profile.tags.exists() and not profile.subtags.exists():
+        raise UserFacingError('Debes seleccionar al menos una especialidad o etiqueta de trabajo.', code='SPECIALTY_REQUIRED')
+
+    if address:
+        profile.address = address.strip()
+    if latitude is not None:
+        profile.latitude = latitude
+    if longitude is not None:
+        profile.longitude = longitude
+    if service_radius:
+        profile.service_radius = service_radius
+    profile.save()
+
+    if referral_code and referral_code.strip():
+        clean_ref_code = referral_code.strip().upper()
+        try:
+            from users.models import SystemSetting, AssociateReferral
+            setting = SystemSetting.get_settings()
+            if setting.referral_program_active:
+                referrer_profile = ProfessionalProfile.objects.filter(referral_code__iexact=clean_ref_code).select_related('user', 'plan').first()
+                if referrer_profile and referrer_profile.user and referrer_profile.user_id != user.id:
+                    AssociateReferral.objects.get_or_create(
+                        referrer=referrer_profile.user,
+                        referred_user=user,
+                        defaults={'referral_code_used': clean_ref_code}
+                    )
+        except Exception:
+            pass
+
+
 class CompleteTradesmanOnboarding(graphene.Mutation):
     class Arguments:
         phone_number = graphene.String(required=False)
@@ -2571,110 +2704,197 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
         if not user or not user.is_authenticated:
             raise UserFacingError('Debes estar autenticado para completar tu registro.', code='UNAUTHENTICATED')
 
-        phone_clean = str(phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '') if phone_number else ''
-        if phone_clean:
-            if len(phone_clean) < 8:
-                raise UserFacingError('El número de teléfono ingresado no es válido (demasiado corto).', code='PHONE_INVALID')
-
-            phone_variants = get_phone_variants(phone_clean)
-            if User.objects.filter(phone_number__in=phone_variants).exclude(id=user.id).exists():
-                raise UserFacingError('El número de teléfono ya está registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión o utiliza un número diferente.', code='PHONE_ALREADY_REGISTERED')
-
-        clean_address = str(address).strip() if address else ''
-        existing_address = (user.address and str(user.address).strip()) or (getattr(user, 'professional_profile', None) and user.professional_profile.address and str(user.professional_profile.address).strip())
-        if not clean_address and not existing_address:
-            raise UserFacingError('Debes ingresar tu zona de cobertura o dirección de trabajo.', code='COVERAGE_REQUIRED')
-
-        if first_name and str(first_name).strip():
-            clean_fn = str(first_name).strip()[:30]
-            if '@' not in clean_fn and not clean_fn.startswith('apple_'):
-                user.first_name = clean_fn
-        if last_name and str(last_name).strip():
-            clean_ln = str(last_name).strip()[:30]
-            if '@' not in clean_ln and not clean_ln.startswith('apple_'):
-                user.last_name = clean_ln
-
-        if phone_clean:
-            user.phone_number = phone_clean
-        if address:
-            user.address = address.strip()
-        if latitude is not None:
-            user.latitude = latitude
-        if longitude is not None:
-            user.longitude = longitude
-        if user.user_type == User.UserType.CUSTOMER:
-            user.user_type = User.UserType.PROFESSIONAL
-        user.is_profile_complete = True
-        user.save()
-
-        from users.models import ProfessionalProfile, Specialty, Tag, SubTag, SubscriptionPlan
-        initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
-        profile, _ = ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
-
-        if specialty_ids:
-            profile.specialties.set(specialty_ids)
-            if not specialty_id and specialty_ids:
-                specialty_id = specialty_ids[0]
-
-        if specialty_id:
-            specialty = Specialty.objects.filter(id=specialty_id).first()
-            if specialty:
-                profile.specialty = specialty
-                if not profile.specialties.filter(id=specialty.id).exists():
-                    profile.specialties.add(specialty)
-
-        if tag_ids:
-            tags = Tag.objects.filter(id__in=tag_ids)
-            profile.tags.set(tags)
-            if not profile.specialty:
-                first_tag = tags.filter(specialty__isnull=False).first()
-                if first_tag:
-                    profile.specialty = first_tag.specialty
-                    profile.specialties.add(first_tag.specialty)
-
-        if subtag_ids:
-            subtags = SubTag.objects.filter(id__in=subtag_ids)
-            profile.subtags.set(subtags)
-            if not profile.specialty:
-                first_sub = subtags.filter(tag__specialty__isnull=False).first()
-                if first_sub:
-                    profile.specialty = first_sub.tag.specialty
-                    profile.specialties.add(first_sub.tag.specialty)
-
-        if not profile.specialty and profile.specialties.exists():
-            profile.specialty = profile.specialties.first()
-
-        if not profile.specialty and not profile.specialties.exists() and not profile.tags.exists() and not profile.subtags.exists():
-            raise UserFacingError('Debes seleccionar al menos una especialidad o etiqueta de trabajo.', code='SPECIALTY_REQUIRED')
-
-        if address:
-            profile.address = address.strip()
-        if latitude is not None:
-            profile.latitude = latitude
-        if longitude is not None:
-            profile.longitude = longitude
-        if service_radius:
-            profile.service_radius = service_radius
-        profile.save()
-
-        # Procesar código de referido si se proporciona
-        if referral_code and referral_code.strip():
-            clean_ref_code = referral_code.strip().upper()
-            try:
-                from users.models import SystemSetting, AssociateReferral
-                setting = SystemSetting.get_settings()
-                if setting.referral_program_active:
-                    referrer_profile = ProfessionalProfile.objects.filter(referral_code__iexact=clean_ref_code).select_related('user', 'plan').first()
-                    if referrer_profile and referrer_profile.user and referrer_profile.user_id != user.id:
-                        AssociateReferral.objects.get_or_create(
-                            referrer=referrer_profile.user,
-                            referred_user=user,
-                            defaults={'referral_code_used': clean_ref_code}
-                        )
-            except Exception:
-                pass
+        _apply_tradesman_onboarding(
+            user,
+            phone_number=phone_number,
+            specialty_id=specialty_id,
+            specialty_ids=specialty_ids,
+            tag_ids=tag_ids,
+            subtag_ids=subtag_ids,
+            address=address,
+            latitude=latitude,
+            longitude=longitude,
+            service_radius=service_radius,
+            referral_code=referral_code,
+            first_name=first_name,
+            last_name=last_name,
+        )
 
         return CompleteTradesmanOnboarding(success=True, user=user)
+
+
+class RegisterAndCompleteTradesmanOnboarding(graphene.Mutation):
+    """Create a tradesman user and complete onboarding atomically in a single step."""
+    class Arguments:
+        email = graphene.String(required=True)
+        password = graphene.String(required=True)
+        first_name = graphene.String(required=True)
+        last_name = graphene.String(required=True)
+        phone_number = graphene.String(required=True)
+        specialty_id = graphene.ID(required=False)
+        specialty_ids = graphene.List(graphene.ID, required=False)
+        tag_ids = graphene.List(graphene.ID, required=False)
+        subtag_ids = graphene.List(graphene.ID, required=False)
+        address = graphene.String(required=False)
+        latitude = graphene.Float(required=False)
+        longitude = graphene.Float(required=False)
+        service_radius = graphene.Int(required=False, default_value=10)
+        referral_code = graphene.String(required=False)
+
+    success = graphene.Boolean()
+    user = graphene.Field(UserType)
+
+    def mutate(
+        self,
+        info,
+        email,
+        password,
+        first_name,
+        last_name,
+        phone_number,
+        specialty_id=None,
+        specialty_ids=None,
+        tag_ids=None,
+        subtag_ids=None,
+        address=None,
+        latitude=None,
+        longitude=None,
+        service_radius=10,
+        referral_code=None,
+    ):
+        email_clean = email.strip().lower()
+        first_name_clean = first_name.strip()
+        last_name_clean = last_name.strip()
+
+        if len(first_name_clean) > 30:
+            raise UserFacingError('El nombre no puede tener más de 30 caracteres', code='NAME_TOO_LONG')
+        if len(last_name_clean) > 30:
+            raise UserFacingError('El apellido no puede tener más de 30 caracteres', code='LAST_NAME_TOO_LONG')
+
+        is_new_user = False
+        with transaction.atomic():
+            existing_user = User.objects.filter(Q(email__iexact=email_clean) | Q(username__iexact=email_clean)).first()
+            if existing_user:
+                has_phone = bool(existing_user.phone_number and str(existing_user.phone_number).strip())
+                prof = getattr(existing_user, 'professional_profile', None)
+                has_specialty = bool(prof and (prof.specialty_id or prof.specialties.exists() or prof.tags.exists() or prof.subtags.exists()))
+                has_address = bool((existing_user.address and str(existing_user.address).strip()) or (prof and prof.address and str(prof.address).strip()))
+                is_complete = (
+                    existing_user.user_type == User.UserType.PROFESSIONAL
+                    and existing_user.is_profile_complete
+                    and has_phone
+                    and has_specialty
+                    and has_address
+                )
+                if not is_complete and existing_user.check_password(password):
+                    user = existing_user
+                elif not is_complete:
+                    raise UserFacingError(
+                        'Ya existe una cuenta con este correo pero su registro está incompleto. Inicia sesión con tu contraseña para completarlo.',
+                        code='INCOMPLETE_REGISTRATION_LOGIN_REQUIRED',
+                    )
+                else:
+                    raise UserFacingError(
+                        'El correo electrónico ya se encuentra registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión.',
+                        code='USER_ALREADY_EXISTS',
+                    )
+            else:
+                user = User(
+                    username=email_clean,
+                    email=email_clean,
+                    first_name=first_name_clean,
+                    last_name=last_name_clean,
+                    user_type=User.UserType.PROFESSIONAL,
+                    auth_provider=User.AuthProvider.EMAIL,
+                    is_profile_complete=True,
+                )
+                user.set_password(password)
+                try:
+                    user.save()
+                except Exception as e:
+                    err_lower = str(e).lower()
+                    if 'email' in err_lower or 'username' in err_lower:
+                        raise UserFacingError('El usuario ya existe con este correo electrónico', code='USER_ALREADY_EXISTS')
+                    raise
+                is_new_user = True
+
+            _apply_tradesman_onboarding(
+                user,
+                phone_number=phone_number,
+                specialty_id=specialty_id,
+                specialty_ids=specialty_ids,
+                tag_ids=tag_ids,
+                subtag_ids=subtag_ids,
+                address=address,
+                latitude=latitude,
+                longitude=longitude,
+                service_radius=service_radius,
+                referral_code=referral_code,
+                first_name=first_name_clean,
+                last_name=last_name_clean,
+            )
+
+        if is_new_user:
+            _send_registration_emails(user)
+
+        return RegisterAndCompleteTradesmanOnboarding(success=True, user=user)
+
+
+def _apply_client_onboarding(
+    user,
+    *,
+    address,
+    latitude=None,
+    longitude=None,
+    phone_number=None,
+    first_name=None,
+    last_name=None,
+):
+    """Validate and apply client onboarding fields to an existing or newly created User."""
+    address_clean = str(address or '').strip()
+    if not address_clean:
+        raise UserFacingError('La dirección es obligatoria.', code='ADDRESS_REQUIRED')
+
+    if first_name and str(first_name).strip():
+        clean_fn = str(first_name).strip()[:30]
+        if '@' not in clean_fn and not clean_fn.startswith('apple_'):
+            user.first_name = clean_fn
+    if last_name and str(last_name).strip():
+        clean_ln = str(last_name).strip()[:30]
+        if '@' not in clean_ln and not clean_ln.startswith('apple_'):
+            user.last_name = clean_ln
+
+    user.address = address_clean
+    if latitude is not None:
+        user.latitude = Decimal(str(latitude))
+    if longitude is not None:
+        user.longitude = Decimal(str(longitude))
+
+    if phone_number is not None and str(phone_number).strip():
+        phone_clean = str(phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+        if len(phone_clean) < 8:
+            raise UserFacingError('El número de teléfono ingresado no es válido (demasiado corto).', code='PHONE_INVALID')
+        phone_variants = get_phone_variants(phone_clean)
+        if User.objects.filter(phone_number__in=phone_variants).exclude(id=user.id).exists():
+            raise UserFacingError('El número de teléfono ya está registrado por otro usuario.', code='PHONE_ALREADY_REGISTERED')
+        user.phone_number = phone_clean
+
+    user.is_profile_complete = True
+    user.save()
+
+    try:
+        if latitude is not None and longitude is not None:
+            if not UserAddress.objects.filter(user=user, address__iexact=address_clean).exists():
+                if UserAddress.objects.filter(user=user).count() < 3:
+                    UserAddress.objects.create(
+                        user=user,
+                        address=address_clean,
+                        latitude=latitude,
+                        longitude=longitude,
+                        alias='Hogar',
+                    )
+    except Exception:
+        pass
 
 
 class CompleteClientOnboarding(graphene.Mutation):
@@ -2694,53 +2914,109 @@ class CompleteClientOnboarding(graphene.Mutation):
         if not user or not user.is_authenticated:
             raise UserFacingError('Debes estar autenticado para completar tu registro.', code='UNAUTHENTICATED')
 
-        address_clean = str(address or '').strip()
-        if not address_clean:
-            raise UserFacingError('La dirección es obligatoria.', code='ADDRESS_REQUIRED')
-
-        if first_name and str(first_name).strip():
-            clean_fn = str(first_name).strip()[:30]
-            if '@' not in clean_fn and not clean_fn.startswith('apple_'):
-                user.first_name = clean_fn
-        if last_name and str(last_name).strip():
-            clean_ln = str(last_name).strip()[:30]
-            if '@' not in clean_ln and not clean_ln.startswith('apple_'):
-                user.last_name = clean_ln
-
-        user.address = address_clean
-        if latitude is not None:
-            user.latitude = Decimal(str(latitude))
-        if longitude is not None:
-            user.longitude = Decimal(str(longitude))
-
-        if phone_number is not None and str(phone_number).strip():
-            phone_clean = str(phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
-            if len(phone_clean) < 8:
-                raise UserFacingError('El número de teléfono ingresado no es válido (demasiado corto).', code='PHONE_INVALID')
-            phone_variants = get_phone_variants(phone_clean)
-            if User.objects.filter(phone_number__in=phone_variants).exclude(id=user.id).exists():
-                raise UserFacingError('El número de teléfono ya está registrado por otro usuario.', code='PHONE_ALREADY_REGISTERED')
-            user.phone_number = phone_clean
-
-        user.is_profile_complete = True
-        user.save()
-
-        # Guardar también en direcciones guardadas del usuario (Hogar) si no existe aún
-        try:
-            if latitude is not None and longitude is not None:
-                if not UserAddress.objects.filter(user=user, address__iexact=address_clean).exists():
-                    if UserAddress.objects.filter(user=user).count() < 3:
-                        UserAddress.objects.create(
-                            user=user,
-                            address=address_clean,
-                            latitude=latitude,
-                            longitude=longitude,
-                            alias='Hogar',
-                        )
-        except Exception:
-            pass
+        _apply_client_onboarding(
+            user,
+            address=address,
+            latitude=latitude,
+            longitude=longitude,
+            phone_number=phone_number,
+            first_name=first_name,
+            last_name=last_name,
+        )
 
         return CompleteClientOnboarding(success=True, user=user)
+
+
+class RegisterAndCompleteClientOnboarding(graphene.Mutation):
+    """Create a client user and complete onboarding atomically in a single step."""
+    class Arguments:
+        email = graphene.String(required=True)
+        password = graphene.String(required=True)
+        first_name = graphene.String(required=True)
+        last_name = graphene.String(required=True)
+        address = graphene.String(required=True)
+        latitude = graphene.Float(required=False)
+        longitude = graphene.Float(required=False)
+        phone_number = graphene.String(required=False)
+
+    success = graphene.Boolean()
+    user = graphene.Field(UserType)
+
+    def mutate(
+        self,
+        info,
+        email,
+        password,
+        first_name,
+        last_name,
+        address,
+        latitude=None,
+        longitude=None,
+        phone_number=None,
+    ):
+        email_clean = email.strip().lower()
+        first_name_clean = first_name.strip()
+        last_name_clean = last_name.strip()
+
+        if len(first_name_clean) > 30:
+            raise UserFacingError('El nombre no puede tener más de 30 caracteres', code='NAME_TOO_LONG')
+        if len(last_name_clean) > 30:
+            raise UserFacingError('El apellido no puede tener más de 30 caracteres', code='LAST_NAME_TOO_LONG')
+
+        is_new_user = False
+        with transaction.atomic():
+            existing_user = User.objects.filter(Q(email__iexact=email_clean) | Q(username__iexact=email_clean)).first()
+            if existing_user:
+                has_phone = bool(existing_user.phone_number and str(existing_user.phone_number).strip())
+                has_address = bool(existing_user.address and str(existing_user.address).strip()) or existing_user.saved_addresses.exists()
+                is_complete = existing_user.is_profile_complete and (has_address or has_phone)
+
+                if not is_complete and existing_user.check_password(password):
+                    user = existing_user
+                elif not is_complete:
+                    raise UserFacingError(
+                        'Ya existe una cuenta con este correo pero su registro está incompleto. Inicia sesión con tu contraseña para completarlo.',
+                        code='INCOMPLETE_REGISTRATION_LOGIN_REQUIRED',
+                    )
+                else:
+                    raise UserFacingError(
+                        'El correo electrónico ya se encuentra registrado por otro usuario. Si ya tienes una cuenta, intenta iniciar sesión.',
+                        code='USER_ALREADY_EXISTS',
+                    )
+            else:
+                user = User(
+                    username=email_clean,
+                    email=email_clean,
+                    first_name=first_name_clean,
+                    last_name=last_name_clean,
+                    user_type=User.UserType.CUSTOMER,
+                    auth_provider=User.AuthProvider.EMAIL,
+                    is_profile_complete=True,
+                )
+                user.set_password(password)
+                try:
+                    user.save()
+                except Exception as e:
+                    err_lower = str(e).lower()
+                    if 'email' in err_lower or 'username' in err_lower:
+                        raise UserFacingError('El usuario ya existe con este correo electrónico', code='USER_ALREADY_EXISTS')
+                    raise
+                is_new_user = True
+
+            _apply_client_onboarding(
+                user,
+                address=address,
+                latitude=latitude,
+                longitude=longitude,
+                phone_number=phone_number,
+                first_name=first_name_clean,
+                last_name=last_name_clean,
+            )
+
+        if is_new_user:
+            _send_registration_emails(user)
+
+        return RegisterAndCompleteClientOnboarding(success=True, user=user)
 
 
 class AdminUpdateUser(graphene.Mutation):
@@ -2874,7 +3150,9 @@ class Mutation(graphene.ObjectType):
     refresh_token = graphql_jwt.Refresh.Field()
     social_auth = SocialAuth.Field()
     complete_tradesman_onboarding = CompleteTradesmanOnboarding.Field()
+    register_and_complete_tradesman_onboarding = RegisterAndCompleteTradesmanOnboarding.Field()
     complete_client_onboarding = CompleteClientOnboarding.Field()
+    register_and_complete_client_onboarding = RegisterAndCompleteClientOnboarding.Field()
     update_profile = UpdateProfile.Field()
     admin_update_user = AdminUpdateUser.Field()
     register_user = RegisterUser.Field()
