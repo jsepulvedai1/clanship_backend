@@ -180,7 +180,8 @@ class NationwideCoverageTestCase(TestCase):
 
 
 class RegisterUserPhoneValidationTestCase(TestCase):
-    def test_register_user_missing_phone_fails(self):
+    def test_register_user_missing_phone_succeeds_with_null(self):
+        from users.models import User
         mutation = '''
         mutation {
           registerUser(
@@ -191,12 +192,40 @@ class RegisterUserPhoneValidationTestCase(TestCase):
             phoneNumber: ""
           ) {
             success
+            user {
+              id
+              phoneNumber
+            }
           }
         }
         '''
         res = schema.execute(mutation)
-        self.assertIsNotNone(res.errors)
-        self.assertIn("El número de teléfono es obligatorio", str(res.errors))
+        self.assertIsNone(res.errors)
+        self.assertTrue(res.data['registerUser']['success'])
+        self.assertIsNone(res.data['registerUser']['user']['phoneNumber'])
+
+        mutation_null = '''
+        mutation {
+          registerUser(
+            email: "test_nullphone@example.com",
+            password: "Password123!",
+            firstName: "Ana",
+            lastName: "Diaz",
+            phoneNumber: null
+          ) {
+            success
+            user {
+              id
+              phoneNumber
+            }
+          }
+        }
+        '''
+        res_null = schema.execute(mutation_null)
+        self.assertIsNone(res_null.errors)
+        self.assertTrue(res_null.data['registerUser']['success'])
+        self.assertIsNone(res_null.data['registerUser']['user']['phoneNumber'])
+        self.assertIsNone(User.objects.get(email="test_nullphone@example.com").phone_number)
 
     def test_register_user_duplicate_phone_fails(self):
         from users.models import User
@@ -329,12 +358,43 @@ class RegisterUserPhoneValidationTestCase(TestCase):
         user.refresh_from_db()
         self.assertEqual(user.phone_number, "+56911223344")
 
-    def test_user_clean_requires_phone_for_non_staff(self):
+    def test_update_profile_clear_phone_sets_null(self):
         from users.models import User
-        from django.core.exceptions import ValidationError
-        u = User(username="nophone@test.com", email="nophone@test.com", is_staff=False, is_superuser=False)
-        with self.assertRaises(ValidationError):
-            u.clean()
+        user = User.objects.create_user(
+            username="clear_phone@example.com",
+            email="clear_phone@example.com",
+            password="Password123!",
+            phone_number="+56911223355"
+        )
+        class MockContext:
+            def __init__(self, user):
+                self.user = user
+
+        mutation = '''
+        mutation {
+          updateProfile(
+            firstName: "Juan",
+            lastName: "Perez",
+            email: "clear_phone@example.com",
+            clearPhone: true
+          ) {
+            success
+            user {
+              phoneNumber
+            }
+          }
+        }
+        '''
+        res = schema.execute(mutation, context_value=MockContext(user))
+        self.assertIsNone(res.errors)
+        user.refresh_from_db()
+        self.assertIsNone(user.phone_number)
+
+    def test_user_clean_allows_null_or_empty_phone_for_non_staff(self):
+        from users.models import User
+        u = User(username="nophone@test.com", email="nophone@test.com", phone_number="", is_staff=False, is_superuser=False)
+        u.clean()
+        self.assertIsNone(u.phone_number)
 
 
 from unittest.mock import patch
@@ -573,6 +633,124 @@ class SocialAuthAndOnboardingTestCase(TestCase):
         res = schema.execute(mutation, context_value=MockContext(u))
         self.assertIsNotNone(res.errors)
         self.assertIn("zona de cobertura", str(res.errors).lower())
+
+    def test_register_and_complete_tradesman_onboarding_success(self):
+        from users.models import User
+        mutation = f'''
+        mutation {{
+          registerAndCompleteTradesmanOnboarding(
+            email: "full_tradesman@clanship.cl",
+            password: "SecretPassword123!",
+            firstName: "Pedro",
+            lastName: "Perez",
+            phoneNumber: "+56911223344",
+            specialtyId: "{self.specialty.id}",
+            address: "Av. Providencia 1234, Santiago",
+            latitude: -33.4372,
+            longitude: -70.6506,
+            serviceRadius: 15
+          ) {{
+            success
+            user {{
+              email
+              firstName
+              lastName
+              phoneNumber
+              userType
+              isProfileComplete
+            }}
+          }}
+        }}
+        '''
+        res = schema.execute(mutation)
+        self.assertIsNone(res.errors)
+        data = res.data['registerAndCompleteTradesmanOnboarding']
+        self.assertTrue(data['success'])
+        self.assertEqual(data['user']['email'], 'full_tradesman@clanship.cl')
+        self.assertEqual(data['user']['userType'], 'PROFESSIONAL')
+        self.assertTrue(data['user']['isProfileComplete'])
+        u = User.objects.get(email='full_tradesman@clanship.cl')
+        self.assertTrue(u.check_password('SecretPassword123!'))
+        self.assertEqual(u.professional_profile.service_radius, 15)
+
+    def test_register_and_complete_tradesman_onboarding_atomic_rollback(self):
+        from users.models import User
+        mutation = '''
+        mutation {
+          registerAndCompleteTradesmanOnboarding(
+            email: "rollback_tradesman@clanship.cl",
+            password: "SecretPassword123!",
+            firstName: "Ana",
+            lastName: "Lopez",
+            phoneNumber: "+56999887766",
+            address: "Av. Apoquindo 1000, Las Condes",
+            serviceRadius: 10
+          ) {
+            success
+          }
+        }
+        '''
+        res = schema.execute(mutation)
+        self.assertIsNotNone(res.errors)
+        self.assertIn("especialidad", str(res.errors).lower())
+        self.assertFalse(User.objects.filter(email="rollback_tradesman@clanship.cl").exists())
+
+    def test_register_and_complete_client_onboarding_success(self):
+        from users.models import User
+        mutation = '''
+        mutation {
+          registerAndCompleteClientOnboarding(
+            email: "full_client@clanship.cl",
+            password: "SecretPassword123!",
+            firstName: "Camila",
+            lastName: "Rojas",
+            address: "Av. Libertador 500, Santiago",
+            latitude: -33.4489,
+            longitude: -70.6693,
+            phoneNumber: "+56955443322"
+          ) {
+            success
+            user {
+              email
+              firstName
+              lastName
+              phoneNumber
+              userType
+              isProfileComplete
+            }
+          }
+        }
+        '''
+        res = schema.execute(mutation)
+        self.assertIsNone(res.errors)
+        data = res.data['registerAndCompleteClientOnboarding']
+        self.assertTrue(data['success'])
+        self.assertEqual(data['user']['email'], 'full_client@clanship.cl')
+        self.assertEqual(data['user']['userType'], 'CUSTOMER')
+        self.assertTrue(data['user']['isProfileComplete'])
+        u = User.objects.get(email='full_client@clanship.cl')
+        self.assertTrue(u.check_password('SecretPassword123!'))
+
+    def test_register_and_complete_client_onboarding_atomic_rollback(self):
+        from users.models import User
+        mutation = '''
+        mutation {
+          registerAndCompleteClientOnboarding(
+            email: "rollback_client@clanship.cl",
+            password: "SecretPassword123!",
+            firstName: "Camila",
+            lastName: "Rojas",
+            address: "",
+            phoneNumber: "+56955443322"
+          ) {
+            success
+          }
+        }
+        '''
+        res = schema.execute(mutation)
+        self.assertIsNotNone(res.errors)
+        self.assertIn("dirección", str(res.errors).lower())
+        self.assertFalse(User.objects.filter(email="rollback_client@clanship.cl").exists())
 
     def test_minimal_registration_email_flow(self):
         mutation = '''
@@ -1166,6 +1344,330 @@ class WelcomeEmailTestCase(TestCase):
         )
         self.assertEqual(res_reset.status_code, 200)
         self.assertIn('Encuentra maestros de confianza', res_reset.json()['template']['subject'])
+
+
+class AdminUpdateUserContactTestCase(TestCase):
+    def setUp(self):
+        from users.models import User, ProfessionalProfile, Specialty
+        self.specialty = Specialty.objects.create(name='Electricidad Admin Test')
+        self.customer_no_phone = User.objects.create_user(
+            username='cliente.sinfono@clanship.cl',
+            email='cliente.sinfono@clanship.cl',
+            password='Password123!',
+            first_name='Ana',
+            last_name='Torres',
+            user_type=User.UserType.CUSTOMER,
+            phone_number=None,
+        )
+        self.apple_customer_no_email = User.objects.create_user(
+            username='apple_uid123456',
+            email='',
+            first_name='Diego',
+            last_name='Mora',
+            user_type=User.UserType.CUSTOMER,
+            auth_provider=User.AuthProvider.APPLE,
+            social_uid='uid123456',
+            phone_number=None,
+        )
+        self.tradesman = User.objects.create_user(
+            username='maestro.old@clanship.cl',
+            email='maestro.old@clanship.cl',
+            password='Password123!',
+            first_name='Carlos',
+            last_name='Ruiz',
+            user_type=User.UserType.PROFESSIONAL,
+            phone_number='+56911112222',
+        )
+        self.tradesman_profile = ProfessionalProfile.objects.create(
+            user=self.tradesman,
+            specialty=self.specialty,
+            bio='Electricista certificado',
+        )
+        self.tradesman_no_phone = User.objects.create_user(
+            username='maestro.sinfono@clanship.cl',
+            email='maestro.sinfono@clanship.cl',
+            password='Password123!',
+            first_name='Pedro',
+            last_name='Lagos',
+            user_type=User.UserType.PROFESSIONAL,
+            phone_number=None,
+        )
+        ProfessionalProfile.objects.create(
+            user=self.tradesman_no_phone,
+            specialty=self.specialty,
+        )
+        self.admin_user = User.objects.create_superuser(
+            username='admin',
+            email='admin@clanship.cl',
+            password='AdminPassword123!',
+            user_type=User.UserType.ADMIN,
+        )
+        self.admin_headers = {'HTTP_X_CLANSHIP_ADMIN': 'clanship_superadmin_2026'}
+
+    def _mock_admin_ctx(self):
+        class MockCtx:
+            def __init__(self, user):
+                self.user = user
+                self.META = {'HTTP_X_CLANSHIP_ADMIN': 'clanship_superadmin_2026'}
+        return MockCtx(self.admin_user)
+
+    def test_graphql_add_phone_and_modify_email_for_customer_and_tradesman(self):
+        # 1. Agregar teléfono a cliente que no tenía teléfono
+        mut_customer = f'''
+        mutation {{
+          adminUpdateUser(
+            userId: "{self.customer_no_phone.id}",
+            phoneNumber: "+56 9 8765-4321"
+          ) {{
+            success
+            message
+            user {{
+              id
+              email
+              username
+              phoneNumber
+            }}
+          }}
+        }}
+        '''
+        res = schema.execute(mut_customer, context_value=self._mock_admin_ctx())
+        self.assertIsNone(res.errors)
+        self.assertTrue(res.data['adminUpdateUser']['success'])
+        self.assertEqual(res.data['adminUpdateUser']['user']['phoneNumber'], '+56987654321')
+        self.customer_no_phone.refresh_from_db()
+        self.assertEqual(self.customer_no_phone.phone_number, '+56987654321')
+
+        # 2. Modificar correo y teléfono de un maestro y verificar sincronización de username
+        mut_tradesman = f'''
+        mutation {{
+          adminUpdateUser(
+            userId: "{self.tradesman.id}",
+            email: "MAESTRO.NUEVO@clanship.cl",
+            phoneNumber: "+56 9 5555 6666"
+          ) {{
+            success
+            user {{
+              email
+              username
+              phoneNumber
+            }}
+          }}
+        }}
+        '''
+        res2 = schema.execute(mut_tradesman, context_value=self._mock_admin_ctx())
+        self.assertIsNone(res2.errors)
+        u_data = res2.data['adminUpdateUser']['user']
+        self.assertEqual(u_data['email'], 'maestro.nuevo@clanship.cl')
+        self.assertEqual(u_data['username'], 'maestro.nuevo@clanship.cl')
+        self.assertEqual(u_data['phoneNumber'], '+56955556666')
+
+        # 3. Agregar correo y teléfono a usuario social (Apple) que no tenía ninguno
+        mut_apple = f'''
+        mutation {{
+          adminUpdateUser(
+            userId: "{self.apple_customer_no_email.id}",
+            email: "diego.mora@gmail.com",
+            phoneNumber: "+56933445566"
+          ) {{
+            success
+            user {{
+              email
+              username
+              phoneNumber
+            }}
+          }}
+        }}
+        '''
+        res3 = schema.execute(mut_apple, context_value=self._mock_admin_ctx())
+        self.assertIsNone(res3.errors)
+        self.apple_customer_no_email.refresh_from_db()
+        self.assertEqual(self.apple_customer_no_email.email, 'diego.mora@gmail.com')
+        self.assertEqual(self.apple_customer_no_email.username, 'diego.mora@gmail.com')
+        self.assertEqual(self.apple_customer_no_email.phone_number, '+56933445566')
+
+        # 4. Quitar teléfono con clearPhone=true
+        mut_clear = f'''
+        mutation {{
+          adminUpdateUser(
+            userId: "{self.tradesman.id}",
+            clearPhone: true
+          ) {{
+            success
+            user {{
+              phoneNumber
+              email
+            }}
+          }}
+        }}
+        '''
+        res4 = schema.execute(mut_clear, context_value=self._mock_admin_ctx())
+        self.assertIsNone(res4.errors)
+        self.assertIsNone(res4.data['adminUpdateUser']['user']['phoneNumber'])
+        self.assertEqual(res4.data['adminUpdateUser']['user']['email'], 'maestro.nuevo@clanship.cl')
+
+    def test_duplicate_phone_and_email_and_invalid_formats_rejected(self):
+        # Teléfono duplicado (variante sin +56)
+        mut_dup_phone = f'''
+        mutation {{
+          adminUpdateUser(
+            userId: "{self.customer_no_phone.id}",
+            phoneNumber: "911112222"
+          ) {{
+            success
+          }}
+        }}
+        '''
+        res = schema.execute(mut_dup_phone, context_value=self._mock_admin_ctx())
+        self.assertIsNotNone(res.errors)
+        self.assertIn('ya está registrado', str(res.errors[0]))
+
+        # Correo duplicado (case-insensitive)
+        mut_dup_email = f'''
+        mutation {{
+          adminUpdateUser(
+            userId: "{self.customer_no_phone.id}",
+            email: "MAESTRO.OLD@CLANSHIP.CL"
+          ) {{
+            success
+          }}
+        }}
+        '''
+        res2 = schema.execute(mut_dup_email, context_value=self._mock_admin_ctx())
+        self.assertIsNotNone(res2.errors)
+        self.assertIn('correo electrónico ya está registrado', str(res2.errors[0]).lower())
+
+        # Correo con formato inválido
+        mut_bad_email = f'''
+        mutation {{
+          adminUpdateUser(
+            userId: "{self.customer_no_phone.id}",
+            email: "no-es-un-correo"
+          ) {{
+            success
+          }}
+        }}
+        '''
+        res3 = schema.execute(mut_bad_email, context_value=self._mock_admin_ctx())
+        self.assertIsNotNone(res3.errors)
+        self.assertIn('formato del correo', str(res3.errors[0]).lower())
+
+        # Teléfono demasiado corto
+        mut_short_phone = f'''
+        mutation {{
+          adminUpdateUser(
+            userId: "{self.customer_no_phone.id}",
+            phoneNumber: "12345"
+          ) {{
+            success
+          }}
+        }}
+        '''
+        res4 = schema.execute(mut_short_phone, context_value=self._mock_admin_ctx())
+        self.assertIsNotNone(res4.errors)
+        self.assertIn('demasiado corto', str(res4.errors[0]).lower())
+
+    def test_rest_admin_user_endpoint_and_permissions(self):
+        import json
+        from django.test import override_settings
+
+        # Sin permisos cuando DEBUG=False -> 403
+        with override_settings(DEBUG=False):
+            res_unauth = self.client.patch(
+                f'/api/v1/admin/users/{self.customer_no_phone.id}/contact/',
+                data=json.dumps({'phone_number': '+56922223333'}),
+                content_type='application/json',
+            )
+            self.assertEqual(res_unauth.status_code, 403)
+
+            # Con header admin -> 200
+            res_ok = self.client.patch(
+                f'/api/v1/admin/users/{self.customer_no_phone.id}/contact/',
+                data=json.dumps({
+                    'email': 'ana.actualizada@clanship.cl',
+                    'phoneNumber': '+56 9 2222 3333',
+                }),
+                content_type='application/json',
+                **self.admin_headers,
+            )
+            self.assertEqual(res_ok.status_code, 200)
+            body = res_ok.json()
+            self.assertTrue(body['success'])
+            self.assertEqual(body['user']['email'], 'ana.actualizada@clanship.cl')
+            self.assertEqual(body['user']['phoneNumber'], '+56922223333')
+
+            # Actualizar correo de admin no debe sobreescribir username='admin'
+            res_admin = self.client.patch(
+                f'/api/v1/admin/users/{self.admin_user.id}/',
+                data=json.dumps({'email': 'soporte@clanship.cl'}),
+                content_type='application/json',
+                **self.admin_headers,
+            )
+            self.assertEqual(res_admin.status_code, 200)
+            self.admin_user.refresh_from_db()
+            self.assertEqual(self.admin_user.email, 'soporte@clanship.cl')
+            self.assertEqual(self.admin_user.username, 'admin')
+
+            # Teléfono duplicado por REST -> 400 con código claro
+            res_dup = self.client.patch(
+                f'/api/v1/admin/users/{self.tradesman_no_phone.id}/contact/',
+                data=json.dumps({'phoneNumber': '+56922223333'}),
+                content_type='application/json',
+                **self.admin_headers,
+            )
+            self.assertEqual(res_dup.status_code, 400)
+            self.assertEqual(res_dup.json()['code'], 'PHONE_ALREADY_REGISTERED')
+
+    def test_paginated_professionals_missing_contact_filter(self):
+        query = '''
+        query {
+          paginatedProfessionals(missingContact: true) {
+            totalCount
+            results {
+              user {
+                id
+                email
+                phoneNumber
+              }
+            }
+          }
+        }
+        '''
+        res = schema.execute(query, context_value=self._mock_admin_ctx())
+        self.assertIsNone(res.errors)
+        data = res.data['paginatedProfessionals']
+        ids = [int(r['user']['id']) for r in data['results']]
+        self.assertIn(self.tradesman_no_phone.id, ids)
+        self.assertNotIn(self.tradesman.id, ids)
+
+    def test_catalog_cache_invalidated_on_subtag_changes(self):
+        from django.core.cache import cache
+        cache.delete_many(['catalog_specialties', 'catalog_tags', 'catalog_subtags'])
+
+        spec = Specialty.objects.create(name='BIENESTAR_TEST')
+        tag = Tag.objects.create(name='Terapias Complementarias Test', specialty=spec)
+        query = '{ specialties { id name tags { id name subtags { id name } } } }'
+
+        # Poblar caché inicial
+        res1 = schema.execute(query)
+        self.assertIsNone(res1.errors)
+        spec_data1 = next(s for s in res1.data['specialties'] if s['name'] == 'BIENESTAR_TEST')
+        self.assertEqual(spec_data1['tags'][0]['subtags'], [])
+
+        # Crear SubTag debe invalidar caché inmediatamente
+        subtag = SubTag.objects.create(name='Reiki', tag=tag)
+        res2 = schema.execute(query)
+        self.assertIsNone(res2.errors)
+        spec_data2 = next(s for s in res2.data['specialties'] if s['name'] == 'BIENESTAR_TEST')
+        self.assertEqual([st['name'] for st in spec_data2['tags'][0]['subtags']], ['Reiki'])
+
+        # Eliminar SubTag también debe invalidar caché
+        subtag.delete()
+        res3 = schema.execute(query)
+        self.assertIsNone(res3.errors)
+        spec_data3 = next(s for s in res3.data['specialties'] if s['name'] == 'BIENESTAR_TEST')
+        self.assertEqual(spec_data3['tags'][0]['subtags'], [])
+
+
 
 
 
