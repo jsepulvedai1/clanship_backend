@@ -49,7 +49,13 @@ class UserType(DjangoObjectType):
         )
 
     def resolve_is_profile_complete(self, info):
-        if self.user_type == User.UserType.PROFESSIONAL or hasattr(self, 'professional_profile'):
+        req_app_type = getattr(getattr(info, 'context', None), '_app_type', None)
+        is_tradesman_context = (
+            self.user_type == User.UserType.PROFESSIONAL
+            or hasattr(self, 'professional_profile')
+            or (req_app_type and str(req_app_type).upper() == 'TRADESMAN')
+        )
+        if is_tradesman_context:
             # 1. Para profesionales/maestros, el número de teléfono, al menos una especialidad/oficio y la zona de cobertura/dirección son obligatorios
             if not self.phone_number or not str(self.phone_number).strip():
                 return False
@@ -1211,6 +1217,11 @@ class RegisterUser(graphene.Mutation):
     success = graphene.Boolean()
 
     def mutate(self, info, email, password, first_name, last_name, phone_number=None, user_type='CUSTOMER', referral_code=None, minimal_registration=False):
+        if str(user_type or '').upper() == User.UserType.PROFESSIONAL:
+            raise UserFacingError(
+                'Para registrarte como maestro debes completar tu teléfono, especialidad y zona de trabajo. Por favor reinicia o actualiza la aplicación e intenta nuevamente.',
+                code='TRADESMAN_FULL_ONBOARDING_REQUIRED',
+            )
         email_clean = email.strip().lower()
         if len(first_name) > 30:
             raise UserFacingError('El nombre no puede tener más de 30 caracteres', code='NAME_TOO_LONG')
@@ -2319,12 +2330,6 @@ class CustomObtainJSONWebToken(graphql_jwt.ObtainJSONWebToken):
                     if app_type == 'TRADESMAN':
                         user.tradesman_session_key = session_key
                         update_fields.append('tradesman_session_key')
-                        if user.user_type == User.UserType.CUSTOMER:
-                            user.user_type = User.UserType.PROFESSIONAL
-                            update_fields.append('user_type')
-                            from users.models import ProfessionalProfile, SubscriptionPlan
-                            initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
-                            ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
                     else:
                         user.client_session_key = session_key
                         update_fields.append('client_session_key')
@@ -2400,6 +2405,61 @@ class ReportUser(graphene.Mutation):
             raise Exception("Usuario no encontrado.")
 
 
+def _extract_social_identity(id_token, provider="GOOGLE", first_name=None, last_name=None):
+    """Verify Firebase social token, detect provider, clean names, and resolve matching User if any."""
+    from core.firebase import verify_firebase_token
+    from django.db.models import Q
+
+    try:
+        decoded = verify_firebase_token(id_token)
+    except Exception as e:
+        raise UserFacingError(f'Token de autenticación social inválido: {str(e)}', code='INVALID_SOCIAL_TOKEN')
+
+    uid = decoded.get('uid') or decoded.get('sub') or decoded.get('user_id')
+    if not uid:
+        raise UserFacingError('No se pudo identificar al usuario desde el proveedor social.', code='INVALID_SOCIAL_TOKEN')
+
+    email = (decoded.get('email') or '').strip().lower()
+    full_name = decoded.get('name') or ''
+    firebase_meta = decoded.get('firebase', {})
+    sign_in_provider = firebase_meta.get('sign_in_provider', '')
+
+    # Determinar proveedor
+    prov = User.AuthProvider.GOOGLE
+    if 'apple' in sign_in_provider.lower() or str(provider).upper() == 'APPLE':
+        prov = User.AuthProvider.APPLE
+    elif 'google' in sign_in_provider.lower() or str(provider).upper() == 'GOOGLE':
+        prov = User.AuthProvider.GOOGLE
+
+    # Buscar usuario existente por social_uid o por email
+    user = None
+    if uid:
+        user = User.objects.filter(social_uid=uid).first()
+    if not user and email:
+        user = User.objects.filter(Q(email__iexact=email) | Q(username__iexact=email)).first()
+
+    # Extraer nombres si no vienen en argumentos
+    f_name = (first_name or '').strip()
+    l_name = (last_name or '').strip()
+    if '@' in f_name or f_name.startswith('apple_'):
+        f_name = ''
+    if '@' in l_name or l_name.startswith('apple_'):
+        l_name = ''
+    if not f_name and not l_name and full_name and '@' not in full_name and not full_name.startswith('apple_'):
+        parts = full_name.strip().split(' ', 1)
+        f_name = parts[0]
+        l_name = parts[1] if len(parts) > 1 else ''
+
+    return {
+        'user': user,
+        'uid': uid,
+        'email': email,
+        'prov': prov,
+        'first_name': f_name[:30],
+        'last_name': l_name[:30],
+    }
+
+
 class SocialAuth(graphene.Mutation):
     class Arguments:
         id_token = graphene.String(required=True)
@@ -2409,53 +2469,73 @@ class SocialAuth(graphene.Mutation):
         referral_code = graphene.String(required=False)
         first_name = graphene.String(required=False)
         last_name = graphene.String(required=False)
+        defer_registration = graphene.Boolean(required=False, default_value=False)
 
     token = graphene.String()
     refresh_token = graphene.String()
     user = graphene.Field(UserType)
     is_new_user = graphene.Boolean()
     is_profile_complete = graphene.Boolean()
+    requires_onboarding = graphene.Boolean()
+    pending_email = graphene.String()
+    pending_first_name = graphene.String()
+    pending_last_name = graphene.String()
+    pending_provider = graphene.String()
+    pending_phone_number = graphene.String()
+    pending_address = graphene.String()
     success = graphene.Boolean()
 
-    def mutate(self, info, id_token, provider="GOOGLE", app_type="TRADESMAN", platform=None, referral_code=None, first_name=None, last_name=None):
-        from core.firebase import verify_firebase_token
+    def mutate(self, info, id_token, provider="GOOGLE", app_type="TRADESMAN", platform=None, referral_code=None, first_name=None, last_name=None, defer_registration=False):
         from users.utils import issue_user_tokens
-        from django.db.models import Q
 
-        try:
-            decoded = verify_firebase_token(id_token)
-        except Exception as e:
-            raise UserFacingError(f'Token de autenticación social inválido: {str(e)}', code='INVALID_SOCIAL_TOKEN')
-
-        uid = decoded.get('uid') or decoded.get('sub') or decoded.get('user_id')
-        if not uid:
-            raise UserFacingError('No se pudo identificar al usuario desde el proveedor social.', code='INVALID_SOCIAL_TOKEN')
-
-        email = (decoded.get('email') or '').strip().lower()
-        full_name = decoded.get('name') or ''
-        picture = decoded.get('picture')
-        firebase_meta = decoded.get('firebase', {})
-        sign_in_provider = firebase_meta.get('sign_in_provider', '')
-
-        # Determinar proveedor
-        prov = User.AuthProvider.GOOGLE
-        if 'apple' in sign_in_provider.lower() or str(provider).upper() == 'APPLE':
-            prov = User.AuthProvider.APPLE
-        elif 'google' in sign_in_provider.lower() or str(provider).upper() == 'GOOGLE':
-            prov = User.AuthProvider.GOOGLE
-
-        # Buscar usuario existente por social_uid o por email
-        user = None
-        if uid:
-            user = User.objects.filter(social_uid=uid).first()
-        if not user and email:
-            user = User.objects.filter(Q(email__iexact=email) | Q(username__iexact=email)).first()
+        identity = _extract_social_identity(
+            id_token,
+            provider=provider,
+            first_name=first_name,
+            last_name=last_name,
+        )
+        user = identity['user']
+        uid = identity['uid']
+        email = identity['email']
+        prov = identity['prov']
+        f_name = identity['first_name']
+        l_name = identity['last_name']
 
         is_new_user = False
-        target_user_type = User.UserType.PROFESSIONAL if app_type.upper() == 'TRADESMAN' else User.UserType.CUSTOMER
+        target_user_type = User.UserType.PROFESSIONAL if str(app_type or '').upper() == 'TRADESMAN' else User.UserType.CUSTOMER
 
-        if user:
-            # Vincular UID social y proveedor si no estaban seteados
+        if target_user_type == User.UserType.PROFESSIONAL:
+            has_tradesman_account = bool(
+                user and (user.user_type == User.UserType.PROFESSIONAL or hasattr(user, 'professional_profile'))
+            )
+            if not has_tradesman_account:
+                if defer_registration:
+                    pending_email = (user.email if user and user.email else email) or ''
+                    pending_first_name = (user.first_name if user and user.first_name else f_name) or ''
+                    pending_last_name = (user.last_name if user and user.last_name else l_name) or ''
+                    pending_phone = user.phone_number if user and user.phone_number else None
+                    pending_address = user.address if user and user.address else None
+                    return SocialAuth(
+                        token=None,
+                        refresh_token=None,
+                        user=None,
+                        is_new_user=(user is None),
+                        is_profile_complete=False,
+                        requires_onboarding=True,
+                        pending_email=pending_email,
+                        pending_first_name=pending_first_name,
+                        pending_last_name=pending_last_name,
+                        pending_provider=prov,
+                        pending_phone_number=pending_phone,
+                        pending_address=pending_address,
+                        success=True,
+                    )
+                raise UserFacingError(
+                    'Para registrarte como maestro debes completar tu teléfono, especialidad y zona de trabajo. Por favor reinicia o actualiza la aplicación e intenta nuevamente.',
+                    code='TRADESMAN_FULL_ONBOARDING_REQUIRED',
+                )
+
+            # Vincular UID social y proveedor si no estaban seteados (sin crear ProfessionalProfile vacío)
             update_fields = []
             if not user.social_uid:
                 user.social_uid = uid
@@ -2463,80 +2543,64 @@ class SocialAuth(graphene.Mutation):
             if user.auth_provider == User.AuthProvider.EMAIL and prov != User.AuthProvider.EMAIL:
                 user.auth_provider = prov
                 update_fields.append('auth_provider')
-            if target_user_type == User.UserType.PROFESSIONAL and user.user_type == User.UserType.CUSTOMER:
-                user.user_type = User.UserType.PROFESSIONAL
-                update_fields.append('user_type')
             if update_fields:
                 user.save(update_fields=update_fields)
-
-            # Si es profesional pero no tenía perfil profesional inicial
-            if user.user_type == User.UserType.PROFESSIONAL or target_user_type == User.UserType.PROFESSIONAL:
-                from users.models import ProfessionalProfile, SubscriptionPlan
-                initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
-                ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
-
         else:
-            is_new_user = True
-            # Extraer nombres si no vienen en argumentos
-            f_name = (first_name or '').strip()
-            l_name = (last_name or '').strip()
-            if '@' in f_name or f_name.startswith('apple_'):
-                f_name = ''
-            if '@' in l_name or l_name.startswith('apple_'):
-                l_name = ''
-            if not f_name and not l_name and full_name and '@' not in full_name and not full_name.startswith('apple_'):
-                parts = full_name.strip().split(' ', 1)
-                f_name = parts[0]
-                l_name = parts[1] if len(parts) > 1 else ''
+            if user:
+                update_fields = []
+                if not user.social_uid:
+                    user.social_uid = uid
+                    update_fields.append('social_uid')
+                if user.auth_provider == User.AuthProvider.EMAIL and prov != User.AuthProvider.EMAIL:
+                    user.auth_provider = prov
+                    update_fields.append('auth_provider')
+                if update_fields:
+                    user.save(update_fields=update_fields)
+            else:
+                is_new_user = True
+                username_candidate = email if email else f"{prov.lower()}_{uid[:16]}"
+                # Asegurar unicidad de username
+                counter = 1
+                final_username = username_candidate
+                while User.objects.filter(username__iexact=final_username).exists():
+                    final_username = f"{username_candidate}_{counter}"
+                    counter += 1
 
-            username_candidate = email if email else f"{prov.lower()}_{uid[:16]}"
-            # Asegurar unicidad de username
-            counter = 1
-            final_username = username_candidate
-            while User.objects.filter(username__iexact=final_username).exists():
-                final_username = f"{username_candidate}_{counter}"
-                counter += 1
+                user = User(
+                    username=final_username,
+                    email=email,
+                    first_name=f_name[:30],
+                    last_name=l_name[:30],
+                    auth_provider=prov,
+                    social_uid=uid,
+                    user_type=target_user_type,
+                    is_profile_complete=False
+                )
+                user.set_unusable_password()
+                user.save()
 
-            user = User(
-                username=final_username,
-                email=email,
-                first_name=f_name[:30],
-                last_name=l_name[:30],
-                auth_provider=prov,
-                social_uid=uid,
-                user_type=target_user_type,
-                is_profile_complete=False
-            )
-            user.set_unusable_password()
-            user.save()
+                # Aplicar referido si se proporcionó en el registro inicial
+                if referral_code and referral_code.strip():
+                    clean_ref_code = referral_code.strip().upper()
+                    try:
+                        from users.models import SystemSetting, ProfessionalProfile, AssociateReferral
+                        setting = SystemSetting.get_settings()
+                        if setting.referral_program_active:
+                            referrer_profile = ProfessionalProfile.objects.filter(referral_code__iexact=clean_ref_code).select_related('user', 'plan').first()
+                            if referrer_profile and referrer_profile.user and referrer_profile.user_id != user.id:
+                                AssociateReferral.objects.get_or_create(
+                                    referrer=referrer_profile.user,
+                                    referred_user=user,
+                                    defaults={'referral_code_used': clean_ref_code}
+                                )
+                    except Exception:
+                        pass
 
-            if target_user_type == User.UserType.PROFESSIONAL:
-                from users.models import ProfessionalProfile, SubscriptionPlan
-                initial_plan = SubscriptionPlan.objects.filter(name='Plan Inicial').first()
-                ProfessionalProfile.objects.get_or_create(user=user, defaults={'plan': initial_plan})
-
-            # Aplicar referido si se proporcionó en el registro inicial
-            if referral_code and referral_code.strip():
-                clean_ref_code = referral_code.strip().upper()
                 try:
-                    from users.models import SystemSetting, ProfessionalProfile, AssociateReferral
-                    setting = SystemSetting.get_settings()
-                    if setting.referral_program_active:
-                        referrer_profile = ProfessionalProfile.objects.filter(referral_code__iexact=clean_ref_code).select_related('user', 'plan').first()
-                        if referrer_profile and referrer_profile.user and referrer_profile.user_id != user.id:
-                            AssociateReferral.objects.get_or_create(
-                                referrer=referrer_profile.user,
-                                referred_user=user,
-                                defaults={'referral_code_used': clean_ref_code}
-                            )
-                except Exception:
-                    pass
-
-            try:
-                from users.welcome_emails import send_welcome_email_async
-                send_welcome_email_async(user)
-            except Exception as e:
-                print(f"Error iniciando hilo de correo de bienvenida (SocialAuth): {e}", flush=True)
+                    from users.welcome_emails import send_welcome_email_async
+                    send_welcome_email_async(user)
+                except Exception as e:
+                    print(f"Error iniciando hilo de correo de bienvenida (SocialAuth): {e}", flush=True)
 
         # Generar tokens de acceso
         plat_str = platform
@@ -2550,6 +2614,7 @@ class SocialAuth(graphene.Mutation):
             user=user,
             is_new_user=is_new_user,
             is_profile_complete=UserType.resolve_is_profile_complete(user, info),
+            requires_onboarding=False,
             success=True
         )
 
@@ -2572,6 +2637,10 @@ def _apply_tradesman_onboarding(
 ):
     """Validate and apply tradesman onboarding fields to an existing or newly created User."""
     phone_clean = str(phone_number).strip().replace(' ', '').replace('-', '').replace('(', '').replace(')', '') if phone_number else ''
+    existing_phone = (user.phone_number and str(user.phone_number).strip())
+    if not phone_clean and not existing_phone:
+        raise UserFacingError('Debes ingresar tu número de teléfono / WhatsApp.', code='PHONE_REQUIRED')
+
     if phone_clean:
         if len(phone_clean) < 8:
             raise UserFacingError('El número de teléfono ingresado no es válido (demasiado corto).', code='PHONE_INVALID')
@@ -2584,6 +2653,9 @@ def _apply_tradesman_onboarding(
     existing_address = (user.address and str(user.address).strip()) or (getattr(user, 'professional_profile', None) and user.professional_profile.address and str(user.professional_profile.address).strip())
     if not clean_address and not existing_address:
         raise UserFacingError('Debes ingresar tu zona de cobertura o dirección de trabajo.', code='COVERAGE_REQUIRED')
+
+    if service_radius is None or int(service_radius) < 1:
+        raise UserFacingError('Debes indicar tu radio de cobertura en kilómetros.', code='SERVICE_RADIUS_REQUIRED')
 
     if first_name and str(first_name).strip():
         clean_fn = str(first_name).strip()[:30]
@@ -2704,21 +2776,22 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
         if not user or not user.is_authenticated:
             raise UserFacingError('Debes estar autenticado para completar tu registro.', code='UNAUTHENTICATED')
 
-        _apply_tradesman_onboarding(
-            user,
-            phone_number=phone_number,
-            specialty_id=specialty_id,
-            specialty_ids=specialty_ids,
-            tag_ids=tag_ids,
-            subtag_ids=subtag_ids,
-            address=address,
-            latitude=latitude,
-            longitude=longitude,
-            service_radius=service_radius,
-            referral_code=referral_code,
-            first_name=first_name,
-            last_name=last_name,
-        )
+        with transaction.atomic():
+            _apply_tradesman_onboarding(
+                user,
+                phone_number=phone_number,
+                specialty_id=specialty_id,
+                specialty_ids=specialty_ids,
+                tag_ids=tag_ids,
+                subtag_ids=subtag_ids,
+                address=address,
+                latitude=latitude,
+                longitude=longitude,
+                service_radius=service_radius,
+                referral_code=referral_code,
+                first_name=first_name,
+                last_name=last_name,
+            )
 
         return CompleteTradesmanOnboarding(success=True, user=user)
 
@@ -2838,6 +2911,137 @@ class RegisterAndCompleteTradesmanOnboarding(graphene.Mutation):
             _send_registration_emails(user)
 
         return RegisterAndCompleteTradesmanOnboarding(success=True, user=user)
+
+
+class SocialRegisterAndCompleteTradesmanOnboarding(graphene.Mutation):
+    """Create (or promote) a tradesman user via Firebase social auth and complete onboarding atomically."""
+    class Arguments:
+        id_token = graphene.String(required=True)
+        provider = graphene.String(required=False, default_value="GOOGLE")
+        platform = graphene.String(required=False)
+        phone_number = graphene.String(required=True)
+        specialty_id = graphene.ID(required=False)
+        specialty_ids = graphene.List(graphene.ID, required=False)
+        tag_ids = graphene.List(graphene.ID, required=False)
+        subtag_ids = graphene.List(graphene.ID, required=False)
+        address = graphene.String(required=False)
+        latitude = graphene.Float(required=False)
+        longitude = graphene.Float(required=False)
+        service_radius = graphene.Int(required=False, default_value=10)
+        referral_code = graphene.String(required=False)
+        first_name = graphene.String(required=False)
+        last_name = graphene.String(required=False)
+
+    success = graphene.Boolean()
+    token = graphene.String()
+    refresh_token = graphene.String()
+    user = graphene.Field(UserType)
+    is_new_user = graphene.Boolean()
+    is_profile_complete = graphene.Boolean()
+
+    def mutate(
+        self,
+        info,
+        id_token,
+        phone_number,
+        provider="GOOGLE",
+        platform=None,
+        specialty_id=None,
+        specialty_ids=None,
+        tag_ids=None,
+        subtag_ids=None,
+        address=None,
+        latitude=None,
+        longitude=None,
+        service_radius=10,
+        referral_code=None,
+        first_name=None,
+        last_name=None,
+    ):
+        from users.utils import issue_user_tokens
+
+        identity = _extract_social_identity(
+            id_token,
+            provider=provider,
+            first_name=first_name,
+            last_name=last_name,
+        )
+        user = identity['user']
+        uid = identity['uid']
+        email = identity['email']
+        prov = identity['prov']
+        f_name = identity['first_name']
+        l_name = identity['last_name']
+
+        is_new_user = False
+        with transaction.atomic():
+            if user is None:
+                username_candidate = email if email else f"{prov.lower()}_{uid[:16]}"
+                counter = 1
+                final_username = username_candidate
+                while User.objects.filter(username__iexact=final_username).exists():
+                    final_username = f"{username_candidate}_{counter}"
+                    counter += 1
+
+                user = User(
+                    username=final_username,
+                    email=email,
+                    first_name=f_name[:30],
+                    last_name=l_name[:30],
+                    auth_provider=prov,
+                    social_uid=uid,
+                    user_type=User.UserType.PROFESSIONAL,
+                    is_profile_complete=True,
+                )
+                user.set_unusable_password()
+                user.save()
+                is_new_user = True
+            else:
+                update_fields = []
+                if not user.social_uid:
+                    user.social_uid = uid
+                    update_fields.append('social_uid')
+                if user.auth_provider == User.AuthProvider.EMAIL and prov != User.AuthProvider.EMAIL:
+                    user.auth_provider = prov
+                    update_fields.append('auth_provider')
+                if update_fields:
+                    user.save(update_fields=update_fields)
+
+            applied_first_name = first_name if (first_name and str(first_name).strip()) else (f_name if is_new_user or not user.first_name else None)
+            applied_last_name = last_name if (last_name and str(last_name).strip()) else (l_name if is_new_user or not user.last_name else None)
+
+            _apply_tradesman_onboarding(
+                user,
+                phone_number=phone_number,
+                specialty_id=specialty_id,
+                specialty_ids=specialty_ids,
+                tag_ids=tag_ids,
+                subtag_ids=subtag_ids,
+                address=address,
+                latitude=latitude,
+                longitude=longitude,
+                service_radius=service_radius,
+                referral_code=referral_code,
+                first_name=applied_first_name,
+                last_name=applied_last_name,
+            )
+
+        if is_new_user:
+            _send_registration_emails(user)
+
+        plat_str = platform
+        if not plat_str and hasattr(info, 'context'):
+            plat_str = getattr(info.context, '_platform', None)
+        token, refresh_tok = issue_user_tokens(user, app_type='TRADESMAN', platform=plat_str, context=info.context)
+
+        return SocialRegisterAndCompleteTradesmanOnboarding(
+            success=True,
+            token=token,
+            refresh_token=refresh_tok,
+            user=user,
+            is_new_user=is_new_user,
+            is_profile_complete=UserType.resolve_is_profile_complete(user, info),
+        )
 
 
 def _apply_client_onboarding(
@@ -3151,6 +3355,7 @@ class Mutation(graphene.ObjectType):
     social_auth = SocialAuth.Field()
     complete_tradesman_onboarding = CompleteTradesmanOnboarding.Field()
     register_and_complete_tradesman_onboarding = RegisterAndCompleteTradesmanOnboarding.Field()
+    social_register_and_complete_tradesman_onboarding = SocialRegisterAndCompleteTradesmanOnboarding.Field()
     complete_client_onboarding = CompleteClientOnboarding.Field()
     register_and_complete_client_onboarding = RegisterAndCompleteClientOnboarding.Field()
     update_profile = UpdateProfile.Field()

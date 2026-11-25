@@ -414,7 +414,7 @@ class SocialAuthAndOnboardingTestCase(TestCase):
 
     @patch('core.firebase.verify_firebase_token')
     def test_social_auth_new_tradesman(self, mock_verify):
-        from users.models import User
+        from users.models import User, ProfessionalProfile
         mock_verify.return_value = {
             'uid': 'google_test_uid_123',
             'email': 'maestro_google@clanship.cl',
@@ -423,41 +423,265 @@ class SocialAuthAndOnboardingTestCase(TestCase):
             'firebase': {'sign_in_provider': 'google.com'}
         }
 
-        mutation = '''
+        # 1. Sin deferRegistration (app desactualizada): debe bloquear y NO crear usuario ni perfil
+        legacy_mutation = '''
         mutation {
           socialAuth(idToken: "mock_token_abc", provider: "GOOGLE", appType: "TRADESMAN") {
+            token
+            success
+          }
+        }
+        '''
+        res_legacy = schema.execute(legacy_mutation)
+        self.assertIsNotNone(res_legacy.errors)
+        self.assertIn('teléfono, especialidad y zona de trabajo', str(res_legacy.errors))
+        self.assertFalse(User.objects.filter(email='maestro_google@clanship.cl').exists())
+        self.assertFalse(ProfessionalProfile.objects.filter(user__email='maestro_google@clanship.cl').exists())
+
+        # 2. Con deferRegistration=true: debe devolver requiresOnboarding=True sin crear usuario en BD
+        deferred_mutation = '''
+        mutation {
+          socialAuth(idToken: "mock_token_abc", provider: "GOOGLE", appType: "TRADESMAN", deferRegistration: true) {
+            success
             token
             refreshToken
             isNewUser
             isProfileComplete
+            requiresOnboarding
+            pendingEmail
+            pendingFirstName
+            pendingLastName
+            pendingProvider
             user {
-              email
-              firstName
-              lastName
-              userType
-              authProvider
-              isProfileComplete
+              id
             }
           }
         }
         '''
-        res = schema.execute(mutation)
+        res = schema.execute(deferred_mutation)
         self.assertIsNone(res.errors)
         data = res.data['socialAuth']
+        self.assertTrue(data['success'])
         self.assertTrue(data['isNewUser'])
         self.assertFalse(data['isProfileComplete'])
-        self.assertIsNotNone(data['token'])
-        self.assertEqual(data['user']['email'], 'maestro_google@clanship.cl')
-        self.assertEqual(data['user']['firstName'], 'Pedro')
-        self.assertEqual(data['user']['lastName'], 'Maestro')
-        self.assertEqual(data['user']['userType'], 'PROFESSIONAL')
-        self.assertEqual(data['user']['authProvider'], 'GOOGLE')
+        self.assertTrue(data['requiresOnboarding'])
+        self.assertIsNone(data['token'])
+        self.assertIsNone(data['refreshToken'])
+        self.assertIsNone(data['user'])
+        self.assertEqual(data['pendingEmail'], 'maestro_google@clanship.cl')
+        self.assertEqual(data['pendingFirstName'], 'Pedro')
+        self.assertEqual(data['pendingLastName'], 'Maestro')
+        self.assertEqual(data['pendingProvider'], 'GOOGLE')
+        self.assertFalse(User.objects.filter(email='maestro_google@clanship.cl').exists())
+
+        # 3. Al enviar teléfono, especialidad y zona/radio: crea usuario y perfil atómicamente
+        complete_mutation = f'''
+        mutation {{
+          socialRegisterAndCompleteTradesmanOnboarding(
+            idToken: "mock_token_abc",
+            provider: "GOOGLE",
+            phoneNumber: "+56911223344",
+            specialtyId: "{self.specialty.id}",
+            subtagIds: ["{self.subtag.id}"],
+            address: "Providencia 1234, Santiago",
+            latitude: -33.42,
+            longitude: -70.61,
+            serviceRadius: 15
+          ) {{
+            success
+            token
+            refreshToken
+            isNewUser
+            isProfileComplete
+            user {{
+              email
+              firstName
+              lastName
+              phoneNumber
+              userType
+              authProvider
+              isProfileComplete
+              professionalProfile {{
+                serviceRadius
+                specialty {{
+                  id
+                  name
+                }}
+              }}
+            }}
+          }}
+        }}
+        '''
+        res_complete = schema.execute(complete_mutation)
+        self.assertIsNone(res_complete.errors)
+        c_data = res_complete.data['socialRegisterAndCompleteTradesmanOnboarding']
+        self.assertTrue(c_data['success'])
+        self.assertTrue(c_data['isNewUser'])
+        self.assertTrue(c_data['isProfileComplete'])
+        self.assertIsNotNone(c_data['token'])
+        self.assertIsNotNone(c_data['refreshToken'])
+        self.assertEqual(c_data['user']['email'], 'maestro_google@clanship.cl')
+        self.assertEqual(c_data['user']['firstName'], 'Pedro')
+        self.assertEqual(c_data['user']['lastName'], 'Maestro')
+        self.assertEqual(c_data['user']['userType'], 'PROFESSIONAL')
+        self.assertEqual(c_data['user']['authProvider'], 'GOOGLE')
+        self.assertEqual(c_data['user']['professionalProfile']['serviceRadius'], 15)
 
         u = User.objects.get(email='maestro_google@clanship.cl')
         self.assertEqual(u.social_uid, 'google_test_uid_123')
-        self.assertFalse(u.is_profile_complete)
+        self.assertTrue(u.is_profile_complete)
         self.assertIsNotNone(u.professional_profile)
         self.assertEqual(u.professional_profile.plan.name, 'Plan Inicial')
+
+        # 4. Login posterior del maestro ya existente: autentica directo
+        res_login = schema.execute(deferred_mutation)
+        self.assertIsNone(res_login.errors)
+        l_data = res_login.data['socialAuth']
+        self.assertFalse(l_data['isNewUser'])
+        self.assertFalse(l_data['requiresOnboarding'])
+        self.assertTrue(l_data['isProfileComplete'])
+        self.assertIsNotNone(l_data['token'])
+
+    @patch('core.firebase.verify_firebase_token')
+    def test_social_register_and_complete_tradesman_onboarding_atomic_rollback(self, mock_verify):
+        from users.models import User, ProfessionalProfile
+        mock_verify.return_value = {
+            'uid': 'google_rollback_uid',
+            'email': 'rollback_social@clanship.cl',
+            'name': 'Ana Social',
+            'firebase': {'sign_in_provider': 'google.com'}
+        }
+
+        cases = [
+            f'phoneNumber: "", specialtyId: "{self.specialty.id}", address: "Santiago", serviceRadius: 10',
+            'phoneNumber: "+56912345678", address: "Santiago", serviceRadius: 10',
+            f'phoneNumber: "+56912345678", specialtyId: "{self.specialty.id}", address: "", serviceRadius: 10',
+            f'phoneNumber: "+56912345678", specialtyId: "{self.specialty.id}", address: "Santiago", serviceRadius: 0',
+        ]
+        for args in cases:
+            mutation = f'''
+            mutation {{
+              socialRegisterAndCompleteTradesmanOnboarding(
+                idToken: "mock_token_rb",
+                provider: "GOOGLE",
+                {args}
+              ) {{
+                success
+              }}
+            }}
+            '''
+            res = schema.execute(mutation)
+            self.assertIsNotNone(res.errors, f"Expected error for args: {args}")
+            self.assertFalse(User.objects.filter(email='rollback_social@clanship.cl').exists())
+            self.assertFalse(ProfessionalProfile.objects.filter(user__email='rollback_social@clanship.cl').exists())
+
+    @patch('core.firebase.verify_firebase_token')
+    def test_existing_customer_tradesman_social_and_token_auth_do_not_create_profile_before_onboarding(self, mock_verify):
+        from users.models import User, ProfessionalProfile
+        customer = User.objects.create_user(
+            username='cliente_previo@clanship.cl',
+            email='cliente_previo@clanship.cl',
+            password='SecretPassword123!',
+            first_name='Lucia',
+            last_name='Vega',
+            phone_number='+56988776655',
+            address='Av. Providencia 100',
+            user_type=User.UserType.CUSTOMER,
+            is_profile_complete=True,
+        )
+        mock_verify.return_value = {
+            'uid': 'google_customer_uid',
+            'email': 'cliente_previo@clanship.cl',
+            'name': 'Lucia Vega',
+            'firebase': {'sign_in_provider': 'google.com'}
+        }
+
+        # 1. tokenAuth en app TRADESMAN NO debe convertir al CUSTOMER ni crear ProfessionalProfile
+        from django.contrib.auth.models import AnonymousUser
+        from django.test import RequestFactory
+        token_req = RequestFactory().post('/graphql/')
+        token_req.user = AnonymousUser()
+
+        token_mut = '''
+        mutation {
+          tokenAuth(username: "cliente_previo@clanship.cl", password: "SecretPassword123!", appType: "TRADESMAN") {
+            token
+          }
+        }
+        '''
+        res_tok = schema.execute(token_mut, context_value=token_req)
+        self.assertIsNone(res_tok.errors)
+        self.assertIsNotNone(res_tok.data['tokenAuth']['token'])
+        customer.refresh_from_db()
+        self.assertEqual(customer.user_type, User.UserType.CUSTOMER)
+        self.assertFalse(ProfessionalProfile.objects.filter(user=customer).exists())
+
+        # `me.isProfileComplete` en contexto TRADESMAN debe retornar False para este CUSTOMER
+        class TradesmanCtx:
+            def __init__(self, user):
+                self.user = user
+                self._app_type = 'TRADESMAN'
+
+        res_me = schema.execute('{ me { isProfileComplete } }', context_value=TradesmanCtx(customer))
+        self.assertIsNone(res_me.errors)
+        self.assertFalse(res_me.data['me']['isProfileComplete'])
+
+        # 2. socialAuth diferido en app TRADESMAN tampoco debe promover ni crear ProfessionalProfile
+        social_mut = '''
+        mutation {
+          socialAuth(idToken: "mock_tok", provider: "GOOGLE", appType: "TRADESMAN", deferRegistration: true) {
+            success
+            token
+            isNewUser
+            requiresOnboarding
+            pendingPhoneNumber
+            pendingAddress
+          }
+        }
+        '''
+        res_soc = schema.execute(social_mut)
+        self.assertIsNone(res_soc.errors)
+        s_data = res_soc.data['socialAuth']
+        self.assertTrue(s_data['requiresOnboarding'])
+        self.assertIsNone(s_data['token'])
+        self.assertFalse(s_data['isNewUser'])
+        self.assertEqual(s_data['pendingPhoneNumber'], '+56988776655')
+        self.assertEqual(s_data['pendingAddress'], 'Av. Providencia 100')
+        customer.refresh_from_db()
+        self.assertEqual(customer.user_type, User.UserType.CUSTOMER)
+        self.assertFalse(ProfessionalProfile.objects.filter(user=customer).exists())
+
+        # 3. Al completar social onboarding: recién ahí se promueve a PROFESSIONAL y crea perfil
+        complete_mut = f'''
+        mutation {{
+          socialRegisterAndCompleteTradesmanOnboarding(
+            idToken: "mock_tok",
+            provider: "GOOGLE",
+            phoneNumber: "+56988776655",
+            specialtyId: "{self.specialty.id}",
+            address: "Av. Providencia 100",
+            serviceRadius: 15
+          ) {{
+            success
+            token
+            isNewUser
+            isProfileComplete
+            user {{
+              userType
+            }}
+          }}
+        }}
+        '''
+        res_comp = schema.execute(complete_mut)
+        self.assertIsNone(res_comp.errors)
+        comp_data = res_comp.data['socialRegisterAndCompleteTradesmanOnboarding']
+        self.assertTrue(comp_data['success'])
+        self.assertFalse(comp_data['isNewUser'])
+        self.assertTrue(comp_data['isProfileComplete'])
+        self.assertEqual(comp_data['user']['userType'], 'PROFESSIONAL')
+        customer.refresh_from_db()
+        self.assertEqual(customer.user_type, User.UserType.PROFESSIONAL)
+        self.assertTrue(ProfessionalProfile.objects.filter(user=customer).exists())
 
     def test_complete_tradesman_onboarding_success(self):
         from users.models import User
@@ -674,26 +898,44 @@ class SocialAuthAndOnboardingTestCase(TestCase):
         self.assertEqual(u.professional_profile.service_radius, 15)
 
     def test_register_and_complete_tradesman_onboarding_atomic_rollback(self):
-        from users.models import User
-        mutation = '''
-        mutation {
-          registerAndCompleteTradesmanOnboarding(
-            email: "rollback_tradesman@clanship.cl",
-            password: "SecretPassword123!",
-            firstName: "Ana",
-            lastName: "Lopez",
+        from users.models import User, ProfessionalProfile
+        cases = [
+            '''
             phoneNumber: "+56999887766",
             address: "Av. Apoquindo 1000, Las Condes",
             serviceRadius: 10
-          ) {
-            success
-          }
-        }
-        '''
-        res = schema.execute(mutation)
-        self.assertIsNotNone(res.errors)
-        self.assertIn("especialidad", str(res.errors).lower())
-        self.assertFalse(User.objects.filter(email="rollback_tradesman@clanship.cl").exists())
+            ''',
+            f'''
+            phoneNumber: "",
+            specialtyId: "{self.specialty.id}",
+            address: "Av. Apoquindo 1000, Las Condes",
+            serviceRadius: 10
+            ''',
+            f'''
+            phoneNumber: "+56999887766",
+            specialtyId: "{self.specialty.id}",
+            address: "Av. Apoquindo 1000, Las Condes",
+            serviceRadius: 0
+            ''',
+        ]
+        for args in cases:
+            mutation = f'''
+            mutation {{
+              registerAndCompleteTradesmanOnboarding(
+                email: "rollback_tradesman@clanship.cl",
+                password: "SecretPassword123!",
+                firstName: "Ana",
+                lastName: "Lopez",
+                {args}
+              ) {{
+                success
+              }}
+            }}
+            '''
+            res = schema.execute(mutation)
+            self.assertIsNotNone(res.errors, f"Expected error for args: {args}")
+            self.assertFalse(User.objects.filter(email="rollback_tradesman@clanship.cl").exists())
+            self.assertFalse(ProfessionalProfile.objects.filter(user__email="rollback_tradesman@clanship.cl").exists())
 
     def test_register_and_complete_client_onboarding_success(self):
         from users.models import User
@@ -753,6 +995,7 @@ class SocialAuthAndOnboardingTestCase(TestCase):
         self.assertFalse(User.objects.filter(email="rollback_client@clanship.cl").exists())
 
     def test_minimal_registration_email_flow(self):
+        from users.models import User, ProfessionalProfile
         mutation = '''
         mutation {
           registerUser(
@@ -764,68 +1007,94 @@ class SocialAuthAndOnboardingTestCase(TestCase):
             minimalRegistration: true
           ) {
             success
-            user {
-              email
-              isProfileComplete
-              phoneNumber
-            }
           }
         }
         '''
         res = schema.execute(mutation)
-        self.assertIsNone(res.errors)
-        data = res.data['registerUser']
-        self.assertTrue(data['success'])
-        self.assertFalse(data['user']['isProfileComplete'])
-        self.assertIsNone(data['user']['phoneNumber'])
+        self.assertIsNotNone(res.errors)
+        self.assertIn("teléfono, especialidad y zona de trabajo", str(res.errors))
+        self.assertFalse(User.objects.filter(email="minimal_tradesman@clanship.cl").exists())
+        self.assertFalse(ProfessionalProfile.objects.filter(user__email="minimal_tradesman@clanship.cl").exists())
 
-    def test_resume_incomplete_registration_flow(self):
-        # 1. Crear un registro inicial incompleto
-        reg_mutation = '''
+        mutation_with_phone = '''
         mutation {
           registerUser(
-            email: "resume_test@clanship.cl",
-            password: "MySecurePassword123!",
-            firstName: "Pedro",
-            lastName: "Perez",
-            userType: "PROFESSIONAL",
-            minimalRegistration: true
+            email: "legacy_tradesman@clanship.cl",
+            password: "SecretPassword123!",
+            firstName: "Luis",
+            lastName: "Gomez",
+            phoneNumber: "+56912345678",
+            userType: "PROFESSIONAL"
           ) {
             success
-            user {
-              isProfileComplete
-            }
           }
         }
         '''
-        res = schema.execute(reg_mutation)
-        self.assertIsNone(res.errors)
-        self.assertTrue(res.data['registerUser']['success'])
+        res_phone = schema.execute(mutation_with_phone)
+        self.assertIsNotNone(res_phone.errors)
+        self.assertIn("teléfono, especialidad y zona de trabajo", str(res_phone.errors))
+        self.assertFalse(User.objects.filter(email="legacy_tradesman@clanship.cl").exists())
 
-        # 2. Si el usuario cerró la app y vuelve a intentar registrarse con la misma contraseña:
-        res2 = schema.execute(reg_mutation)
-        self.assertIsNone(res2.errors)
-        self.assertTrue(res2.data['registerUser']['success'])
-        self.assertFalse(res2.data['registerUser']['user']['isProfileComplete'])
+    def test_resume_incomplete_registration_flow(self):
+        from users.models import User
+        # 1. Simular usuario legado con registro incompleto en BD
+        User.objects.create_user(
+            username="resume_test@clanship.cl",
+            email="resume_test@clanship.cl",
+            password="MySecurePassword123!",
+            first_name="Pedro",
+            last_name="Perez",
+            user_type=User.UserType.PROFESSIONAL,
+            is_profile_complete=False,
+        )
 
-        # 3. Si intenta registrarse con contraseña errónea:
-        wrong_pass_mutation = '''
-        mutation {
-          registerUser(
+        # 2. Si intenta reanudar con contraseña errónea:
+        wrong_pass_mutation = f'''
+        mutation {{
+          registerAndCompleteTradesmanOnboarding(
             email: "resume_test@clanship.cl",
             password: "WrongPassword123!",
             firstName: "Pedro",
             lastName: "Perez",
-            userType: "PROFESSIONAL",
-            minimalRegistration: true
-          ) {
+            phoneNumber: "+56977889900",
+            specialtyId: "{self.specialty.id}",
+            address: "Santiago Centro",
+            serviceRadius: 10
+          ) {{
             success
-          }
-        }
+          }}
+        }}
         '''
-        res3 = schema.execute(wrong_pass_mutation)
-        self.assertIsNotNone(res3.errors)
-        self.assertIn("registro está incompleto", str(res3.errors))
+        res_wrong = schema.execute(wrong_pass_mutation)
+        self.assertIsNotNone(res_wrong.errors)
+        self.assertIn("registro está incompleto", str(res_wrong.errors))
+
+        # 3. Si ingresa contraseña correcta y completa datos:
+        resume_mutation = f'''
+        mutation {{
+          registerAndCompleteTradesmanOnboarding(
+            email: "resume_test@clanship.cl",
+            password: "MySecurePassword123!",
+            firstName: "Pedro",
+            lastName: "Perez",
+            phoneNumber: "+56977889900",
+            specialtyId: "{self.specialty.id}",
+            address: "Santiago Centro",
+            serviceRadius: 15
+          ) {{
+            success
+            user {{
+              isProfileComplete
+              phoneNumber
+            }}
+          }}
+        }}
+        '''
+        res_ok = schema.execute(resume_mutation)
+        self.assertIsNone(res_ok.errors)
+        self.assertTrue(res_ok.data['registerAndCompleteTradesmanOnboarding']['success'])
+        self.assertTrue(res_ok.data['registerAndCompleteTradesmanOnboarding']['user']['isProfileComplete'])
+        self.assertEqual(res_ok.data['registerAndCompleteTradesmanOnboarding']['user']['phoneNumber'], '+56977889900')
 
     def test_resolver_is_profile_complete_for_tradesman(self):
         from users.models import User, ProfessionalProfile
@@ -1165,27 +1434,31 @@ class WelcomeEmailTestCase(TestCase):
         self.assertIn('Andrea', welcome_calls[0]['subject'])
         self.assertIn('BIENVENIDO A CLANSHIP', welcome_calls[0]['html'])
 
-        # 2. Registro Maestro (activo)
+        # 2. Registro Maestro (activo, vía registro atómico)
+        from users.models import Specialty
+        spec = Specialty.objects.create(name='Gasfitería Email Test')
         mock_resend_send.reset_mock()
-        mutation_prof = '''
-        mutation {
-          registerUser(
+        mutation_prof = f'''
+        mutation {{
+          registerAndCompleteTradesmanOnboarding(
             email: "nuevo.maestro@test.cl",
             password: "Password123!",
             firstName: "Pedro",
             lastName: "Lagos",
             phoneNumber: "+56955667788",
-            userType: "PROFESSIONAL"
-          ) {
+            specialtyId: "{spec.id}",
+            address: "Santiago Centro",
+            serviceRadius: 10
+          ) {{
             success
-          }
-        }
+          }}
+        }}
         '''
         with patch('users.welcome_emails.threading.Thread') as mock_thread:
             mock_thread.side_effect = lambda target, daemon=True: type('T', (), {'start': staticmethod(target)})()
             res2 = schema.execute(mutation_prof)
         self.assertIsNone(res2.errors)
-        self.assertTrue(res2.data['registerUser']['success'])
+        self.assertTrue(res2.data['registerAndCompleteTradesmanOnboarding']['success'])
 
         welcome_prof_calls = [
             call.args[0] for call in mock_resend_send.call_args_list
@@ -1229,6 +1502,8 @@ class WelcomeEmailTestCase(TestCase):
     @patch('resend.Emails.send')
     @patch('core.firebase.verify_firebase_token')
     def test_social_auth_sends_welcome_email_only_for_new_user(self, mock_verify, mock_resend_send):
+        from users.models import Specialty
+        spec = Specialty.objects.create(name='Electricidad Email Test')
         mock_resend_send.return_value = {'id': 'msg_social_1'}
         mock_verify.return_value = {
             'uid': 'google_welcome_uid_1',
@@ -1236,30 +1511,59 @@ class WelcomeEmailTestCase(TestCase):
             'name': 'Javiera Núñez',
             'firebase': {'sign_in_provider': 'google.com'},
         }
-        mutation = '''
+        deferred_mutation = '''
         mutation {
-          socialAuth(idToken: "tok_123", provider: "GOOGLE", appType: "TRADESMAN") {
+          socialAuth(idToken: "tok_123", provider: "GOOGLE", appType: "TRADESMAN", deferRegistration: true) {
             success
             isNewUser
+            requiresOnboarding
           }
         }
         '''
+        # Paso 1: socialAuth diferido NO crea usuario ni envía correo de bienvenida
         with patch('users.welcome_emails.threading.Thread') as mock_thread:
             mock_thread.side_effect = lambda target, daemon=True: type('T', (), {'start': staticmethod(target)})()
-            res = schema.execute(mutation)
+            res_deferred = schema.execute(deferred_mutation)
+        self.assertIsNone(res_deferred.errors)
+        self.assertTrue(res_deferred.data['socialAuth']['requiresOnboarding'])
+        self.assertEqual(mock_resend_send.call_count, 0)
+
+        # Paso 2: Al completar onboarding atómico, recién ahí envía bienvenida
+        complete_mutation = f'''
+        mutation {{
+          socialRegisterAndCompleteTradesmanOnboarding(
+            idToken: "tok_123",
+            provider: "GOOGLE",
+            phoneNumber: "+56977889900",
+            specialtyId: "{spec.id}",
+            address: "Providencia 123, Santiago",
+            serviceRadius: 15
+          ) {{
+            success
+            isNewUser
+          }}
+        }}
+        '''
+        with patch('users.welcome_emails.threading.Thread') as mock_thread:
+            mock_thread.side_effect = lambda target, daemon=True: type('T', (), {'start': staticmethod(target)})()
+            res = schema.execute(complete_mutation)
         self.assertIsNone(res.errors)
-        self.assertTrue(res.data['socialAuth']['isNewUser'])
-        self.assertEqual(mock_resend_send.call_count, 1)
-        self.assertEqual(mock_resend_send.call_args[0][0]['to'], ['social.maestro@test.cl'])
-        self.assertIn('COMUNIDAD DE MAESTROS', mock_resend_send.call_args[0][0]['html'])
+        self.assertTrue(res.data['socialRegisterAndCompleteTradesmanOnboarding']['isNewUser'])
+        welcome_calls = [
+            call.args[0] for call in mock_resend_send.call_args_list
+            if call.args[0].get('to') == ['social.maestro@test.cl']
+        ]
+        self.assertEqual(len(welcome_calls), 1)
+        self.assertIn('COMUNIDAD DE MAESTROS', welcome_calls[0]['html'])
 
         # Segundo login no debe reenviar bienvenida
         mock_resend_send.reset_mock()
         with patch('users.welcome_emails.threading.Thread') as mock_thread:
             mock_thread.side_effect = lambda target, daemon=True: type('T', (), {'start': staticmethod(target)})()
-            res2 = schema.execute(mutation)
+            res2 = schema.execute(deferred_mutation)
         self.assertIsNone(res2.errors)
         self.assertFalse(res2.data['socialAuth']['isNewUser'])
+        self.assertFalse(res2.data['socialAuth']['requiresOnboarding'])
         self.assertEqual(mock_resend_send.call_count, 0)
 
     @override_settings(RESEND_API_KEY='re_test_key')
