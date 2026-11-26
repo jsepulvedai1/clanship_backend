@@ -1487,5 +1487,191 @@ def admin_user_api_view(request, user_id):
     })
 
 
+def serialize_subscription_plan(plan, active_subscribers_count=None):
+    if active_subscribers_count is None:
+        active_subscribers_count = getattr(plan, 'active_subscribers_count', None)
+    if active_subscribers_count is None:
+        active_subscribers_count = plan.professionals.count()
+
+    return {
+        'id': plan.id,
+        'name': plan.name,
+        'description': plan.description or '',
+        'price': float(plan.price) if plan.price is not None else 0.0,
+        'duration_days': plan.duration_days,
+        'monthly_requests': plan.monthly_requests,
+        'urgent_requests': plan.urgent_requests,
+        'service_categories': plan.service_categories,
+        'max_completed_jobs': plan.max_completed_jobs,
+        'search_position': plan.search_position or 'Estándar',
+        'featured_badge': plan.featured_badge or '—',
+        'rrss_campaigns': plan.rrss_campaigns or '—',
+        'radio_broadcast': plan.radio_broadcast or '—',
+        'profile_statistics': plan.profile_statistics or 'Básicas',
+        'support_level': plan.support_level or 'Estándar',
+        'is_coming_soon': bool(plan.is_coming_soon),
+        'display_order': plan.display_order,
+        'active_subscribers_count': int(active_subscribers_count),
+    }
+
+
+def _parse_optional_int(value, field_label):
+    if value is None or value == '':
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f'El campo "{field_label}" debe ser un número entero válido.')
+    if parsed < 0:
+        raise ValueError(f'El campo "{field_label}" no puede ser negativo.')
+    return parsed
+
+
+@csrf_exempt
+def admin_subscription_plans_api_view(request, plan_id=None):
+    """
+    REST API administrativa para listar, crear y editar parámetros de planes de suscripción
+    desde clanship-admin.
+    """
+    from decimal import Decimal, InvalidOperation
+    from django.db.models import Count
+    from users.models import SubscriptionPlan
+
+    if not check_admin_permission(request):
+        return JsonResponse({'success': False, 'error': 'No autorizado.'}, status=403)
+
+    if request.method == 'GET':
+        if plan_id is not None:
+            try:
+                plan = SubscriptionPlan.objects.annotate(
+                    active_subscribers_count=Count('professionals')
+                ).get(id=plan_id)
+            except SubscriptionPlan.DoesNotExist:
+                return JsonResponse({'success': False, 'error': 'Plan no encontrado.'}, status=404)
+            return JsonResponse({
+                'success': True,
+                'plan': serialize_subscription_plan(plan),
+            })
+
+        plans = SubscriptionPlan.objects.annotate(
+            active_subscribers_count=Count('professionals')
+        ).order_by('display_order', 'id')
+        return JsonResponse({
+            'success': True,
+            'plans': [serialize_subscription_plan(p) for p in plans],
+        })
+
+    if request.method == 'DELETE':
+        if plan_id is None:
+            return JsonResponse({'success': False, 'error': 'ID de plan requerido.'}, status=400)
+        try:
+            plan = SubscriptionPlan.objects.get(id=plan_id)
+        except SubscriptionPlan.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Plan no encontrado.'}, status=404)
+
+        if plan.professionals.exists():
+            return JsonResponse({
+                'success': False,
+                'error': 'No se puede eliminar un plan que tiene maestros suscritos.',
+            }, status=400)
+
+        plan_name = plan.name
+        plan.delete()
+        return JsonResponse({
+            'success': True,
+            'message': f'Plan "{plan_name}" eliminado correctamente.',
+        })
+
+    if request.method not in ('POST', 'PUT', 'PATCH'):
+        return JsonResponse({'success': False, 'error': 'Método no permitido.'}, status=405)
+
+    try:
+        payload = json.loads(request.body.decode('utf-8') or '{}')
+    except Exception:
+        return JsonResponse({'success': False, 'error': 'JSON inválido.'}, status=400)
+
+    is_create = plan_id is None
+    if is_create:
+        plan = SubscriptionPlan()
+    else:
+        try:
+            plan = SubscriptionPlan.objects.get(id=plan_id)
+        except SubscriptionPlan.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Plan no encontrado.'}, status=404)
+
+    try:
+        if 'name' in payload or is_create:
+            name = str(payload.get('name') or '').strip()
+            if not name:
+                raise ValueError('El nombre del plan es obligatorio.')
+            plan.name = name
+
+        if 'description' in payload:
+            plan.description = str(payload.get('description') or '').strip()
+
+        if 'price' in payload or is_create:
+            raw_price = payload.get('price', 0)
+            try:
+                price_val = Decimal(str(raw_price if raw_price not in (None, '') else 0))
+            except (InvalidOperation, ValueError):
+                raise ValueError('El precio debe ser un número válido.')
+            if price_val < 0:
+                raise ValueError('El precio no puede ser negativo.')
+            plan.price = price_val
+
+        if 'duration_days' in payload or 'durationDays' in payload:
+            raw_days = payload.get('duration_days', payload.get('durationDays'))
+            days_val = _parse_optional_int(raw_days, 'Duración (días)')
+            if days_val is None or days_val < 1:
+                raise ValueError('La duración debe ser de al menos 1 día.')
+            plan.duration_days = days_val
+
+        nullable_int_fields = [
+            ('monthly_requests', 'monthlyRequests', 'Solicitudes mensuales'),
+            ('urgent_requests', 'urgentRequests', 'Solicitudes urgentes'),
+            ('service_categories', 'serviceCategories', 'Categorías de servicio'),
+            ('max_completed_jobs', 'maxCompletedJobs', 'Límite de trabajos terminados'),
+        ]
+        for snake_key, camel_key, label in nullable_int_fields:
+            if snake_key in payload or camel_key in payload:
+                raw_val = payload.get(snake_key, payload.get(camel_key))
+                setattr(plan, snake_key, _parse_optional_int(raw_val, label))
+
+        string_fields = [
+            ('search_position', 'searchPosition', 'Estándar'),
+            ('featured_badge', 'featuredBadge', '—'),
+            ('rrss_campaigns', 'rrssCampaigns', '—'),
+            ('radio_broadcast', 'radioBroadcast', '—'),
+            ('profile_statistics', 'profileStatistics', 'Básicas'),
+            ('support_level', 'supportLevel', 'Estándar'),
+        ]
+        for snake_key, camel_key, default_val in string_fields:
+            if snake_key in payload or camel_key in payload:
+                raw_str = payload.get(snake_key, payload.get(camel_key))
+                cleaned = str(raw_str).strip() if raw_str is not None else ''
+                setattr(plan, snake_key, cleaned or default_val)
+
+        if 'is_coming_soon' in payload or 'isComingSoon' in payload:
+            raw_bool = payload.get('is_coming_soon', payload.get('isComingSoon'))
+            plan.is_coming_soon = bool(raw_bool)
+
+        if 'display_order' in payload or 'displayOrder' in payload:
+            raw_order = payload.get('display_order', payload.get('displayOrder'))
+            order_val = _parse_optional_int(raw_order, 'Orden de visualización')
+            plan.display_order = order_val if order_val is not None else 0
+
+        plan.save()
+    except ValueError as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': f'Error al guardar el plan: {e}'}, status=500)
+
+    return JsonResponse({
+        'success': True,
+        'message': f'Plan "{plan.name}" {"creado" if is_create else "actualizado"} correctamente.',
+        'plan': serialize_subscription_plan(plan),
+    }, status=201 if is_create else 200)
+
+
 
 
