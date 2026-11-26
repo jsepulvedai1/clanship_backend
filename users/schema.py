@@ -2,7 +2,7 @@ import uuid
 import graphene
 from graphene_django import DjangoObjectType
 from django.conf import settings
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP, UserDevice, SystemSetting, UserReport, ReferralProgramContent, Banner
+from .models import User, Specialty, Municipality, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, PasswordResetOTP, UserDevice, SystemSetting, UserReport, ReferralProgramContent, Banner
 import graphql_jwt
 from graphql_jwt.decorators import login_required
 from decimal import Decimal
@@ -269,7 +269,41 @@ class ValidateReferralCodeType(graphene.ObjectType):
     def resolve_referrer_name(self, info):
         return self.tradesman_name
 
+class MunicipalityType(DjangoObjectType):
+    logo_url = graphene.String()
+    professionals_count = graphene.Int()
+
+    class Meta:
+        model = Municipality
+        fields = (
+            "id",
+            "name",
+            "code",
+            "logo",
+            "logo_url",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "professionals_count",
+        )
+
+    def resolve_logo_url(self, info):
+        if self.logo:
+            req = getattr(info, 'context', None)
+            url = req.build_absolute_uri(self.logo.url) if req else self.logo.url
+            if not settings.DEBUG and url and url.startswith('http://'):
+                url = url.replace('http://', 'https://', 1)
+            return url
+        return None
+
+    def resolve_professionals_count(self, info):
+        if hasattr(self, '_professionals_count'):
+            return self._professionals_count
+        return self.professionals.count()
+
+
 class ProfessionalProfileType(DjangoObjectType):
+    municipality = graphene.Field(MunicipalityType)
     documents = graphene.List(ProfessionalDocumentType)
     requires_plan_upgrade = graphene.Boolean()
     specialties = graphene.List(SpecialtyType)
@@ -559,6 +593,8 @@ class Query(graphene.ObjectType):
         page_size=graphene.Int(default_value=10),
         search=graphene.String(),
         specialty_id=graphene.Int(),
+        municipality_id=graphene.Int(),
+        without_municipality=graphene.Boolean(),
         verification_status=graphene.String(),
         is_available=graphene.Boolean(),
         is_emergency=graphene.Boolean(),
@@ -566,6 +602,15 @@ class Query(graphene.ObjectType):
         missing_contact=graphene.Boolean(),
         include_unverified=graphene.Boolean(default_value=True),
         order_by=graphene.String(default_value="-date_joined")
+    )
+    municipalities = graphene.List(
+        MunicipalityType,
+        is_active=graphene.Boolean(),
+        search=graphene.String(),
+    )
+    municipality = graphene.Field(
+        MunicipalityType,
+        id=graphene.ID(required=True),
     )
     my_favorites = graphene.List(UserType)
     subscription_plans = graphene.List(SubscriptionPlanType)
@@ -782,7 +827,8 @@ class Query(graphene.ObjectType):
             raise Exception('No autenticado')
         return attach_job_counts_to_users(user.favorite_professionals.select_related(
             'professional_profile__plan',
-            'professional_profile__specialty'
+            'professional_profile__specialty',
+            'professional_profile__municipality'
         ).prefetch_related(
             'saved_addresses',
             'professional_profile__tags',
@@ -804,7 +850,11 @@ class Query(graphene.ObjectType):
             return SubscriptionPlan.objects.exclude(name__iexact='Plan Inicial').order_by('display_order', 'id')
 
     def resolve_all_users(self, info, user_type=None, search=None):
-        queryset = User.objects.all().select_related('professional_profile__specialty', 'professional_profile__plan').prefetch_related('saved_addresses')
+        queryset = User.objects.all().select_related(
+            'professional_profile__specialty',
+            'professional_profile__plan',
+            'professional_profile__municipality'
+        ).prefetch_related('saved_addresses')
         if user_type:
             queryset = queryset.filter(user_type=user_type)
         if search:
@@ -818,11 +868,29 @@ class Query(graphene.ObjectType):
         users = list(queryset.order_by('-date_joined'))
         return attach_job_counts_to_users(users)
 
+    def resolve_municipalities(self, info, is_active=None, search=None):
+        queryset = Municipality.objects.annotate(
+            _professionals_count=Count('professionals')
+        )
+        if is_active is not None:
+            queryset = queryset.filter(is_active=is_active)
+        if search and search.strip():
+            s = search.strip()
+            queryset = queryset.filter(
+                Q(name__icontains=s) | Q(code__icontains=s)
+            )
+        return queryset.order_by('name')
+
+    def resolve_municipality(self, info, id):
+        return Municipality.objects.annotate(
+            _professionals_count=Count('professionals')
+        ).filter(id=id).first()
+
     def resolve_professionals(self, info, specialty_id=None, include_unverified=False):
         user = getattr(info.context, 'user', None)
         can_see_unverified = include_unverified and (user and not user.is_anonymous and (user.is_staff or getattr(user, 'user_type', None) == 'ADMIN'))
         queryset = ProfessionalProfile.objects.select_related(
-            'user', 'specialty', 'plan'
+            'user', 'specialty', 'plan', 'municipality'
         ).prefetch_related('tags', 'subtags', 'photos', 'documents', 'specialties')
         if not can_see_unverified and not include_unverified:
             queryset = queryset.filter(is_verified=True)
@@ -833,6 +901,7 @@ class Query(graphene.ObjectType):
 
     def resolve_paginated_professionals(
         self, info, page=1, page_size=10, search=None, specialty_id=None,
+        municipality_id=None, without_municipality=None,
         verification_status=None, is_available=None, is_emergency=None,
         is_active=None, missing_contact=None, include_unverified=True, order_by="-date_joined"
     ):
@@ -848,6 +917,11 @@ class Query(graphene.ObjectType):
 
         if specialty_id:
             queryset = queryset.filter(Q(specialty_id=specialty_id) | Q(specialties__id=specialty_id)).distinct()
+
+        if municipality_id:
+            queryset = queryset.filter(municipality_id=municipality_id)
+        elif without_municipality:
+            queryset = queryset.filter(municipality__isnull=True)
 
         if verification_status and verification_status != 'ALL':
             queryset = queryset.filter(verification_status=verification_status)
@@ -878,6 +952,8 @@ class Query(graphene.ObjectType):
                 Q(user__email__icontains=search_str) |
                 Q(user__phone_number__icontains=search_str) |
                 Q(specialty__name__icontains=search_str) |
+                Q(municipality__name__icontains=search_str) |
+                Q(municipality__code__icontains=search_str) |
                 Q(referral_code__icontains=search_str) |
                 Q(address__icontains=search_str) |
                 Q(user__address__icontains=search_str)
@@ -903,7 +979,7 @@ class Query(graphene.ObjectType):
 
         offset = (page - 1) * page_size
         results_qs = queryset.select_related(
-            'user', 'specialty', 'plan'
+            'user', 'specialty', 'plan', 'municipality'
         ).prefetch_related(
             'tags', 'subtags', 'photos', 'documents', 'specialties'
         )[offset:offset + page_size]
@@ -3250,6 +3326,8 @@ class AdminUpdateUser(graphene.Mutation):
         rating = graphene.Float(required=False)
         specialty_id = graphene.ID(required=False)
         plan_id = graphene.ID(required=False)
+        municipality_id = graphene.ID(required=False)
+        clear_municipality = graphene.Boolean(required=False, default_value=False)
         referral_code = graphene.String(required=False)
         facebook_url = graphene.String(required=False)
         instagram_url = graphene.String(required=False)
@@ -3283,6 +3361,8 @@ class AdminUpdateUser(graphene.Mutation):
         rating=None,
         specialty_id=None,
         plan_id=None,
+        municipality_id=None,
+        clear_municipality=False,
         referral_code=None,
         facebook_url=None,
         instagram_url=None,
@@ -3290,26 +3370,10 @@ class AdminUpdateUser(graphene.Mutation):
     ):
         from .utils import UNSET, admin_update_user_fields
 
-        request_user = getattr(info.context, 'user', None)
-        request = getattr(info, 'context', None)
-        auth_header = request.META.get('HTTP_AUTHORIZATION', '') if (request and hasattr(request, 'META')) else ''
-        admin_header = request.META.get('HTTP_X_CLANSHIP_ADMIN', '') if (request and hasattr(request, 'META')) else ''
-        is_admin = bool(
-            request_user
-            and not request_user.is_anonymous
-            and (request_user.is_staff or request_user.is_superuser or getattr(request_user, 'user_type', None) == 'ADMIN')
-        )
-        is_trusted_admin = (
-            is_admin
-            or ('clanship_admin_session_active' in auth_header)
-            or (admin_header == 'clanship_superadmin_2026')
-        )
-
-        if not is_trusted_admin and not settings.DEBUG:
-            raise UserFacingError('No autorizado. Se requieren permisos de administrador.', code='FORBIDDEN')
+        _require_admin(info)
 
         try:
-            target_user = User.objects.select_related('professional_profile').get(id=user_id)
+            target_user = User.objects.select_related('professional_profile', 'professional_profile__municipality').get(id=user_id)
         except (User.DoesNotExist, ValueError):
             raise UserFacingError('Usuario no encontrado.', code='USER_NOT_FOUND')
 
@@ -3335,6 +3399,8 @@ class AdminUpdateUser(graphene.Mutation):
             rating=rating if rating is not None else UNSET,
             specialty_id=specialty_id if specialty_id is not None else UNSET,
             plan_id=plan_id if plan_id is not None else UNSET,
+            municipality_id=municipality_id if municipality_id is not None else UNSET,
+            clear_municipality=bool(clear_municipality),
             referral_code=referral_code if referral_code is not None else UNSET,
             facebook_url=facebook_url if facebook_url is not None else UNSET,
             instagram_url=instagram_url if instagram_url is not None else UNSET,
@@ -3345,6 +3411,263 @@ class AdminUpdateUser(graphene.Mutation):
             success=True,
             message=f'Datos de {target_user.get_full_name() or target_user.username} actualizados correctamente.',
             user=target_user,
+        )
+
+
+def _require_admin(info):
+    """
+    Verifica que el solicitante cuente con permisos de administrador.
+    """
+    request_user = getattr(info.context, 'user', None)
+    request = getattr(info, 'context', None)
+    auth_header = request.META.get('HTTP_AUTHORIZATION', '') if (request and hasattr(request, 'META')) else ''
+    admin_header = request.META.get('HTTP_X_CLANSHIP_ADMIN', '') if (request and hasattr(request, 'META')) else ''
+    is_admin = bool(
+        request_user
+        and not request_user.is_anonymous
+        and (request_user.is_staff or request_user.is_superuser or getattr(request_user, 'user_type', None) == 'ADMIN')
+    )
+    is_trusted_admin = (
+        is_admin
+        or ('clanship_admin_session_active' in auth_header)
+        or (admin_header == 'clanship_superadmin_2026')
+    )
+    if not is_trusted_admin and not settings.DEBUG:
+        raise UserFacingError('No autorizado. Se requieren permisos de administrador.', code='FORBIDDEN')
+
+
+def _save_municipality_logo(municipality, logo_base64, logo_filename=None):
+    """
+    Decodifica un logo en base64 (data URL o base64 puro) y lo guarda en municipality.logo.
+    """
+    import base64
+    import time
+    from django.core.files.base import ContentFile
+
+    allowed_exts = {'png', 'jpg', 'jpeg', 'webp', 'svg'}
+    ext = 'png'
+    raw_b64 = logo_base64.strip()
+
+    if ';base64,' in raw_b64:
+        header, imgstr = raw_b64.split(';base64,', 1)
+        mime_sub = header.split('/')[-1].lower().strip()
+        if mime_sub == 'svg+xml':
+            ext = 'svg'
+        elif mime_sub in allowed_exts:
+            ext = mime_sub
+    else:
+        imgstr = raw_b64
+        if logo_filename and '.' in logo_filename:
+            candidate = logo_filename.rsplit('.', 1)[-1].lower().strip()
+            if candidate in allowed_exts:
+                ext = candidate
+
+    try:
+        decoded = base64.b64decode(imgstr)
+    except Exception:
+        raise UserFacingError('El archivo de logo no tiene un formato base64 válido.', code='INVALID_LOGO')
+
+    if not decoded:
+        raise UserFacingError('El archivo de logo está vacío.', code='INVALID_LOGO')
+
+    if len(decoded) > 5 * 1024 * 1024:
+        raise UserFacingError('El logo no puede superar los 5 MB.', code='LOGO_TOO_LARGE')
+
+    if municipality.logo:
+        municipality.logo.delete(save=False)
+
+    safe_code = ''.join(c for c in municipality.code.lower() if c.isalnum() or c in ('-', '_')) or 'muni'
+    file_name = f"municipality_{safe_code}_{int(time.time())}.{ext}"
+    municipality.logo.save(file_name, ContentFile(decoded), save=False)
+
+
+def _resolve_tradesman_profile(user_id=None, professional_profile_id=None):
+    """
+    Obtiene el ProfessionalProfile de un maestro a partir de user_id o professional_profile_id.
+    """
+    profile = None
+    if professional_profile_id is not None and str(professional_profile_id).strip() != '':
+        profile = ProfessionalProfile.objects.select_related('user', 'municipality').filter(id=professional_profile_id).first()
+    if profile is None and user_id is not None and str(user_id).strip() != '':
+        profile = ProfessionalProfile.objects.select_related('user', 'municipality').filter(user_id=user_id).first()
+        if profile is None:
+            # Respaldo en caso de que se haya pasado el ID del perfil en user_id
+            profile = ProfessionalProfile.objects.select_related('user', 'municipality').filter(id=user_id).first()
+    if profile is None:
+        raise UserFacingError('Maestro no encontrado.', code='TRADESMAN_NOT_FOUND')
+    return profile
+
+
+class CreateMunicipality(graphene.Mutation):
+    """
+    Crea una nueva municipalidad con carga opcional de logo en base64.
+    """
+    class Arguments:
+        name = graphene.String(required=True)
+        code = graphene.String(required=True)
+        logo_base64 = graphene.String(required=False)
+        logo_filename = graphene.String(required=False)
+        is_active = graphene.Boolean(required=False, default_value=True)
+
+    success = graphene.Boolean()
+    message = graphene.String()
+    municipality = graphene.Field(MunicipalityType)
+
+    def mutate(self, info, name, code, logo_base64=None, logo_filename=None, is_active=True):
+        _require_admin(info)
+
+        clean_name = (name or '').strip()
+        clean_code = (code or '').strip().upper()
+
+        if not clean_name:
+            raise UserFacingError('El nombre de la municipalidad es obligatorio.', code='NAME_REQUIRED')
+        if not clean_code:
+            raise UserFacingError('El código de la municipalidad es obligatorio.', code='CODE_REQUIRED')
+        if Municipality.objects.filter(code__iexact=clean_code).exists():
+            raise UserFacingError(f'Ya existe una municipalidad con el código "{clean_code}".', code='CODE_ALREADY_EXISTS')
+
+        municipality = Municipality(
+            name=clean_name,
+            code=clean_code,
+            is_active=True if is_active is None else bool(is_active),
+        )
+        if logo_base64 and logo_base64.strip():
+            _save_municipality_logo(municipality, logo_base64, logo_filename=logo_filename)
+        municipality.save()
+
+        return CreateMunicipality(
+            success=True,
+            message=f'Municipalidad "{municipality.name}" creada correctamente.',
+            municipality=municipality,
+        )
+
+
+class UpdateMunicipality(graphene.Mutation):
+    """
+    Actualiza los datos, estado y/o logo de una municipalidad existente.
+    """
+    class Arguments:
+        id = graphene.ID(required=True)
+        name = graphene.String(required=False)
+        code = graphene.String(required=False)
+        logo_base64 = graphene.String(required=False)
+        logo_filename = graphene.String(required=False)
+        clear_logo = graphene.Boolean(required=False, default_value=False)
+        is_active = graphene.Boolean(required=False)
+
+    success = graphene.Boolean()
+    message = graphene.String()
+    municipality = graphene.Field(MunicipalityType)
+
+    def mutate(self, info, id, name=None, code=None, logo_base64=None, logo_filename=None, clear_logo=False, is_active=None):
+        _require_admin(info)
+
+        municipality = Municipality.objects.filter(id=id).first()
+        if not municipality:
+            raise UserFacingError('Municipalidad no encontrada.', code='MUNICIPALITY_NOT_FOUND')
+
+        if name is not None:
+            clean_name = name.strip()
+            if not clean_name:
+                raise UserFacingError('El nombre de la municipalidad no puede estar vacío.', code='NAME_REQUIRED')
+            municipality.name = clean_name
+
+        if code is not None:
+            clean_code = code.strip().upper()
+            if not clean_code:
+                raise UserFacingError('El código de la municipalidad no puede estar vacío.', code='CODE_REQUIRED')
+            if Municipality.objects.filter(code__iexact=clean_code).exclude(id=municipality.id).exists():
+                raise UserFacingError(f'Ya existe otra municipalidad con el código "{clean_code}".', code='CODE_ALREADY_EXISTS')
+            municipality.code = clean_code
+
+        if is_active is not None:
+            municipality.is_active = bool(is_active)
+
+        if clear_logo and municipality.logo:
+            municipality.logo.delete(save=False)
+            municipality.logo = None
+        elif logo_base64 and logo_base64.strip():
+            _save_municipality_logo(municipality, logo_base64, logo_filename=logo_filename)
+
+        municipality.save()
+
+        return UpdateMunicipality(
+            success=True,
+            message=f'Municipalidad "{municipality.name}" actualizada correctamente.',
+            municipality=municipality,
+        )
+
+
+class AssignTradesmanMunicipality(graphene.Mutation):
+    """
+    Asocia un maestro a una municipalidad (o lo desvincula si municipality_id es nulo/vacío).
+    """
+    class Arguments:
+        user_id = graphene.ID(required=False)
+        professional_profile_id = graphene.ID(required=False)
+        municipality_id = graphene.ID(required=False)
+
+    success = graphene.Boolean()
+    message = graphene.String()
+    professional_profile = graphene.Field(ProfessionalProfileType)
+    user = graphene.Field(UserType)
+
+    def mutate(self, info, user_id=None, professional_profile_id=None, municipality_id=None):
+        _require_admin(info)
+        profile = _resolve_tradesman_profile(user_id=user_id, professional_profile_id=professional_profile_id)
+        tradesman_name = profile.user.get_full_name() or profile.user.username
+
+        if municipality_id is None or str(municipality_id).strip() == '':
+            profile.municipality = None
+            profile.save(update_fields=['municipality'])
+            return AssignTradesmanMunicipality(
+                success=True,
+                message=f'{tradesman_name} desvinculado de su municipalidad.',
+                professional_profile=profile,
+                user=profile.user,
+            )
+
+        municipality = Municipality.objects.filter(id=municipality_id).first()
+        if not municipality:
+            raise UserFacingError('La municipalidad seleccionada no existe.', code='MUNICIPALITY_NOT_FOUND')
+
+        profile.municipality = municipality
+        profile.save(update_fields=['municipality'])
+
+        return AssignTradesmanMunicipality(
+            success=True,
+            message=f'{tradesman_name} asociado a {municipality.name}.',
+            professional_profile=profile,
+            user=profile.user,
+        )
+
+
+class UnlinkTradesmanMunicipality(graphene.Mutation):
+    """
+    Desvincula un maestro de su municipalidad asociada.
+    """
+    class Arguments:
+        user_id = graphene.ID(required=False)
+        professional_profile_id = graphene.ID(required=False)
+
+    success = graphene.Boolean()
+    message = graphene.String()
+    professional_profile = graphene.Field(ProfessionalProfileType)
+    user = graphene.Field(UserType)
+
+    def mutate(self, info, user_id=None, professional_profile_id=None):
+        _require_admin(info)
+        profile = _resolve_tradesman_profile(user_id=user_id, professional_profile_id=professional_profile_id)
+        tradesman_name = profile.user.get_full_name() or profile.user.username
+
+        profile.municipality = None
+        profile.save(update_fields=['municipality'])
+
+        return UnlinkTradesmanMunicipality(
+            success=True,
+            message=f'{tradesman_name} desvinculado de su municipalidad.',
+            professional_profile=profile,
+            user=profile.user,
         )
 
 
@@ -3360,6 +3683,10 @@ class Mutation(graphene.ObjectType):
     register_and_complete_client_onboarding = RegisterAndCompleteClientOnboarding.Field()
     update_profile = UpdateProfile.Field()
     admin_update_user = AdminUpdateUser.Field()
+    create_municipality = CreateMunicipality.Field()
+    update_municipality = UpdateMunicipality.Field()
+    assign_tradesman_municipality = AssignTradesmanMunicipality.Field()
+    unlink_tradesman_municipality = UnlinkTradesmanMunicipality.Field()
     register_user = RegisterUser.Field()
     toggle_favorite = ToggleFavorite.Field()
     update_availability = UpdateAvailability.Field()

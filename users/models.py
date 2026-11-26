@@ -293,6 +293,36 @@ class SubscriptionPlan(models.Model):
         cache.delete('catalog_subscription_plans')
 
 
+class Municipality(models.Model):
+    """
+    Municipalidad asociada a maestros registrados en Clanship.
+    """
+    name = models.CharField(max_length=150, verbose_name="Nombre")
+    code = models.CharField(
+        max_length=50,
+        unique=True,
+        db_index=True,
+        verbose_name="Código"
+    )
+    logo = models.FileField(
+        upload_to="municipalities/",
+        null=True,
+        blank=True,
+        verbose_name="Logo"
+    )
+    is_active = models.BooleanField(default=True, db_index=True, verbose_name="Activa")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Última actualización")
+
+    class Meta:
+        verbose_name = "Municipalidad"
+        verbose_name_plural = "Municipalidades"
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+
 class ProfessionalProfile(models.Model):
     """
     Perfil detallado para usuarios de tipo PROFESIONAL.
@@ -301,6 +331,14 @@ class ProfessionalProfile(models.Model):
         settings.AUTH_USER_MODEL, 
         on_delete=models.CASCADE, 
         related_name="professional_profile"
+    )
+    municipality = models.ForeignKey(
+        Municipality,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="professionals",
+        verbose_name="Municipalidad"
     )
     specialty = models.ForeignKey(
         Specialty, 

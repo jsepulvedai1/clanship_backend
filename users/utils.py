@@ -161,6 +161,8 @@ def admin_update_user_fields(
     rating=UNSET,
     specialty_id=UNSET,
     plan_id=UNSET,
+    municipality_id=UNSET,
+    clear_municipality=False,
     referral_code=UNSET,
     facebook_url=UNSET,
     instagram_url=UNSET,
@@ -178,7 +180,7 @@ def admin_update_user_fields(
     from django.db import IntegrityError, transaction
     from django.db.models import Q
     from core.exceptions import UserFacingError
-    from users.models import User, Specialty, SubscriptionPlan, ProfessionalProfile
+    from users.models import User, Specialty, SubscriptionPlan, ProfessionalProfile, Municipality
 
     old_email = (target_user.email or '').strip().lower()
     old_username = (target_user.username or '').strip()
@@ -398,6 +400,19 @@ def admin_update_user_fields(
             plan = SubscriptionPlan.objects.filter(id=plan_id).first()
             if plan:
                 prof.plan = plan
+                prof_dirty = True
+        if clear_municipality:
+            prof.municipality = None
+            prof_dirty = True
+        elif municipality_id is not UNSET:
+            if municipality_id is None or str(municipality_id).strip() == '':
+                prof.municipality = None
+                prof_dirty = True
+            else:
+                municipality = Municipality.objects.filter(id=municipality_id).first()
+                if not municipality:
+                    raise UserFacingError('La municipalidad seleccionada no existe.', code='MUNICIPALITY_NOT_FOUND')
+                prof.municipality = municipality
                 prof_dirty = True
         if referral_code is not UNSET:
             clean_ref = str(referral_code).strip().upper() if referral_code else None

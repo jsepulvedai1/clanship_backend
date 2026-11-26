@@ -1374,6 +1374,14 @@ def serialize_admin_user(u):
             'specialtyName': prof.specialty.name if prof.specialty else None,
             'planId': prof.plan_id,
             'planName': prof.plan.name if prof.plan else None,
+            'municipalityId': prof.municipality_id,
+            'municipality': {
+                'id': prof.municipality.id,
+                'name': prof.municipality.name,
+                'code': prof.municipality.code,
+                'logoUrl': prof.municipality.logo.url if prof.municipality.logo else None,
+                'isActive': bool(prof.municipality.is_active),
+            } if prof.municipality else None,
             'bio': prof.bio or '',
             'hourlyRate': float(prof.hourly_rate) if prof.hourly_rate is not None else None,
             'serviceRadius': prof.service_radius,
@@ -1402,7 +1410,8 @@ def admin_user_api_view(request, user_id):
     try:
         target_user = User.objects.select_related(
             'professional_profile__specialty',
-            'professional_profile__plan'
+            'professional_profile__plan',
+            'professional_profile__municipality'
         ).get(id=user_id)
     except (User.DoesNotExist, ValueError):
         return JsonResponse({'success': False, 'error': 'Usuario no encontrado.'}, status=404)
@@ -1437,6 +1446,7 @@ def admin_user_api_view(request, user_id):
 
     clear_phone_raw = pick_bool('clear_phone', 'clearPhone')
     clear_email_raw = pick_bool('clear_email', 'clearEmail')
+    clear_municipality_raw = pick_bool('clear_municipality', 'clearMunicipality')
 
     try:
         admin_update_user_fields(
@@ -1461,6 +1471,8 @@ def admin_user_api_view(request, user_id):
             rating=pick('rating'),
             specialty_id=pick('specialty_id', 'specialtyId'),
             plan_id=pick('plan_id', 'planId'),
+            municipality_id=pick('municipality_id', 'municipalityId'),
+            clear_municipality=bool(clear_municipality_raw) if clear_municipality_raw is not UNSET else False,
             referral_code=pick('referral_code', 'referralCode'),
             facebook_url=pick('facebook_url', 'facebookUrl'),
             instagram_url=pick('instagram_url', 'instagramUrl'),

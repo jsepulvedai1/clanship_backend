@@ -5,7 +5,7 @@ from django.urls import path, reverse
 from django.shortcuts import get_object_or_404, redirect
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display, action
-from .models import User, Specialty, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig, UserReport, SeasonalCampaign, AssociateReferral, ReferralRewardLog, ReferralProgramContent, Banner, WelcomeEmailTemplate
+from .models import User, Specialty, Municipality, ProfessionalProfile, Tag, SubTag, ProfessionalPhoto, ProfessionalDocument, SubscriptionPlan, UserAddress, UserDevice, SystemSetting, AppVersionConfig, UserReport, SeasonalCampaign, AssociateReferral, ReferralRewardLog, ReferralProgramContent, Banner, WelcomeEmailTemplate
 
 @admin.register(SeasonalCampaign)
 class SeasonalCampaignAdmin(ModelAdmin):
@@ -315,6 +315,24 @@ class ProfessionalPhotoAdmin(ModelAdmin):
     list_display = ('id', 'profile', 'image', 'uploaded_at')
     list_filter = ('uploaded_at',)
 
+@admin.register(Municipality)
+class MunicipalityAdmin(ModelAdmin):
+    list_display = ('logo_preview', 'name', 'code', 'is_active', 'professionals_count_display', 'updated_at')
+    list_filter = ('is_active',)
+    search_fields = ('name', 'code')
+    ordering = ('name',)
+
+    @display(description="Logo")
+    def logo_preview(self, obj):
+        if obj.logo:
+            return format_html('<img src="{}" style="height:32px;width:32px;object-fit:contain;border-radius:6px;" />', obj.logo.url)
+        return "—"
+
+    @display(description="Maestros")
+    def professionals_count_display(self, obj):
+        return obj.professionals.count()
+
+
 @admin.register(ProfessionalProfile)
 class ProfessionalProfileAdmin(ModelAdmin):
     inlines = [ProfessionalPhotoInline, ProfessionalDocumentInline]
@@ -322,6 +340,7 @@ class ProfessionalProfileAdmin(ModelAdmin):
         'avatar_preview', 
         'user_name_and_contact', 
         'specialty', 
+        'municipality',
         'plan', 
         'referral_code',
         'referrals_count_display',
@@ -331,15 +350,15 @@ class ProfessionalProfileAdmin(ModelAdmin):
         'verification_badge', 
         'quick_action'
     )
-    list_filter = ('is_verified', 'verification_status', 'specialty', 'plan')
+    list_filter = ('is_verified', 'verification_status', 'specialty', 'municipality', 'plan')
     filter_horizontal = ('tags', 'subtags', 'specialties')
-    search_fields = ('user__username', 'user__email', 'user__first_name', 'user__last_name', 'user__phone_number', 'referral_code')
+    search_fields = ('user__username', 'user__email', 'user__first_name', 'user__last_name', 'user__phone_number', 'referral_code', 'municipality__name', 'municipality__code')
     actions = ['make_verified', 'make_unverified', 'make_rejected']
     readonly_fields = ('verification_banner', 'documents_and_photos_gallery')
 
     fieldsets = (
         ('Información del Profesional', {
-            'fields': ('user', 'referral_code', 'specialty', 'specialties', 'plan', 'plan_start_date', 'plan_expires_at', 'bio', 'hourly_rate', 'rating', 'service_radius')
+            'fields': ('user', 'municipality', 'referral_code', 'specialty', 'specialties', 'plan', 'plan_start_date', 'plan_expires_at', 'bio', 'hourly_rate', 'rating', 'service_radius')
         }),
         ('Estado de Habilitación y Verificación', {
             'fields': ('verification_status', 'is_verified', 'rejection_reason', 'verification_banner')
