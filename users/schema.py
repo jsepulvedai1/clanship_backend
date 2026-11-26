@@ -282,6 +282,7 @@ class MunicipalityType(DjangoObjectType):
             "logo",
             "logo_url",
             "is_active",
+            "banner_display_mode",
             "created_at",
             "updated_at",
             "professionals_count",
@@ -430,6 +431,7 @@ class ReferralProgramContentType(graphene.ObjectType):
 
 class BannerType(DjangoObjectType):
     image_url = graphene.String()
+    municipality = graphene.Field(MunicipalityType)
 
     class Meta:
         model = Banner
@@ -444,6 +446,7 @@ class BannerType(DjangoObjectType):
             "internal_route",
             "is_active",
             "app_type",
+            "municipality",
             "display_order",
             "created_at",
         )
@@ -619,6 +622,7 @@ class Query(graphene.ObjectType):
         BannerType,
         app_type=graphene.String(),
         is_active=graphene.Boolean(),
+        municipality_id=graphene.Int(),
     )
     app_config = graphene.Field(
         AppConfigType,
@@ -626,13 +630,51 @@ class Query(graphene.ObjectType):
         app_version=graphene.String(),
     )
 
-    def resolve_banners(self, info, app_type=None, is_active=None):
-        qs = Banner.objects.all().order_by('display_order', '-created_at')
-        if app_type:
-            qs = qs.filter(app_type__in=[app_type.upper(), 'ALL'])
+    def resolve_banners(self, info, app_type=None, is_active=None, municipality_id=None):
+        from django.db.models import Case, IntegerField, Value, When
+
+        qs = Banner.objects.select_related('municipality').all()
+        app_upper = app_type.upper() if app_type else None
+        if app_upper:
+            qs = qs.filter(app_type__in=[app_upper, 'ALL'])
         if is_active is not None:
             qs = qs.filter(is_active=is_active)
-        return qs
+
+        user = getattr(info.context, 'user', None)
+        is_admin = bool(
+            user
+            and not user.is_anonymous
+            and (user.is_staff or user.is_superuser or getattr(user, 'user_type', None) == 'ADMIN')
+        )
+
+        # Si es consulta de app móvil (no admin sin filtro explícito), aplicar flujo diferenciado por municipalidad
+        if not is_admin:
+            muni = None
+            if app_upper != 'CLIENT':
+                if user and not user.is_anonymous and hasattr(user, 'professional_profile'):
+                    prof = getattr(user, 'professional_profile', None)
+                    if prof and prof.municipality and prof.municipality.is_active:
+                        muni = prof.municipality
+                elif municipality_id:
+                    muni = Municipality.objects.filter(id=municipality_id, is_active=True).first()
+
+            if muni is None or muni.banner_display_mode == Municipality.BannerDisplayMode.GENERAL:
+                qs = qs.filter(municipality__isnull=True)
+            elif muni.banner_display_mode == Municipality.BannerDisplayMode.MUNICIPALITY:
+                qs = qs.filter(municipality_id=muni.id)
+            else:  # MIXED
+                qs = qs.filter(Q(municipality__isnull=True) | Q(municipality_id=muni.id)).annotate(
+                    _muni_priority=Case(
+                        When(municipality_id=muni.id, then=Value(0)),
+                        default=Value(1),
+                        output_field=IntegerField(),
+                    )
+                ).order_by('_muni_priority', 'display_order', '-created_at')
+                return qs
+        elif municipality_id:
+            qs = qs.filter(municipality_id=municipality_id)
+
+        return qs.order_by('display_order', '-created_at')
 
     def resolve_app_config(self, info, platform=None, app_version=None):
         from .models import SystemSetting
@@ -3508,12 +3550,13 @@ class CreateMunicipality(graphene.Mutation):
         logo_base64 = graphene.String(required=False)
         logo_filename = graphene.String(required=False)
         is_active = graphene.Boolean(required=False, default_value=True)
+        banner_display_mode = graphene.String(required=False)
 
     success = graphene.Boolean()
     message = graphene.String()
     municipality = graphene.Field(MunicipalityType)
 
-    def mutate(self, info, name, code, logo_base64=None, logo_filename=None, is_active=True):
+    def mutate(self, info, name, code, logo_base64=None, logo_filename=None, is_active=True, banner_display_mode=None):
         _require_admin(info)
 
         clean_name = (name or '').strip()
@@ -3526,10 +3569,19 @@ class CreateMunicipality(graphene.Mutation):
         if Municipality.objects.filter(code__iexact=clean_code).exists():
             raise UserFacingError(f'Ya existe una municipalidad con el código "{clean_code}".', code='CODE_ALREADY_EXISTS')
 
+        valid_modes = {choice[0] for choice in Municipality.BannerDisplayMode.choices}
+        mode = Municipality.BannerDisplayMode.MIXED
+        if banner_display_mode is not None and str(banner_display_mode).strip() != '':
+            candidate_mode = str(banner_display_mode).strip().upper()
+            if candidate_mode not in valid_modes:
+                raise UserFacingError('Modo de banners inválido. Usa GENERAL, MUNICIPALITY o MIXED.', code='INVALID_BANNER_MODE')
+            mode = candidate_mode
+
         municipality = Municipality(
             name=clean_name,
             code=clean_code,
             is_active=True if is_active is None else bool(is_active),
+            banner_display_mode=mode,
         )
         if logo_base64 and logo_base64.strip():
             _save_municipality_logo(municipality, logo_base64, logo_filename=logo_filename)
@@ -3554,12 +3606,13 @@ class UpdateMunicipality(graphene.Mutation):
         logo_filename = graphene.String(required=False)
         clear_logo = graphene.Boolean(required=False, default_value=False)
         is_active = graphene.Boolean(required=False)
+        banner_display_mode = graphene.String(required=False)
 
     success = graphene.Boolean()
     message = graphene.String()
     municipality = graphene.Field(MunicipalityType)
 
-    def mutate(self, info, id, name=None, code=None, logo_base64=None, logo_filename=None, clear_logo=False, is_active=None):
+    def mutate(self, info, id, name=None, code=None, logo_base64=None, logo_filename=None, clear_logo=False, is_active=None, banner_display_mode=None):
         _require_admin(info)
 
         municipality = Municipality.objects.filter(id=id).first()
@@ -3582,6 +3635,13 @@ class UpdateMunicipality(graphene.Mutation):
 
         if is_active is not None:
             municipality.is_active = bool(is_active)
+
+        if banner_display_mode is not None and str(banner_display_mode).strip() != '':
+            valid_modes = {choice[0] for choice in Municipality.BannerDisplayMode.choices}
+            candidate_mode = str(banner_display_mode).strip().upper()
+            if candidate_mode not in valid_modes:
+                raise UserFacingError('Modo de banners inválido. Usa GENERAL, MUNICIPALITY o MIXED.', code='INVALID_BANNER_MODE')
+            municipality.banner_display_mode = candidate_mode
 
         if clear_logo and municipality.logo:
             municipality.logo.delete(save=False)

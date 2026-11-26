@@ -438,6 +438,16 @@ def serialize_banner(b, request=None):
         except Exception:
             image_url = None
 
+    muni_obj = getattr(b, 'municipality', None)
+    muni_logo_url = None
+    if muni_obj and muni_obj.logo:
+        try:
+            muni_logo_url = request.build_absolute_uri(muni_obj.logo.url) if request else muni_obj.logo.url
+            if not settings.DEBUG and muni_logo_url and muni_logo_url.startswith('http://'):
+                muni_logo_url = muni_logo_url.replace('http://', 'https://', 1)
+        except Exception:
+            muni_logo_url = None
+
     return {
         'id': b.id,
         'title': b.title or '',
@@ -450,6 +460,16 @@ def serialize_banner(b, request=None):
         'internal_route': b.internal_route or '',
         'is_active': b.is_active,
         'app_type': b.app_type,
+        'municipality_id': b.municipality_id,
+        'municipality_name': muni_obj.name if muni_obj else None,
+        'municipality_code': muni_obj.code if muni_obj else None,
+        'municipality': {
+            'id': muni_obj.id,
+            'name': muni_obj.name,
+            'code': muni_obj.code,
+            'logo_url': muni_logo_url,
+            'banner_display_mode': muni_obj.banner_display_mode,
+        } if muni_obj else None,
         'display_order': b.display_order,
         'created_at': b.created_at.isoformat() if getattr(b, 'created_at', None) else None,
     }
@@ -479,21 +499,100 @@ def check_admin_permission(request):
     return False
 
 
+def _resolve_request_municipality(request, app_type):
+    """
+    Resuelve la municipalidad activa del maestro solicitante desde JWT/sesión o parámetro municipality_id.
+    Para clientes (app_type=CLIENT) siempre retorna None (solo banners generales).
+    """
+    from users.models import Municipality, ProfessionalProfile
+
+    if app_type == 'CLIENT':
+        return None
+
+    # 1. Si hay usuario autenticado por sesión o JWT, usar su municipalidad real en BD
+    auth_user = None
+    req_user = getattr(request, 'user', None)
+    if req_user and getattr(req_user, 'is_authenticated', False):
+        auth_user = req_user
+    else:
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if auth_header and ' ' in auth_header:
+            parts = auth_header.split(' ', 1)
+            if parts[0].upper() in ['JWT', 'BEARER']:
+                try:
+                    import graphql_jwt.utils
+                    payload = graphql_jwt.utils.jwt_decode(parts[1].strip())
+                    auth_user = graphql_jwt.utils.get_user_by_payload(payload)
+                except Exception:
+                    auth_user = None
+
+    if auth_user is not None:
+        prof = (
+            ProfessionalProfile.objects.select_related('municipality')
+            .filter(user_id=auth_user.id)
+            .first()
+        )
+        if prof and prof.municipality and prof.municipality.is_active:
+            return prof.municipality
+        return None
+
+    # 2. Respaldo por query param municipality_id (solo para app_type=TRADESMAN cuando no viene JWT)
+    raw_muni_id = request.GET.get('municipality_id')
+    if raw_muni_id and str(raw_muni_id).strip():
+        try:
+            return Municipality.objects.filter(id=int(raw_muni_id), is_active=True).first()
+        except (ValueError, TypeError):
+            return None
+
+    return None
+
+
 def banners_api_view(request):
     """
     Endpoint para entregar los banners dinámicos del home a clientes y maestros.
+    Soporta flujo diferenciado por municipalidad:
+    - GENERAL: solo banners generales (municipality=None)
+    - MUNICIPALITY: solo banners de la municipalidad del maestro
+    - MIXED: ambos (primero banners de la municipalidad, luego generales)
+    Maestros sin municipalidad asociada (y clientes) solo reciben banners generales.
     """
-    from users.models import Banner
-    
+    from django.db.models import Case, IntegerField, Q, Value, When
+    from users.models import Banner, Municipality
+
     app_type = request.GET.get('app_type', 'CLIENT').upper()
-    
-    banners = Banner.objects.filter(
+    municipality = _resolve_request_municipality(request, app_type)
+
+    base_qs = Banner.objects.select_related('municipality').filter(
         is_active=True,
         app_type__in=[app_type, 'ALL']
-    ).order_by('display_order', '-created_at')
-    
+    )
+
+    effective_mode = Municipality.BannerDisplayMode.GENERAL
+    if municipality is None or municipality.banner_display_mode == Municipality.BannerDisplayMode.GENERAL:
+        banners = base_qs.filter(municipality__isnull=True).order_by('display_order', '-created_at')
+    elif municipality.banner_display_mode == Municipality.BannerDisplayMode.MUNICIPALITY:
+        effective_mode = Municipality.BannerDisplayMode.MUNICIPALITY
+        banners = base_qs.filter(municipality_id=municipality.id).order_by('display_order', '-created_at')
+    else:  # MIXED
+        effective_mode = Municipality.BannerDisplayMode.MIXED
+        banners = (
+            base_qs.filter(Q(municipality__isnull=True) | Q(municipality_id=municipality.id))
+            .annotate(
+                _muni_priority=Case(
+                    When(municipality_id=municipality.id, then=Value(0)),
+                    default=Value(1),
+                    output_field=IntegerField(),
+                )
+            )
+            .order_by('_muni_priority', 'display_order', '-created_at')
+        )
+
     banners_data = [serialize_banner(b, request) for b in banners]
-    return JsonResponse({'banners': banners_data})
+    return JsonResponse({
+        'banners': banners_data,
+        'banner_display_mode': effective_mode,
+        'municipality_id': municipality.id if municipality else None,
+    })
 
 
 @csrf_exempt
@@ -502,7 +601,7 @@ def admin_banners_api_view(request, banner_id=None):
     API REST para la gestión y edición completa de Banners desde clanship-admin.
     Soporta listado, creación, edición (incluyendo subida de imagen), y eliminación.
     """
-    from users.models import Banner
+    from users.models import Banner, Municipality
 
     if not check_admin_permission(request):
         return JsonResponse({'success': False, 'error': 'No autorizado.'}, status=403)
@@ -510,15 +609,26 @@ def admin_banners_api_view(request, banner_id=None):
     if request.method == 'GET':
         if banner_id:
             try:
-                b = Banner.objects.get(id=banner_id)
+                b = Banner.objects.select_related('municipality').get(id=banner_id)
                 return JsonResponse({'success': True, 'banner': serialize_banner(b, request)})
             except Banner.DoesNotExist:
                 return JsonResponse({'success': False, 'error': 'Banner no encontrado.'}, status=404)
 
         app_type = request.GET.get('app_type')
-        qs = Banner.objects.all().order_by('display_order', '-created_at')
+        municipality_id = request.GET.get('municipality_id')
+        scope = request.GET.get('scope')
+        qs = Banner.objects.select_related('municipality').all().order_by('display_order', '-created_at')
         if app_type and app_type.upper() in ['ALL', 'CLIENT', 'TRADESMAN']:
             qs = qs.filter(app_type=app_type.upper())
+        if scope == 'GENERAL':
+            qs = qs.filter(municipality__isnull=True)
+        elif scope == 'MUNICIPALITY':
+            qs = qs.filter(municipality__isnull=False)
+        if municipality_id and str(municipality_id).strip():
+            try:
+                qs = qs.filter(municipality_id=int(municipality_id))
+            except (ValueError, TypeError):
+                pass
         return JsonResponse({
             'success': True,
             'banners': [serialize_banner(b, request) for b in qs]
@@ -558,6 +668,18 @@ def admin_banners_api_view(request, banner_id=None):
             banner.internal_route = data['internal_route'] or None
         if 'app_type' in data:
             banner.app_type = data['app_type']
+        if 'municipality_id' in data:
+            raw_muni = data['municipality_id']
+            if raw_muni in [None, '', 'null', 'None']:
+                banner.municipality = None
+            else:
+                try:
+                    muni = Municipality.objects.filter(id=int(raw_muni)).first()
+                    if not muni:
+                        return JsonResponse({'success': False, 'error': 'Municipalidad no encontrada.'}, status=400)
+                    banner.municipality = muni
+                except (ValueError, TypeError):
+                    return JsonResponse({'success': False, 'error': 'ID de municipalidad inválido.'}, status=400)
         if 'is_active' in data:
             val = data['is_active']
             if isinstance(val, str):
@@ -613,6 +735,18 @@ def admin_banners_api_view(request, banner_id=None):
             banner.internal_route = data['internal_route'] or None
         if 'app_type' in data:
             banner.app_type = data['app_type']
+        if 'municipality_id' in data:
+            raw_muni = data['municipality_id']
+            if raw_muni in [None, '', 'null', 'None']:
+                banner.municipality = None
+            else:
+                try:
+                    muni = Municipality.objects.filter(id=int(raw_muni)).first()
+                    if not muni:
+                        return JsonResponse({'success': False, 'error': 'Municipalidad no encontrada.'}, status=400)
+                    banner.municipality = muni
+                except (ValueError, TypeError):
+                    return JsonResponse({'success': False, 'error': 'ID de municipalidad inválido.'}, status=400)
         if 'is_active' in data:
             val = data['is_active']
             if isinstance(val, str):

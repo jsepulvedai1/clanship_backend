@@ -205,3 +205,90 @@ class MunicipalityGraphQLTestCase(TestCase):
         muni.delete()
         self.profile.refresh_from_db()
         self.assertIsNone(self.profile.municipality)
+
+    def test_differentiated_banner_flow_general_municipality_mixed(self):
+        from django.test import Client
+        from users.models import Banner
+
+        stgo = Municipality.objects.create(
+            name="Municipalidad de Santiago",
+            code="STGO",
+            is_active=True,
+            banner_display_mode=Municipality.BannerDisplayMode.GENERAL,
+        )
+        prov = Municipality.objects.create(
+            name="Municipalidad de Providencia",
+            code="PROV",
+            is_active=True,
+            banner_display_mode=Municipality.BannerDisplayMode.MIXED,
+        )
+
+        b_general = Banner.objects.create(
+            title="Banner General Clanship",
+            app_type=Banner.AppType.TRADESMAN,
+            municipality=None,
+            is_active=True,
+            display_order=1,
+        )
+        b_stgo = Banner.objects.create(
+            title="Banner Exclusivo Santiago",
+            app_type=Banner.AppType.TRADESMAN,
+            municipality=stgo,
+            is_active=True,
+            display_order=1,
+        )
+        b_prov = Banner.objects.create(
+            title="Banner Exclusivo Providencia",
+            app_type=Banner.AppType.TRADESMAN,
+            municipality=prov,
+            is_active=True,
+            display_order=1,
+        )
+
+        client = Client()
+
+        # 1. Maestro SIN municipalidad (o versión antigua): solo ve banner general
+        res_unlinked = client.get("/api/v1/banners/?app_type=TRADESMAN").json()
+        self.assertEqual([b["id"] for b in res_unlinked["banners"]], [b_general.id])
+        self.assertEqual(res_unlinked["banner_display_mode"], "GENERAL")
+
+        # 2. Maestro de Santiago en modo GENERAL: solo ve banner general
+        res_gen = client.get(f"/api/v1/banners/?app_type=TRADESMAN&municipality_id={stgo.id}").json()
+        self.assertEqual([b["id"] for b in res_gen["banners"]], [b_general.id])
+        self.assertEqual(res_gen["banner_display_mode"], "GENERAL")
+
+        # 3. Maestro de Santiago en modo MUNICIPALITY: solo ve banner de Santiago (ni general ni Providencia)
+        stgo.banner_display_mode = Municipality.BannerDisplayMode.MUNICIPALITY
+        stgo.save(update_fields=["banner_display_mode"])
+        res_muni = client.get(f"/api/v1/banners/?app_type=TRADESMAN&municipality_id={stgo.id}").json()
+        self.assertEqual([b["id"] for b in res_muni["banners"]], [b_stgo.id])
+        self.assertEqual(res_muni["banner_display_mode"], "MUNICIPALITY")
+
+        # 4. Maestro de Santiago en modo MIXED: ve ambos (primero Santiago, luego General; nunca Providencia)
+        stgo.banner_display_mode = Municipality.BannerDisplayMode.MIXED
+        stgo.save(update_fields=["banner_display_mode"])
+        res_mixed = client.get(f"/api/v1/banners/?app_type=TRADESMAN&municipality_id={stgo.id}").json()
+        self.assertEqual([b["id"] for b in res_mixed["banners"]], [b_stgo.id, b_general.id])
+        self.assertEqual(res_mixed["banner_display_mode"], "MIXED")
+
+        # 5. Maestro de Providencia en modo MIXED: ve Providencia + General (nunca Santiago)
+        res_prov = client.get(f"/api/v1/banners/?app_type=TRADESMAN&municipality_id={prov.id}").json()
+        self.assertEqual([b["id"] for b in res_prov["banners"]], [b_prov.id, b_general.id])
+
+        # 6. Cliente siempre ve solo general aunque pase municipality_id
+        b_all = Banner.objects.create(
+            title="Banner General Ambas Apps",
+            app_type=Banner.AppType.ALL,
+            municipality=None,
+            is_active=True,
+            display_order=2,
+        )
+        res_client = client.get(f"/api/v1/banners/?app_type=CLIENT&municipality_id={stgo.id}").json()
+        self.assertEqual([b["id"] for b in res_client["banners"]], [b_all.id])
+
+        # 7. Municipalidad inactiva cae a modo GENERAL
+        stgo.is_active = False
+        stgo.save(update_fields=["is_active"])
+        res_inactive = client.get(f"/api/v1/banners/?app_type=TRADESMAN&municipality_id={stgo.id}").json()
+        self.assertEqual([b["id"] for b in res_inactive["banners"]], [b_general.id, b_all.id])
+

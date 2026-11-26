@@ -297,6 +297,11 @@ class Municipality(models.Model):
     """
     Municipalidad asociada a maestros registrados en Clanship.
     """
+    class BannerDisplayMode(models.TextChoices):
+        GENERAL = 'GENERAL', 'Solo banners generales'
+        MUNICIPALITY = 'MUNICIPALITY', 'Solo banners de la municipalidad'
+        MIXED = 'MIXED', 'Mixto (municipalidad + generales)'
+
     name = models.CharField(max_length=150, verbose_name="Nombre")
     code = models.CharField(
         max_length=50,
@@ -311,6 +316,13 @@ class Municipality(models.Model):
         verbose_name="Logo"
     )
     is_active = models.BooleanField(default=True, db_index=True, verbose_name="Activa")
+    banner_display_mode = models.CharField(
+        max_length=20,
+        choices=BannerDisplayMode.choices,
+        default=BannerDisplayMode.MIXED,
+        verbose_name="Modo de Banners",
+        help_text="Define qué banners ven los maestros asociados: solo generales, solo de la municipalidad o ambos (mixto)."
+    )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de creación")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Última actualización")
 
@@ -1668,6 +1680,15 @@ class Banner(models.Model):
     
     is_active = models.BooleanField(default=True, verbose_name="Activo")
     app_type = models.CharField(max_length=20, choices=AppType.choices, default=AppType.ALL, verbose_name="Mostrar en")
+    municipality = models.ForeignKey(
+        Municipality,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="banners",
+        verbose_name="Municipalidad",
+        help_text="Si se deja vacío, es un banner general. Si se selecciona una municipalidad, solo se muestra a maestros asociados a ella."
+    )
     display_order = models.PositiveIntegerField(default=0, verbose_name="Orden", help_text="Los banners con menor número aparecen primero.")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Fecha de Creación")
 

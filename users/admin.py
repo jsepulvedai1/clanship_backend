@@ -317,8 +317,8 @@ class ProfessionalPhotoAdmin(ModelAdmin):
 
 @admin.register(Municipality)
 class MunicipalityAdmin(ModelAdmin):
-    list_display = ('logo_preview', 'name', 'code', 'is_active', 'professionals_count_display', 'updated_at')
-    list_filter = ('is_active',)
+    list_display = ('logo_preview', 'name', 'code', 'banner_display_mode', 'is_active', 'professionals_count_display', 'updated_at')
+    list_filter = ('is_active', 'banner_display_mode')
     search_fields = ('name', 'code')
     ordering = ('name',)
 
@@ -738,9 +738,9 @@ class ReferralProgramContentAdmin(ModelAdmin):
 
 @admin.register(Banner)
 class BannerAdmin(ModelAdmin):
-    list_display = ('display_title', 'app_type', 'is_active', 'display_order')
-    list_filter = ('app_type', 'is_active')
-    search_fields = ('title', 'subtitle')
+    list_display = ('display_title', 'app_type', 'municipality', 'is_active', 'display_order')
+    list_filter = ('app_type', 'municipality', 'is_active')
+    search_fields = ('title', 'subtitle', 'municipality__name', 'municipality__code')
     list_editable = ('is_active', 'display_order')
 
     @display(description="Título", ordering="title")
