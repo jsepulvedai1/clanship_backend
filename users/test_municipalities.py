@@ -466,4 +466,186 @@ class MunicipalityGraphQLTestCase(TestCase):
         self.assertIsNotNone(res_reg_bad.errors)
         self.assertFalse(User.objects.filter(email="flag_on_bad@test.com").exists())
 
+    def test_municipality_max_professionals_limit_and_gestor_mutations(self):
+        from users.models import Specialty, SystemSetting
+
+        admin_ctx = _make_request(user=self.admin_user, admin_header=True)
+        anon_ctx = _make_request()
+        specialty = Specialty.objects.create(name="Electricidad")
+
+        # 1. Gestor puede activar el feature flag via GraphQL
+        flag_mut = """
+        mutation ToggleFlag($enabled: Boolean!) {
+          updateMunicipalityRegistrationFlag(enabled: $enabled) {
+            success
+            enabled
+            message
+          }
+        }
+        """
+        res_flag = schema.execute(flag_mut, variables={"enabled": True}, context_value=admin_ctx)
+        self.assertIsNone(res_flag.errors)
+        self.assertTrue(res_flag.data["updateMunicipalityRegistrationFlag"]["enabled"])
+        self.assertTrue(SystemSetting.get_settings().municipality_code_registration_enabled)
+
+        # 2. Crear municipalidad con cupo máximo = 1
+        create_mut = """
+        mutation CreateMuni($name: String!, $code: String!, $maxProfessionals: Int) {
+          createMunicipality(name: $name, code: $code, maxProfessionals: $maxProfessionals) {
+            success
+            municipality {
+              id
+              name
+              code
+              maxProfessionals
+              professionalsCount
+              remainingSlots
+            }
+          }
+        }
+        """
+        res_create = schema.execute(
+            create_mut,
+            variables={"name": "Providencia", "code": "PROV", "maxProfessionals": 1},
+            context_value=admin_ctx,
+        )
+        self.assertIsNone(res_create.errors)
+        muni = res_create.data["createMunicipality"]["municipality"]
+        muni_id = muni["id"]
+        self.assertEqual(muni["maxProfessionals"], 1)
+        self.assertEqual(muni["professionalsCount"], 0)
+        self.assertEqual(muni["remainingSlots"], 1)
+
+        # 3. Primer maestro se registra con el código -> ocupa el único cupo
+        register_mut = """
+        mutation Reg($email: String!, $password: String!, $firstName: String!, $lastName: String!, $phoneNumber: String!, $specialtyId: ID, $address: String, $municipalityCode: String) {
+          registerAndCompleteTradesmanOnboarding(
+            email: $email,
+            password: $password,
+            firstName: $firstName,
+            lastName: $lastName,
+            phoneNumber: $phoneNumber,
+            specialtyId: $specialtyId,
+            address: $address,
+            municipalityCode: $municipalityCode
+          ) {
+            success
+            user {
+              id
+              professionalProfile {
+                municipality { id code }
+              }
+            }
+          }
+        }
+        """
+        res_1 = schema.execute(
+            register_mut,
+            variables={
+                "email": "m1@prov.cl",
+                "password": "Password123!",
+                "firstName": "Uno",
+                "lastName": "Maestro",
+                "phoneNumber": "+56910000001",
+                "specialtyId": str(specialty.id),
+                "address": "Providencia",
+                "municipalityCode": "PROV",
+            },
+            context_value=anon_ctx,
+        )
+        self.assertIsNone(res_1.errors)
+        self.assertEqual(res_1.data["registerAndCompleteTradesmanOnboarding"]["user"]["professionalProfile"]["municipality"]["code"], "PROV")
+
+        # 4. validateMunicipalityCode ahora indica cupo agotado
+        val_query = """
+        query Validate($code: String!) {
+          validateMunicipalityCode(code: $code) {
+            isValid
+            maxProfessionals
+            professionalsCount
+            remainingSlots
+            message
+          }
+        }
+        """
+        res_val_full = schema.execute(val_query, variables={"code": "PROV"}, context_value=anon_ctx)
+        self.assertIsNone(res_val_full.errors)
+        self.assertFalse(res_val_full.data["validateMunicipalityCode"]["isValid"])
+        self.assertEqual(res_val_full.data["validateMunicipalityCode"]["remainingSlots"], 0)
+
+        # 5. Segundo maestro intentando registrarse con el código es rechazado
+        res_2 = schema.execute(
+            register_mut,
+            variables={
+                "email": "m2@prov.cl",
+                "password": "Password123!",
+                "firstName": "Dos",
+                "lastName": "Maestro",
+                "phoneNumber": "+56910000002",
+                "specialtyId": str(specialty.id),
+                "address": "Providencia",
+                "municipalityCode": "PROV",
+            },
+            context_value=anon_ctx,
+        )
+        self.assertIsNotNone(res_2.errors)
+        self.assertFalse(User.objects.filter(email="m2@prov.cl").exists())
+
+        # 6. Asignación manual desde el gestor también respeta el cupo
+        assign_mut = """
+        mutation Assign($userId: ID!, $municipalityId: ID!) {
+          assignTradesmanMunicipality(userId: $userId, municipalityId: $municipalityId) {
+            success
+            message
+          }
+        }
+        """
+        res_assign_full = schema.execute(
+            assign_mut,
+            variables={"userId": str(self.tradesman_user.id), "municipalityId": muni_id},
+            context_value=admin_ctx,
+        )
+        self.assertIsNotNone(res_assign_full.errors)
+
+        # 7. Ampliar cupo a 2 desde UpdateMunicipality permite asociar al maestro
+        update_mut = """
+        mutation UpdateMuni($id: ID!, $maxProfessionals: Int, $clearMaxProfessionals: Boolean) {
+          updateMunicipality(id: $id, maxProfessionals: $maxProfessionals, clearMaxProfessionals: $clearMaxProfessionals) {
+            success
+            municipality {
+              id
+              maxProfessionals
+              professionalsCount
+              remainingSlots
+            }
+          }
+        }
+        """
+        res_up = schema.execute(
+            update_mut,
+            variables={"id": muni_id, "maxProfessionals": 2},
+            context_value=admin_ctx,
+        )
+        self.assertIsNone(res_up.errors)
+        self.assertEqual(res_up.data["updateMunicipality"]["municipality"]["remainingSlots"], 1)
+
+        res_assign_ok = schema.execute(
+            assign_mut,
+            variables={"userId": str(self.tradesman_user.id), "municipalityId": muni_id},
+            context_value=admin_ctx,
+        )
+        self.assertIsNone(res_assign_ok.errors)
+        self.assertTrue(res_assign_ok.data["assignTradesmanMunicipality"]["success"])
+
+        # 8. Quitar límite (clearMaxProfessionals=True) vuelve a ilimitado
+        res_clear = schema.execute(
+            update_mut,
+            variables={"id": muni_id, "clearMaxProfessionals": True},
+            context_value=admin_ctx,
+        )
+        self.assertIsNone(res_clear.errors)
+        self.assertIsNone(res_clear.data["updateMunicipality"]["municipality"]["maxProfessionals"])
+        self.assertIsNone(res_clear.data["updateMunicipality"]["municipality"]["remainingSlots"])
+
+
 

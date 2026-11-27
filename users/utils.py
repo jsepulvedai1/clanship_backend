@@ -138,6 +138,24 @@ def normalize_phone_number(raw_phone):
     return re.sub(r'[\s\-\(\)\.]+', '', str(raw_phone).strip())
 
 
+def ensure_municipality_capacity(municipality, *, exclude_profile_id=None, exclude_user_id=None):
+    """
+    Verifica que la municipalidad aún tenga cupos disponibles antes de asociar un maestro.
+    Lanza UserFacingError con código MUNICIPALITY_LIMIT_REACHED si alcanzó su límite.
+    """
+    if municipality is None or municipality.max_professionals is None:
+        return
+    if not municipality.has_available_slots(
+        exclude_profile_id=exclude_profile_id,
+        exclude_user_id=exclude_user_id,
+    ):
+        from core.exceptions import UserFacingError
+        raise UserFacingError(
+            f'La municipalidad "{municipality.name}" alcanzó el límite máximo de {municipality.max_professionals} maestros.',
+            code='MUNICIPALITY_LIMIT_REACHED',
+        )
+
+
 def admin_update_user_fields(
     target_user,
     *,
@@ -412,6 +430,8 @@ def admin_update_user_fields(
                 municipality = Municipality.objects.filter(id=municipality_id).first()
                 if not municipality:
                     raise UserFacingError('La municipalidad seleccionada no existe.', code='MUNICIPALITY_NOT_FOUND')
+                if prof.municipality_id != municipality.id:
+                    ensure_municipality_capacity(municipality, exclude_profile_id=prof.id)
                 prof.municipality = municipality
                 prof_dirty = True
         if referral_code is not UNSET:

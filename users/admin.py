@@ -322,10 +322,29 @@ class ProfessionalPhotoAdmin(ModelAdmin):
 
 @admin.register(Municipality)
 class MunicipalityAdmin(ModelAdmin):
-    list_display = ('logo_preview', 'name', 'code', 'banner_display_mode', 'is_active', 'professionals_count_display', 'updated_at')
+    list_display = (
+        'logo_preview',
+        'name',
+        'code',
+        'banner_display_mode',
+        'max_professionals',
+        'professionals_quota_display',
+        'is_active',
+        'updated_at',
+    )
+    list_editable = ('max_professionals', 'is_active')
     list_filter = ('is_active', 'banner_display_mode')
     search_fields = ('name', 'code')
     ordering = ('name',)
+    fieldsets = (
+        ('Información de la Municipalidad', {
+            'fields': ('name', 'code', 'logo', 'is_active'),
+        }),
+        ('Cupo de Invitaciones y Banners', {
+            'fields': ('max_professionals', 'banner_display_mode'),
+            'description': 'Define el límite máximo de maestros que pueden registrarse o asociarse con el código de esta municipalidad (dejar vacío para ilimitado).'
+        }),
+    )
 
     @display(description="Logo")
     def logo_preview(self, obj):
@@ -333,9 +352,12 @@ class MunicipalityAdmin(ModelAdmin):
             return format_html('<img src="{}" style="height:32px;width:32px;object-fit:contain;border-radius:6px;" />', obj.logo.url)
         return "—"
 
-    @display(description="Maestros")
-    def professionals_count_display(self, obj):
-        return obj.professionals.count()
+    @display(description="Uso de cupo")
+    def professionals_quota_display(self, obj):
+        count = obj.professionals.count()
+        if obj.max_professionals is None:
+            return f"{count} / ∞"
+        return f"{count} / {obj.max_professionals}"
 
 
 @admin.register(ProfessionalProfile)

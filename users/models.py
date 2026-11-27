@@ -316,6 +316,12 @@ class Municipality(models.Model):
         verbose_name="Logo"
     )
     is_active = models.BooleanField(default=True, db_index=True, verbose_name="Activa")
+    max_professionals = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Límite de maestros (cupo)",
+        help_text="Cantidad máxima de maestros que pueden registrarse o asociarse con esta municipalidad. Dejar vacío para ilimitado."
+    )
     banner_display_mode = models.CharField(
         max_length=20,
         choices=BannerDisplayMode.choices,
@@ -333,6 +339,21 @@ class Municipality(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.code})"
+
+    def has_available_slots(self, exclude_profile_id=None, exclude_user_id=None):
+        if self.max_professionals is None:
+            return True
+        qs = self.professionals.all()
+        if exclude_profile_id is not None:
+            qs = qs.exclude(id=exclude_profile_id)
+        if exclude_user_id is not None:
+            qs = qs.exclude(user_id=exclude_user_id)
+        return qs.count() < self.max_professionals
+
+    def remaining_slots_count(self):
+        if self.max_professionals is None:
+            return None
+        return max(self.max_professionals - self.professionals.count(), 0)
 
 
 class ProfessionalProfile(models.Model):
@@ -451,6 +472,19 @@ class ProfessionalProfile(models.Model):
 
     def __str__(self):
         return f"Perfil de {self.user.username} - {self.specialty}"
+
+    def clean(self):
+        super().clean()
+        if self.municipality_id and self.municipality and self.municipality.max_professionals is not None:
+            is_unchanged = bool(
+                self.pk
+                and ProfessionalProfile.objects.filter(pk=self.pk, municipality_id=self.municipality_id).exists()
+            )
+            if not is_unchanged and not self.municipality.has_available_slots(exclude_profile_id=self.pk):
+                from django.core.exceptions import ValidationError
+                raise ValidationError({
+                    'municipality': f'La municipalidad "{self.municipality.name}" alcanzó su límite máximo de {self.municipality.max_professionals} maestros.'
+                })
 
     @classmethod
     def generate_unique_referral_code(cls):

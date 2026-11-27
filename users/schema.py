@@ -274,11 +274,15 @@ class ValidateMunicipalityCodeType(graphene.ObjectType):
     is_valid = graphene.Boolean()
     municipality_name = graphene.String()
     municipality_code = graphene.String()
+    max_professionals = graphene.Int()
+    professionals_count = graphene.Int()
+    remaining_slots = graphene.Int()
     message = graphene.String()
 
 class MunicipalityType(DjangoObjectType):
     logo_url = graphene.String()
     professionals_count = graphene.Int()
+    remaining_slots = graphene.Int()
 
     class Meta:
         model = Municipality
@@ -289,10 +293,12 @@ class MunicipalityType(DjangoObjectType):
             "logo",
             "logo_url",
             "is_active",
+            "max_professionals",
             "banner_display_mode",
             "created_at",
             "updated_at",
             "professionals_count",
+            "remaining_slots",
         )
 
     def resolve_logo_url(self, info):
@@ -308,6 +314,12 @@ class MunicipalityType(DjangoObjectType):
         if hasattr(self, '_professionals_count'):
             return self._professionals_count
         return self.professionals.count()
+
+    def resolve_remaining_slots(self, info):
+        if self.max_professionals is None:
+            return None
+        count = self._professionals_count if hasattr(self, '_professionals_count') else self.professionals.count()
+        return max(self.max_professionals - count, 0)
 
 
 class ProfessionalProfileType(DjangoObjectType):
@@ -821,12 +833,30 @@ class Query(graphene.ObjectType):
                 is_valid=False,
                 municipality_name=None,
                 municipality_code=None,
+                max_professionals=None,
+                professionals_count=None,
+                remaining_slots=None,
                 message="Código de municipalidad no válido o inactivo",
+            )
+        current_count = muni.professionals.count()
+        remaining = max(muni.max_professionals - current_count, 0) if muni.max_professionals is not None else None
+        if muni.max_professionals is not None and current_count >= muni.max_professionals:
+            return ValidateMunicipalityCodeType(
+                is_valid=False,
+                municipality_name=muni.name,
+                municipality_code=muni.code,
+                max_professionals=muni.max_professionals,
+                professionals_count=current_count,
+                remaining_slots=0,
+                message=f'La municipalidad "{muni.name}" alcanzó el límite máximo de {muni.max_professionals} maestros.',
             )
         return ValidateMunicipalityCodeType(
             is_valid=True,
             municipality_name=muni.name,
             municipality_code=muni.code,
+            max_professionals=muni.max_professionals,
+            professionals_count=current_count,
+            remaining_slots=remaining,
             message=f"Municipalidad válida: {muni.name}",
         )
 
@@ -2904,14 +2934,16 @@ def _apply_tradesman_onboarding(
     if municipality_code and str(municipality_code).strip():
         clean_muni_code = str(municipality_code).strip().upper()
         from users.models import SystemSetting
+        from users.utils import ensure_municipality_capacity
         setting = SystemSetting.get_settings()
         if setting.municipality_code_registration_enabled:
-            muni = Municipality.objects.filter(code__iexact=clean_muni_code, is_active=True).first()
+            muni = Municipality.objects.select_for_update().filter(code__iexact=clean_muni_code, is_active=True).first()
             if not muni:
                 raise UserFacingError(
                     'El código de municipalidad ingresado no es válido o no está activo.',
                     code='MUNICIPALITY_CODE_INVALID',
                 )
+            ensure_municipality_capacity(muni, exclude_user_id=user.id)
             profile.municipality = muni
 
     profile.save()
@@ -3621,12 +3653,13 @@ class CreateMunicipality(graphene.Mutation):
         logo_filename = graphene.String(required=False)
         is_active = graphene.Boolean(required=False, default_value=True)
         banner_display_mode = graphene.String(required=False)
+        max_professionals = graphene.Int(required=False)
 
     success = graphene.Boolean()
     message = graphene.String()
     municipality = graphene.Field(MunicipalityType)
 
-    def mutate(self, info, name, code, logo_base64=None, logo_filename=None, is_active=True, banner_display_mode=None):
+    def mutate(self, info, name, code, logo_base64=None, logo_filename=None, is_active=True, banner_display_mode=None, max_professionals=None):
         _require_admin(info)
 
         clean_name = (name or '').strip()
@@ -3638,6 +3671,8 @@ class CreateMunicipality(graphene.Mutation):
             raise UserFacingError('El código de la municipalidad es obligatorio.', code='CODE_REQUIRED')
         if Municipality.objects.filter(code__iexact=clean_code).exists():
             raise UserFacingError(f'Ya existe una municipalidad con el código "{clean_code}".', code='CODE_ALREADY_EXISTS')
+        if max_professionals is not None and int(max_professionals) < 1:
+            raise UserFacingError('El límite de maestros debe ser al menos 1 (o vacío para ilimitado).', code='INVALID_MAX_PROFESSIONALS')
 
         valid_modes = {choice[0] for choice in Municipality.BannerDisplayMode.choices}
         mode = Municipality.BannerDisplayMode.MIXED
@@ -3652,6 +3687,7 @@ class CreateMunicipality(graphene.Mutation):
             code=clean_code,
             is_active=True if is_active is None else bool(is_active),
             banner_display_mode=mode,
+            max_professionals=int(max_professionals) if max_professionals is not None else None,
         )
         if logo_base64 and logo_base64.strip():
             _save_municipality_logo(municipality, logo_base64, logo_filename=logo_filename)
@@ -3677,12 +3713,14 @@ class UpdateMunicipality(graphene.Mutation):
         clear_logo = graphene.Boolean(required=False, default_value=False)
         is_active = graphene.Boolean(required=False)
         banner_display_mode = graphene.String(required=False)
+        max_professionals = graphene.Int(required=False)
+        clear_max_professionals = graphene.Boolean(required=False, default_value=False)
 
     success = graphene.Boolean()
     message = graphene.String()
     municipality = graphene.Field(MunicipalityType)
 
-    def mutate(self, info, id, name=None, code=None, logo_base64=None, logo_filename=None, clear_logo=False, is_active=None, banner_display_mode=None):
+    def mutate(self, info, id, name=None, code=None, logo_base64=None, logo_filename=None, clear_logo=False, is_active=None, banner_display_mode=None, max_professionals=None, clear_max_professionals=False):
         _require_admin(info)
 
         municipality = Municipality.objects.filter(id=id).first()
@@ -3705,6 +3743,13 @@ class UpdateMunicipality(graphene.Mutation):
 
         if is_active is not None:
             municipality.is_active = bool(is_active)
+
+        if clear_max_professionals:
+            municipality.max_professionals = None
+        elif max_professionals is not None:
+            if int(max_professionals) < 1:
+                raise UserFacingError('El límite de maestros debe ser al menos 1 (o déjalo ilimitado).', code='INVALID_MAX_PROFESSIONALS')
+            municipality.max_professionals = int(max_professionals)
 
         if banner_display_mode is not None and str(banner_display_mode).strip() != '':
             valid_modes = {choice[0] for choice in Municipality.BannerDisplayMode.choices}
@@ -3744,31 +3789,62 @@ class AssignTradesmanMunicipality(graphene.Mutation):
 
     def mutate(self, info, user_id=None, professional_profile_id=None, municipality_id=None):
         _require_admin(info)
-        profile = _resolve_tradesman_profile(user_id=user_id, professional_profile_id=professional_profile_id)
-        tradesman_name = profile.user.get_full_name() or profile.user.username
+        from users.utils import ensure_municipality_capacity
 
-        if municipality_id is None or str(municipality_id).strip() == '':
-            profile.municipality = None
+        with transaction.atomic():
+            profile = _resolve_tradesman_profile(user_id=user_id, professional_profile_id=professional_profile_id)
+            tradesman_name = profile.user.get_full_name() or profile.user.username
+
+            if municipality_id is None or str(municipality_id).strip() == '':
+                profile.municipality = None
+                profile.save(update_fields=['municipality'])
+                return AssignTradesmanMunicipality(
+                    success=True,
+                    message=f'{tradesman_name} desvinculado de su municipalidad.',
+                    professional_profile=profile,
+                    user=profile.user,
+                )
+
+            municipality = Municipality.objects.select_for_update().filter(id=municipality_id).first()
+            if not municipality:
+                raise UserFacingError('La municipalidad seleccionada no existe.', code='MUNICIPALITY_NOT_FOUND')
+
+            if profile.municipality_id != municipality.id:
+                ensure_municipality_capacity(municipality, exclude_profile_id=profile.id)
+
+            profile.municipality = municipality
             profile.save(update_fields=['municipality'])
-            return AssignTradesmanMunicipality(
-                success=True,
-                message=f'{tradesman_name} desvinculado de su municipalidad.',
-                professional_profile=profile,
-                user=profile.user,
-            )
-
-        municipality = Municipality.objects.filter(id=municipality_id).first()
-        if not municipality:
-            raise UserFacingError('La municipalidad seleccionada no existe.', code='MUNICIPALITY_NOT_FOUND')
-
-        profile.municipality = municipality
-        profile.save(update_fields=['municipality'])
 
         return AssignTradesmanMunicipality(
             success=True,
             message=f'{tradesman_name} asociado a {municipality.name}.',
             professional_profile=profile,
             user=profile.user,
+        )
+
+
+class UpdateMunicipalityRegistrationFlag(graphene.Mutation):
+    """
+    Activa o desactiva el feature flag de código de municipalidad en el registro de maestros.
+    """
+    class Arguments:
+        enabled = graphene.Boolean(required=True)
+
+    success = graphene.Boolean()
+    enabled = graphene.Boolean()
+    message = graphene.String()
+
+    def mutate(self, info, enabled):
+        _require_admin(info)
+        from .models import SystemSetting
+        setting = SystemSetting.objects.first() or SystemSetting.objects.create()
+        setting.municipality_code_registration_enabled = bool(enabled)
+        setting.save(update_fields=['municipality_code_registration_enabled'])
+        state_text = 'habilitado' if setting.municipality_code_registration_enabled else 'deshabilitado'
+        return UpdateMunicipalityRegistrationFlag(
+            success=True,
+            enabled=setting.municipality_code_registration_enabled,
+            message=f'Registro con código de municipalidad {state_text}.',
         )
 
 
@@ -3817,6 +3893,7 @@ class Mutation(graphene.ObjectType):
     update_municipality = UpdateMunicipality.Field()
     assign_tradesman_municipality = AssignTradesmanMunicipality.Field()
     unlink_tradesman_municipality = UnlinkTradesmanMunicipality.Field()
+    update_municipality_registration_flag = UpdateMunicipalityRegistrationFlag.Field()
     register_user = RegisterUser.Field()
     toggle_favorite = ToggleFavorite.Field()
     update_availability = UpdateAvailability.Field()
