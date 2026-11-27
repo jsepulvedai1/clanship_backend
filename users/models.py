@@ -748,6 +748,11 @@ class SystemSetting(models.Model):
         verbose_name="Modo Cobertura Nacional (Todo Chile)",
         help_text="Si está activo, los clientes pueden ver y contratar a maestros de todo el país, ignorando los límites de radio de movilidad individuales."
     )
+    municipality_code_registration_enabled = models.BooleanField(
+        default=False,
+        verbose_name="Habilitar código de municipalidad en registro",
+        help_text="Si está activo, muestra el campo opcional '¿Perteneces a una municipalidad? Ingresa el código' en el registro de maestros y permite asociarlos por código."
+    )
     subscriptions_enabled_ios = models.BooleanField(
         default=False,
         verbose_name="Habilitar suscripciones en iOS",

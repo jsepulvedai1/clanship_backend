@@ -138,6 +138,7 @@ class SystemSettingAdmin(ModelAdmin):
     list_display = (
         '__str__',
         'nationwide_coverage_mode',
+        'municipality_code_registration_enabled',
         'referral_program_active',
         'referral_target_count',
         'referral_reward_plan',
@@ -147,11 +148,15 @@ class SystemSettingAdmin(ModelAdmin):
         'subscriptions_enabled_ios',
         'subscriptions_enabled_android',
     )
-    list_editable = ('nationwide_coverage_mode',)
+    list_editable = ('nationwide_coverage_mode', 'municipality_code_registration_enabled')
     fieldsets = (
         ('Cobertura Nacional (Periodo de Prueba Todo Chile)', {
             'fields': ('nationwide_coverage_mode',),
             'description': 'Si está activo, los clientes podrán ver a todos los maestros del país y solicitarles trabajos directamente, ignorando el radio de movilidad individual (service_radius) configurado por cada maestro.'
+        }),
+        ('Municipalidades (Feature Flag)', {
+            'fields': ('municipality_code_registration_enabled',),
+            'description': 'Activa o desactiva el campo opcional de código de municipalidad en el registro de maestros.'
         }),
         ('Programa de Código de Asociados (Referidos)', {
             'fields': (

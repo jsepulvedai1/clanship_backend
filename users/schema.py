@@ -269,6 +269,13 @@ class ValidateReferralCodeType(graphene.ObjectType):
     def resolve_referrer_name(self, info):
         return self.tradesman_name
 
+
+class ValidateMunicipalityCodeType(graphene.ObjectType):
+    is_valid = graphene.Boolean()
+    municipality_name = graphene.String()
+    municipality_code = graphene.String()
+    message = graphene.String()
+
 class MunicipalityType(DjangoObjectType):
     logo_url = graphene.String()
     professionals_count = graphene.Int()
@@ -474,6 +481,7 @@ class AppConfigType(graphene.ObjectType):
     is_subscriptions_enabled = graphene.Boolean()
     support_hours = graphene.String()
     add_photo_icon_url = graphene.String()
+    municipality_code_registration_enabled = graphene.Boolean()
 
 
 def attach_job_counts_to_users(users):
@@ -710,6 +718,7 @@ class Query(graphene.ObjectType):
             is_subscriptions_enabled=current_platform_enabled,
             support_hours=setting.support_hours,
             add_photo_icon_url=setting.add_photo_icon_url,
+            municipality_code_registration_enabled=setting.municipality_code_registration_enabled,
         )
 
     def resolve_max_specialties_per_tradesman(self, info):
@@ -782,6 +791,44 @@ class Query(graphene.ObjectType):
             return ValidateReferralCodeType(is_valid=False, tradesman_name=None, message="Código no válido o no encontrado")
         name = profile.user.get_full_name() or profile.user.username
         return ValidateReferralCodeType(is_valid=True, tradesman_name=name, message="Código válido")
+
+    validate_municipality_code = graphene.Field(
+        ValidateMunicipalityCodeType,
+        code=graphene.String(required=True)
+    )
+
+    def resolve_validate_municipality_code(self, info, code):
+        if not code or not code.strip():
+            return ValidateMunicipalityCodeType(
+                is_valid=False,
+                municipality_name=None,
+                municipality_code=None,
+                message="Ingresa un código",
+            )
+        clean_code = code.strip().upper()
+        from .models import SystemSetting
+        setting = SystemSetting.get_settings()
+        if not setting.municipality_code_registration_enabled:
+            return ValidateMunicipalityCodeType(
+                is_valid=False,
+                municipality_name=None,
+                municipality_code=None,
+                message="El registro con código de municipalidad no está habilitado",
+            )
+        muni = Municipality.objects.filter(code__iexact=clean_code, is_active=True).first()
+        if not muni:
+            return ValidateMunicipalityCodeType(
+                is_valid=False,
+                municipality_name=None,
+                municipality_code=None,
+                message="Código de municipalidad no válido o inactivo",
+            )
+        return ValidateMunicipalityCodeType(
+            is_valid=True,
+            municipality_name=muni.name,
+            municipality_code=muni.code,
+            message=f"Municipalidad válida: {muni.name}",
+        )
 
     referral_program_content = graphene.Field(
         ReferralProgramContentType,
@@ -2750,6 +2797,7 @@ def _apply_tradesman_onboarding(
     longitude=None,
     service_radius=10,
     referral_code=None,
+    municipality_code=None,
     first_name=None,
     last_name=None,
 ):
@@ -2852,6 +2900,20 @@ def _apply_tradesman_onboarding(
         profile.longitude = longitude
     if service_radius:
         profile.service_radius = service_radius
+
+    if municipality_code and str(municipality_code).strip():
+        clean_muni_code = str(municipality_code).strip().upper()
+        from users.models import SystemSetting
+        setting = SystemSetting.get_settings()
+        if setting.municipality_code_registration_enabled:
+            muni = Municipality.objects.filter(code__iexact=clean_muni_code, is_active=True).first()
+            if not muni:
+                raise UserFacingError(
+                    'El código de municipalidad ingresado no es válido o no está activo.',
+                    code='MUNICIPALITY_CODE_INVALID',
+                )
+            profile.municipality = muni
+
     profile.save()
 
     if referral_code and referral_code.strip():
@@ -2883,13 +2945,14 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
         longitude = graphene.Float(required=False)
         service_radius = graphene.Int(required=False, default_value=10)
         referral_code = graphene.String(required=False)
+        municipality_code = graphene.String(required=False)
         first_name = graphene.String(required=False)
         last_name = graphene.String(required=False)
 
     success = graphene.Boolean()
     user = graphene.Field(UserType)
 
-    def mutate(self, info, phone_number=None, specialty_id=None, specialty_ids=None, tag_ids=None, subtag_ids=None, address=None, latitude=None, longitude=None, service_radius=10, referral_code=None, first_name=None, last_name=None):
+    def mutate(self, info, phone_number=None, specialty_id=None, specialty_ids=None, tag_ids=None, subtag_ids=None, address=None, latitude=None, longitude=None, service_radius=10, referral_code=None, municipality_code=None, first_name=None, last_name=None):
         user = info.context.user
         if not user or not user.is_authenticated:
             raise UserFacingError('Debes estar autenticado para completar tu registro.', code='UNAUTHENTICATED')
@@ -2907,6 +2970,7 @@ class CompleteTradesmanOnboarding(graphene.Mutation):
                 longitude=longitude,
                 service_radius=service_radius,
                 referral_code=referral_code,
+                municipality_code=municipality_code,
                 first_name=first_name,
                 last_name=last_name,
             )
@@ -2931,6 +2995,7 @@ class RegisterAndCompleteTradesmanOnboarding(graphene.Mutation):
         longitude = graphene.Float(required=False)
         service_radius = graphene.Int(required=False, default_value=10)
         referral_code = graphene.String(required=False)
+        municipality_code = graphene.String(required=False)
 
     success = graphene.Boolean()
     user = graphene.Field(UserType)
@@ -2952,6 +3017,7 @@ class RegisterAndCompleteTradesmanOnboarding(graphene.Mutation):
         longitude=None,
         service_radius=10,
         referral_code=None,
+        municipality_code=None,
     ):
         email_clean = email.strip().lower()
         first_name_clean = first_name.strip()
@@ -3021,6 +3087,7 @@ class RegisterAndCompleteTradesmanOnboarding(graphene.Mutation):
                 longitude=longitude,
                 service_radius=service_radius,
                 referral_code=referral_code,
+                municipality_code=municipality_code,
                 first_name=first_name_clean,
                 last_name=last_name_clean,
             )
@@ -3047,6 +3114,7 @@ class SocialRegisterAndCompleteTradesmanOnboarding(graphene.Mutation):
         longitude = graphene.Float(required=False)
         service_radius = graphene.Int(required=False, default_value=10)
         referral_code = graphene.String(required=False)
+        municipality_code = graphene.String(required=False)
         first_name = graphene.String(required=False)
         last_name = graphene.String(required=False)
 
@@ -3073,6 +3141,7 @@ class SocialRegisterAndCompleteTradesmanOnboarding(graphene.Mutation):
         longitude=None,
         service_radius=10,
         referral_code=None,
+        municipality_code=None,
         first_name=None,
         last_name=None,
     ):
@@ -3140,6 +3209,7 @@ class SocialRegisterAndCompleteTradesmanOnboarding(graphene.Mutation):
                 longitude=longitude,
                 service_radius=service_radius,
                 referral_code=referral_code,
+                municipality_code=municipality_code,
                 first_name=applied_first_name,
                 last_name=applied_last_name,
             )

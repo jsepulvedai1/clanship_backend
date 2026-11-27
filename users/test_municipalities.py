@@ -292,3 +292,178 @@ class MunicipalityGraphQLTestCase(TestCase):
         res_inactive = client.get(f"/api/v1/banners/?app_type=TRADESMAN&municipality_id={stgo.id}").json()
         self.assertEqual([b["id"] for b in res_inactive["banners"]], [b_general.id, b_all.id])
 
+    def test_municipality_code_registration_feature_flag_and_validation(self):
+        from users.models import Specialty, SystemSetting
+
+        specialty = Specialty.objects.create(name="Gasfitería")
+        stgo = Municipality.objects.create(name="Municipalidad de Santiago", code="STGO", is_active=True)
+        inactiva = Municipality.objects.create(name="Municipalidad Inactiva", code="INACT", is_active=False)
+
+        anon_ctx = _make_request()
+
+        # 1. Por defecto el feature flag está desactivado en appConfig
+        app_config_query = """
+        query {
+          appConfig {
+            municipalityCodeRegistrationEnabled
+          }
+        }
+        """
+        res_cfg = schema.execute(app_config_query, context_value=anon_ctx)
+        self.assertIsNone(res_cfg.errors)
+        self.assertFalse(res_cfg.data["appConfig"]["municipalityCodeRegistrationEnabled"])
+
+        # 2. validateMunicipalityCode con flag desactivado devuelve isValid=False
+        validate_query = """
+        query ValidateMuni($code: String!) {
+          validateMunicipalityCode(code: $code) {
+            isValid
+            municipalityName
+            municipalityCode
+            message
+          }
+        }
+        """
+        res_val_off = schema.execute(validate_query, variables={"code": "STGO"}, context_value=anon_ctx)
+        self.assertIsNone(res_val_off.errors)
+        self.assertFalse(res_val_off.data["validateMunicipalityCode"]["isValid"])
+
+        # 3. Registro con flag desactivado ignora municipalityCode y crea maestro sin municipalidad
+        register_mutation = """
+        mutation RegTradesman(
+          $email: String!
+          $password: String!
+          $firstName: String!
+          $lastName: String!
+          $phoneNumber: String!
+          $specialtyId: ID
+          $address: String
+          $municipalityCode: String
+        ) {
+          registerAndCompleteTradesmanOnboarding(
+            email: $email
+            password: $password
+            firstName: $firstName
+            lastName: $lastName
+            phoneNumber: $phoneNumber
+            specialtyId: $specialtyId
+            address: $address
+            municipalityCode: $municipalityCode
+          ) {
+            success
+            user {
+              id
+              professionalProfile {
+                municipality {
+                  id
+                  code
+                  name
+                }
+              }
+            }
+          }
+        }
+        """
+        res_reg_off = schema.execute(
+            register_mutation,
+            variables={
+                "email": "flag_off@test.com",
+                "password": "Password123!",
+                "firstName": "Juan",
+                "lastName": "Perez",
+                "phoneNumber": "+56911112222",
+                "specialtyId": str(specialty.id),
+                "address": "Santiago, Chile",
+                "municipalityCode": "STGO",
+            },
+            context_value=anon_ctx,
+        )
+        self.assertIsNone(res_reg_off.errors)
+        self.assertTrue(res_reg_off.data["registerAndCompleteTradesmanOnboarding"]["success"])
+        self.assertIsNone(
+            res_reg_off.data["registerAndCompleteTradesmanOnboarding"]["user"]["professionalProfile"]["municipality"]
+        )
+
+        # 4. Activar feature flag en SystemSetting
+        setting = SystemSetting.get_settings()
+        setting.municipality_code_registration_enabled = True
+        setting.save(update_fields=["municipality_code_registration_enabled"])
+
+        res_cfg_on = schema.execute(app_config_query, context_value=anon_ctx)
+        self.assertIsNone(res_cfg_on.errors)
+        self.assertTrue(res_cfg_on.data["appConfig"]["municipalityCodeRegistrationEnabled"])
+
+        # 5. validateMunicipalityCode con flag activo: válido (case-insensitive), inactivo e inexistente
+        res_val_ok = schema.execute(validate_query, variables={"code": "  stgo "}, context_value=anon_ctx)
+        self.assertIsNone(res_val_ok.errors)
+        self.assertTrue(res_val_ok.data["validateMunicipalityCode"]["isValid"])
+        self.assertEqual(res_val_ok.data["validateMunicipalityCode"]["municipalityName"], "Municipalidad de Santiago")
+        self.assertEqual(res_val_ok.data["validateMunicipalityCode"]["municipalityCode"], "STGO")
+
+        res_val_inact = schema.execute(validate_query, variables={"code": inactiva.code}, context_value=anon_ctx)
+        self.assertIsNone(res_val_inact.errors)
+        self.assertFalse(res_val_inact.data["validateMunicipalityCode"]["isValid"])
+
+        res_val_bad = schema.execute(validate_query, variables={"code": "NOEXISTE"}, context_value=anon_ctx)
+        self.assertIsNone(res_val_bad.errors)
+        self.assertFalse(res_val_bad.data["validateMunicipalityCode"]["isValid"])
+
+        # 6. Registro con flag activo + código válido asocia la municipalidad
+        res_reg_on = schema.execute(
+            register_mutation,
+            variables={
+                "email": "flag_on_valid@test.com",
+                "password": "Password123!",
+                "firstName": "Pedro",
+                "lastName": "Gomez",
+                "phoneNumber": "+56933334444",
+                "specialtyId": str(specialty.id),
+                "address": "Santiago, Chile",
+                "municipalityCode": "stgo",
+            },
+            context_value=anon_ctx,
+        )
+        self.assertIsNone(res_reg_on.errors)
+        muni_data = res_reg_on.data["registerAndCompleteTradesmanOnboarding"]["user"]["professionalProfile"]["municipality"]
+        self.assertIsNotNone(muni_data)
+        self.assertEqual(muni_data["code"], "STGO")
+        self.assertEqual(muni_data["id"], str(stgo.id))
+
+        # 7. Registro con flag activo + sin código (opcional) funciona normalmente
+        res_reg_opt = schema.execute(
+            register_mutation,
+            variables={
+                "email": "flag_on_empty@test.com",
+                "password": "Password123!",
+                "firstName": "Maria",
+                "lastName": "Lopez",
+                "phoneNumber": "+56955556666",
+                "specialtyId": str(specialty.id),
+                "address": "Santiago, Chile",
+            },
+            context_value=anon_ctx,
+        )
+        self.assertIsNone(res_reg_opt.errors)
+        self.assertIsNone(
+            res_reg_opt.data["registerAndCompleteTradesmanOnboarding"]["user"]["professionalProfile"]["municipality"]
+        )
+
+        # 8. Registro con flag activo + código inválido rechaza con error claro
+        res_reg_bad = schema.execute(
+            register_mutation,
+            variables={
+                "email": "flag_on_bad@test.com",
+                "password": "Password123!",
+                "firstName": "Luis",
+                "lastName": "Diaz",
+                "phoneNumber": "+56977778888",
+                "specialtyId": str(specialty.id),
+                "address": "Santiago, Chile",
+                "municipalityCode": "INVALIDO",
+            },
+            context_value=anon_ctx,
+        )
+        self.assertIsNotNone(res_reg_bad.errors)
+        self.assertFalse(User.objects.filter(email="flag_on_bad@test.com").exists())
+
+
